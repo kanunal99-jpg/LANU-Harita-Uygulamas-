@@ -1,8 +1,10 @@
 package com.example
 
 import android.Manifest
+import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -48,6 +50,19 @@ fun HaritalarNavigationApp(
 
     var showLayersSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
+
+    // Keep screen on during active driving navigation
+    val activity = context as? Activity
+    DisposableEffect(uiState.navigationState) {
+        if (uiState.navigationState == NavigationState.NAVIGATING) {
+            activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        } else {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+        onDispose {
+            activity?.window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
 
     // Location permission request
     val permissionLauncher = rememberLauncherForActivityResult(
