@@ -42,6 +42,27 @@ enum class CameraMode {
     THREE_D
 }
 
+enum class DepartureTurn(val iconName: String) {
+    STRAIGHT("straight"),
+    SLIGHT_RIGHT("slight_right"),
+    RIGHT("right"),
+    SHARP_RIGHT("sharp_right"),
+    UTURN("u_turn"),
+    SHARP_LEFT("sharp_left"),
+    LEFT("left"),
+    SLIGHT_LEFT("slight_left")
+}
+
+data class DepartureGuidance(
+    val relativeAngle: Float,
+    val turnType: DepartureTurn,
+    val instruction: String,
+    val isWrongWay: Boolean = false,
+    val routeInitialBearing: Float = 0f,
+    val vehicleHeading: Float = 0f,
+    val departureGuidePoints: List<GeoPoint> = emptyList()
+)
+
 enum class MapTrackingMode {
     FREE,
     FOLLOW_USER,
