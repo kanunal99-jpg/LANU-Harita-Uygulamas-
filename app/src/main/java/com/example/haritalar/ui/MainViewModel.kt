@@ -16,6 +16,7 @@ import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
+import com.example.haritalar.model.TrafficTestResult
 import com.example.haritalar.model.TripSummary
 import com.example.haritalar.navigation.AppLocationManager
 import com.example.haritalar.navigation.NavigationEngine
@@ -56,7 +57,11 @@ data class MainUiState(
     val tripSummary: TripSummary? = null,
     val isSearchAlongRouteOpen: Boolean = false,
     val alongRoutePois: List<PoiItem> = emptyList(),
-    val isLoadingAlongRoute: Boolean = false
+    val isLoadingAlongRoute: Boolean = false,
+    val isTrafficInspectorOpen: Boolean = false,
+    val trafficTestResult: TrafficTestResult? = null,
+    val isTestingTraffic: Boolean = false,
+    val customTomTomKey: String = ""
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -316,6 +321,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             type = "poi"
         )
         selectSearchResult(dest)
+    }
+
+    fun openTrafficInspector() {
+        _uiState.value = _uiState.value.copy(
+            isTrafficInspectorOpen = true,
+            customTomTomKey = repository.getEffectiveTomTomKey()
+        )
+    }
+
+    fun closeTrafficInspector() {
+        _uiState.value = _uiState.value.copy(isTrafficInspectorOpen = false)
+    }
+
+    fun saveCustomTomTomKey(key: String) {
+        repository.setCustomTomTomKey(key)
+        _uiState.value = _uiState.value.copy(
+            customTomTomKey = key.trim(),
+            statusMessage = "TomTom API anahtarı güncellendi."
+        )
+    }
+
+    fun testTrafficConnection() {
+        val testPoint = _uiState.value.userLocation?.point
+            ?: _uiState.value.selectedDestination?.point
+            ?: GeoPoint(41.0082, 28.9784) // Istanbul default coordinate
+
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isTestingTraffic = true, trafficTestResult = null)
+            val result = repository.testTomTomTraffic(testPoint)
+            _uiState.value = _uiState.value.copy(
+                isTestingTraffic = false,
+                trafficTestResult = result
+            )
+        }
     }
 
     private fun startPeriodicTrafficRefresh() {

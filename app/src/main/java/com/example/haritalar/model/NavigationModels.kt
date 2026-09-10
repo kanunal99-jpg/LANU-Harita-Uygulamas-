@@ -172,5 +172,30 @@ data class TrafficStatus(
     val verified: Boolean,
     val message: String,
     val delaySeconds: Long = 0,
-    val trafficLevel: TrafficLevel = TrafficLevel.UNKNOWN
+    val trafficLevel: TrafficLevel = TrafficLevel.UNKNOWN,
+    val sourceName: String = "OSRM/Valhalla Statik Yol Profili",
+    val isLiveApi: Boolean = false,
+    val httpStatusCode: Int? = null,
+    val segmentCount: Int = 0,
+    val lastCheckTimestamp: Long = 0L,
+    val averageSpeedKmh: Double? = null,
+    val rawSampleDetails: String? = null
+)
+
+data class TrafficTestResult(
+    val timestamp: Long = System.currentTimeMillis(),
+    val sourceUrl: String,
+    val httpStatusCode: Int,
+    val isSuccess: Boolean,
+    val latencyMs: Long,
+    val currentSpeedKmh: Double = 0.0,
+    val freeFlowSpeedKmh: Double = 0.0,
+    val currentTravelTimeSec: Long = 0,
+    val freeFlowTravelTimeSec: Long = 0,
+    val delaySeconds: Long = 0,
+    val confidence: Double = 0.0,
+    val roadClosure: Boolean = false,
+    val coordinateCount: Int = 0,
+    val rawJsonSnippet: String = "",
+    val errorMessage: String? = null
 )

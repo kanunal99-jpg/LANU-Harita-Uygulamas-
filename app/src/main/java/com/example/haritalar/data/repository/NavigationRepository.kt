@@ -21,24 +21,42 @@ import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
+import com.example.haritalar.model.TrafficTestResult
 import kotlinx.coroutines.flow.Flow
 
 class NavigationRepository(context: Context) {
     private val db = AppDatabase.getInstance(context)
     private val favoriteDao = db.favoriteDao()
     private val searchHistoryDao = db.searchHistoryDao()
+    private val prefs = context.getSharedPreferences("lanu_navigation_prefs", Context.MODE_PRIVATE)
 
     private val geocodingService = NominatimGeocodingService()
     private val poiService = PoiNetworkService()
     private val valhallaProvider = ValhallaRoutingProvider()
     private val osrmProvider = OsrmRoutingProvider()
 
-    // Traffic Provider Chain: BuildConfig TomTom Key -> Fallback base ETA
-    private val tomtomKey = BuildConfig.TOMTOM_API_KEY
-    private val tomtomProvider = TomTomTrafficProvider(tomtomKey)
+    // Traffic Provider Chain: Stored User Key or BuildConfig TomTom Key
+    val tomtomProvider = TomTomTrafficProvider(getEffectiveTomTomKey())
     val trafficProviderChain = TrafficProviderChain(primaryProvider = tomtomProvider)
     val trafficRankingService = TrafficRouteRankingService(trafficProviderChain)
     val trafficCoordinator = TrafficRefreshCoordinator(trafficRankingService)
+
+    fun getEffectiveTomTomKey(): String {
+        val custom = prefs.getString("custom_tomtom_api_key", null)?.trim()
+        if (!custom.isNullOrBlank()) return custom
+        return BuildConfig.TOMTOM_API_KEY.trim().removeSurrounding("\"")
+    }
+
+    fun setCustomTomTomKey(newKey: String) {
+        val cleaned = newKey.trim().removeSurrounding("\"")
+        prefs.edit().putString("custom_tomtom_api_key", cleaned).apply()
+        tomtomProvider.apiKey = cleaned
+        trafficProviderChain.clearCache()
+    }
+
+    suspend fun testTomTomTraffic(point: GeoPoint): TrafficTestResult {
+        return tomtomProvider.testLiveConnection(point)
+    }
 
     val favorites: Flow<List<FavoritePlace>> = favoriteDao.getAllFavorites()
     val recentSearches: Flow<List<SearchHistoryItem>> = searchHistoryDao.getRecentSearches()

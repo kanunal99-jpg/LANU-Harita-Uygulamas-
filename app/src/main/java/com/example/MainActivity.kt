@@ -225,6 +225,7 @@ fun HaritalarNavigationApp(
                     isMuted = uiState.isMuted,
                     onToggleMute = { viewModel.toggleMute() },
                     onOpenSearchAlongRoute = { viewModel.openSearchAlongRoute() },
+                    onOpenTrafficInspector = { viewModel.openTrafficInspector() },
                     onStopNavigation = { viewModel.stopNavigation() }
                 )
             }
@@ -249,7 +250,20 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 7. Layers Modal Bottom Sheet
+            // 9. Traffic Inspector & Live Proof Dialog
+            if (uiState.isTrafficInspectorOpen) {
+                TrafficInspectorDialog(
+                    trafficStatus = currentTrafficStatus,
+                    currentApiKey = uiState.customTomTomKey,
+                    testResult = uiState.trafficTestResult,
+                    isTesting = uiState.isTestingTraffic,
+                    onSaveApiKey = { key -> viewModel.saveCustomTomTomKey(key) },
+                    onTestConnection = { viewModel.testTrafficConnection() },
+                    onDismiss = { viewModel.closeTrafficInspector() }
+                )
+            }
+
+            // 10. Layers Modal Bottom Sheet
             if (showLayersSheet) {
                 LayersBottomSheet(
                     cameraMode = uiState.cameraMode,
@@ -268,6 +282,7 @@ fun HaritalarNavigationApp(
                     onToggleTrafficLayer = { viewModel.toggleTrafficLayer() },
                     onTogglePoiLayer = { viewModel.togglePoiLayer() },
                     onToggleSimulation = { viewModel.toggleSimulation() },
+                    onOpenTrafficInspector = { viewModel.openTrafficInspector() },
                     onDismiss = { showLayersSheet = false }
                 )
             }

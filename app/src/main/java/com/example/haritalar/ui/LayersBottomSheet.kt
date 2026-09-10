@@ -33,6 +33,7 @@ fun LayersBottomSheet(
     onToggleTrafficLayer: () -> Unit,
     onTogglePoiLayer: () -> Unit,
     onToggleSimulation: () -> Unit,
+    onOpenTrafficInspector: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -107,6 +108,35 @@ fun LayersBottomSheet(
                 onCheckedChange = { onToggleTrafficLayer() },
                 testTag = "layer_traffic_switch"
             )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 52.dp, top = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = {
+                        onDismiss()
+                        onOpenTrafficInspector()
+                    },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Icon(
+                        Icons.Default.NetworkCheck,
+                        contentDescription = null,
+                        modifier = Modifier.size(14.dp),
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Trafik Kaynağı & Canlı Paket Denetçisi",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 12.dp),

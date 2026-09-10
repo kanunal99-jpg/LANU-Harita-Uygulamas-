@@ -231,6 +231,7 @@ fun DrivingBottomDashboard(
     isMuted: Boolean,
     onToggleMute: () -> Unit,
     onOpenSearchAlongRoute: () -> Unit,
+    onOpenTrafficInspector: () -> Unit = {},
     onStopNavigation: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -302,10 +303,13 @@ fun DrivingBottomDashboard(
 
                 // Quick Controls: Search Along Route, Mute & Traffic Pill
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    // Traffic status
+                    // Traffic status pill (clickable to inspect live source and verify packets)
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = if (trafficStatus?.verified == true) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surfaceVariant
+                        color = if (trafficStatus?.isLiveApi == true) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onOpenTrafficInspector() }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
@@ -315,14 +319,24 @@ fun DrivingBottomDashboard(
                                 modifier = Modifier
                                     .size(7.dp)
                                     .clip(CircleShape)
-                                    .background(if (trafficStatus?.verified == true) Color(0xFF2E7D32) else Color.Gray)
+                                    .background(if (trafficStatus?.isLiveApi == true) Color(0xFF2E7D32) else Color.Gray)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = trafficStatus?.message ?: "Canlı Trafik",
+                                text = if (trafficStatus?.isLiveApi == true)
+                                    trafficStatus.message
+                                else
+                                    "Trafik: Statik Profil (Doğrula)",
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Medium,
-                                color = if (trafficStatus?.verified == true) Color(0xFF1B5E20) else MaterialTheme.colorScheme.onSurfaceVariant
+                                color = if (trafficStatus?.isLiveApi == true) Color(0xFF1B5E20) else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = "Trafik Kaynağını Doğrula",
+                                tint = if (trafficStatus?.isLiveApi == true) Color(0xFF1B5E20) else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(11.dp)
                             )
                         }
                     }

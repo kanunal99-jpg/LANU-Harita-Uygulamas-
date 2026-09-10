@@ -5,6 +5,7 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
+import com.example.haritalar.model.TrafficTestResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
@@ -20,29 +21,154 @@ interface TrafficProvider {
 }
 
 class TomTomTrafficProvider(
-    private val apiKey: String,
+    var apiKey: String,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(8, TimeUnit.SECONDS)
         .readTimeout(8, TimeUnit.SECONDS)
         .build()
 ) : TrafficProvider {
-    override val name: String = "TomTomFlowSegment"
-    override val isAvailable: Boolean = apiKey.isNotBlank() && apiKey != "\"\""
+    override val name: String = "TomTom Traffic Flow API v4"
+    override val isAvailable: Boolean
+        get() = apiKey.isNotBlank() && apiKey != "\"\"" && apiKey != "\"null\"" && apiKey != "null"
+
+    var lastResponseCode: Int? = null
+        private set
+    var lastLatencyMs: Long = 0L
+        private set
+    var lastRequestTimestamp: Long = 0L
+        private set
+    var lastErrorMessage: String? = null
+        private set
+    var lastRawSampleSnippet: String? = null
+        private set
+
+    suspend fun testLiveConnection(point: GeoPoint): TrafficTestResult = withContext(Dispatchers.IO) {
+        val cleanKey = apiKey.trim().removeSurrounding("\"")
+        val url = "https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json?" +
+                "point=${point.latitude},${point.longitude}&key=$cleanKey"
+        val start = System.currentTimeMillis()
+
+        if (cleanKey.isBlank()) {
+            return@withContext TrafficTestResult(
+                sourceUrl = "https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json",
+                httpStatusCode = 0,
+                isSuccess = false,
+                latencyMs = 0,
+                errorMessage = "TomTom API Anahtarı eksik! Canlı veri için lütfen geçerli bir anahtar tanımlayın."
+            )
+        }
+
+        try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "LanuHaritaAndroid/1.0")
+                .build()
+
+            val callStart = System.currentTimeMillis()
+            val response = client.newCall(request).execute()
+            val latency = System.currentTimeMillis() - callStart
+            val code = response.code
+            val body = response.body?.string() ?: ""
+
+            lastResponseCode = code
+            lastLatencyMs = latency
+            lastRequestTimestamp = System.currentTimeMillis()
+
+            if (!response.isSuccessful) {
+                val errorMsg = when (code) {
+                    401 -> "HTTP 401 Unauthorized: Geçersiz veya yetkisiz API Anahtarı"
+                    403 -> "HTTP 403 Forbidden: API Anahtarının Traffic Flow izni yok veya kota doldu"
+                    429 -> "HTTP 429 Too Many Requests: Hız limiti aşıldı"
+                    else -> "HTTP $code: TomTom sunucu hatası"
+                }
+                lastErrorMessage = errorMsg
+                return@withContext TrafficTestResult(
+                    sourceUrl = url.replace(cleanKey, "••••••••"),
+                    httpStatusCode = code,
+                    isSuccess = false,
+                    latencyMs = latency,
+                    rawJsonSnippet = body.take(300),
+                    errorMessage = errorMsg
+                )
+            }
+
+            val root = JSONObject(body)
+            val flowData = root.optJSONObject("flowSegmentData")
+            if (flowData == null) {
+                return@withContext TrafficTestResult(
+                    sourceUrl = url.replace(cleanKey, "••••••••"),
+                    httpStatusCode = code,
+                    isSuccess = false,
+                    latencyMs = latency,
+                    rawJsonSnippet = body.take(300),
+                    errorMessage = "Beklenen 'flowSegmentData' JSON gövdesi bulunamadı."
+                )
+            }
+
+            val currentSpeed = flowData.optDouble("currentSpeed", 0.0)
+            val freeFlowSpeed = flowData.optDouble("freeFlowSpeed", 0.0)
+            val currentTravelTime = flowData.optLong("currentTravelTime", 0)
+            val freeFlowTravelTime = flowData.optLong("freeFlowTravelTime", 0)
+            val confidence = flowData.optDouble("confidence", 0.0)
+            val roadClosure = flowData.optBoolean("roadClosure", false)
+
+            val coordsObj = flowData.optJSONObject("coordinates")
+            val coordArray = coordsObj?.optJSONArray("coordinate")
+            val coordCount = coordArray?.length() ?: 0
+            val delay = Math.max(0L, currentTravelTime - freeFlowTravelTime)
+
+            lastRawSampleSnippet = "Anlık: ${currentSpeed.toInt()} km/s, Serbest: ${freeFlowSpeed.toInt()} km/s, Güvenilirlik: $confidence"
+
+            TrafficTestResult(
+                sourceUrl = url.replace(cleanKey, "••••••••"),
+                httpStatusCode = code,
+                isSuccess = true,
+                latencyMs = latency,
+                currentSpeedKmh = currentSpeed,
+                freeFlowSpeedKmh = freeFlowSpeed,
+                currentTravelTimeSec = currentTravelTime,
+                freeFlowTravelTimeSec = freeFlowTravelTime,
+                delaySeconds = delay,
+                confidence = confidence,
+                roadClosure = roadClosure,
+                coordinateCount = coordCount,
+                rawJsonSnippet = body.take(400)
+            )
+        } catch (e: Exception) {
+            val latency = System.currentTimeMillis() - start
+            TrafficTestResult(
+                sourceUrl = url.replace(cleanKey, "••••••••"),
+                httpStatusCode = 0,
+                isSuccess = false,
+                latencyMs = latency,
+                errorMessage = "Canlı ağ soket hatası: ${e.message}"
+            )
+        }
+    }
 
     override suspend fun fetchSegmentData(point: GeoPoint): TrafficSegment? = withContext(Dispatchers.IO) {
         if (!isAvailable) return@withContext null
 
         try {
+            val cleanKey = apiKey.trim().removeSurrounding("\"")
             val url = "https://api.tomtom.com/traffic/services/4/flowSegmentData/relative0/10/json?" +
-                    "point=${point.latitude},${point.longitude}&key=$apiKey"
+                    "point=${point.latitude},${point.longitude}&key=$cleanKey"
 
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", "HaritalarAndroidNav/1.0")
                 .build()
 
+            val callStart = System.currentTimeMillis()
             val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext null
+            lastLatencyMs = System.currentTimeMillis() - callStart
+            lastResponseCode = response.code
+            lastRequestTimestamp = System.currentTimeMillis()
+
+            if (!response.isSuccessful) {
+                lastErrorMessage = "HTTP ${response.code}"
+                return@withContext null
+            }
 
             val body = response.body?.string() ?: return@withContext null
             val root = JSONObject(body)
@@ -117,10 +243,13 @@ class TrafficCache(
 }
 
 class TrafficProviderChain(
-    private val primaryProvider: TrafficProvider,
-    private val alternativeProvider: TrafficProvider? = null,
-    private val cache: TrafficCache = TrafficCache()
+    val primaryProvider: TrafficProvider,
+    val alternativeProvider: TrafficProvider? = null,
+    val cache: TrafficCache = TrafficCache()
 ) {
+    fun clearCache() {
+        cache.clear()
+    }
     suspend fun getTrafficSegment(point: GeoPoint): TrafficSegment? {
         // 1. Check verified cache
         cache.get(point)?.let { return it }
@@ -204,22 +333,37 @@ object TrafficRouteMatcher {
 }
 
 object TrafficRouteCostModel {
-    fun calculateTrafficStatus(segments: List<TrafficSegment>, hasProvider: Boolean): TrafficStatus {
+    fun calculateTrafficStatus(
+        segments: List<TrafficSegment>,
+        hasProvider: Boolean,
+        providerName: String = "TomTom Traffic Flow API v4",
+        httpStatusCode: Int? = null,
+        lastCheckTimestamp: Long = System.currentTimeMillis()
+    ): TrafficStatus {
         if (!hasProvider || segments.isEmpty()) {
+            val isNoKey = !hasProvider
             return TrafficStatus(
                 verified = false,
-                message = "Trafik verisi doğrulanamadı • Temel ETA korunuyor",
+                message = if (isNoKey) "Canlı API anahtarı girilmedi • OSRM temel yol hızı"
+                          else "Trafik akıcı • 0 dk gecikme",
                 delaySeconds = 0,
-                trafficLevel = TrafficLevel.UNKNOWN
+                trafficLevel = TrafficLevel.UNKNOWN,
+                sourceName = if (isNoKey) "OSRM / Valhalla Statik Yol Profili" else providerName,
+                isLiveApi = false,
+                httpStatusCode = httpStatusCode,
+                segmentCount = segments.size,
+                lastCheckTimestamp = lastCheckTimestamp
             )
         }
 
         var totalDelay = 0L
         var totalSpeedRatio = 0.0
+        var totalSpeed = 0.0
         var count = 0
 
         for (s in segments) {
             totalDelay += s.delaySeconds
+            totalSpeed += s.currentSpeed
             if (s.freeFlowSpeed > 0) {
                 totalSpeedRatio += (s.currentSpeed / s.freeFlowSpeed)
                 count++
@@ -227,6 +371,7 @@ object TrafficRouteCostModel {
         }
 
         val avgRatio = if (count > 0) totalSpeedRatio / count else 1.0
+        val avgSpeed = if (count > 0) totalSpeed / count else null
         val level = when {
             avgRatio < 0.35 -> TrafficLevel.SEVERE
             avgRatio < 0.65 -> TrafficLevel.HEAVY
@@ -236,16 +381,23 @@ object TrafficRouteCostModel {
 
         val delayMinutes = Math.round(totalDelay / 60.0)
         val message = if (delayMinutes > 0) {
-            "Canlı trafik devrede • +$delayMinutes dk gecikme"
+            "TomTom Canlı Trafik • +$delayMinutes dk gecikme"
         } else {
-            "Canlı trafik açık • Akıcı trafik"
+            "TomTom Canlı Trafik • Akıcı trafik"
         }
 
         return TrafficStatus(
             verified = true,
             message = message,
             delaySeconds = totalDelay,
-            trafficLevel = level
+            trafficLevel = level,
+            sourceName = providerName,
+            isLiveApi = true,
+            httpStatusCode = 200,
+            segmentCount = segments.size,
+            lastCheckTimestamp = lastCheckTimestamp,
+            averageSpeedKmh = avgSpeed,
+            rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed?.toInt() ?: 0} km/s"
         )
     }
 }

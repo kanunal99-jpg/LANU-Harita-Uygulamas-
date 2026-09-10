@@ -58,24 +58,35 @@ class ExampleRobolectricTest {
     }
 
     @Test
-    fun `test traffic cost model`() {
-        // When no provider is configured
+    fun `test traffic cost model with in-memory stub segments`() {
+        // [STUB/MOCK TEST NOTE]: Bu bir birim testidir ve izole mantığı test etmek için
+        // hafıza-içi Mock/Stub TrafficSegment verisi kullanmaktadır. Canlı ağ kanıtı DEĞİLDİR.
+        
+        // 1. Durum: API anahtarı veya canlı sağlayıcı olmadığında (Fallback profili)
         val fallbackStatus = TrafficRouteCostModel.calculateTrafficStatus(emptyList(), hasProvider = false)
-        assertFalse(fallbackStatus.verified)
+        assertFalse("Sağlayıcı yokken verified false olmalı", fallbackStatus.verified)
+        assertFalse("Sağlayıcı yokken isLiveApi false olmalı", fallbackStatus.isLiveApi)
         assertEquals(0L, fallbackStatus.delaySeconds)
         assertEquals(TrafficLevel.UNKNOWN, fallbackStatus.trafficLevel)
+        assertEquals("OSRM / Valhalla Statik Yol Profili", fallbackStatus.sourceName)
 
-        // When provider data is present
-        val segment = TrafficSegment(
+        // 2. Durum: Canlı sağlayıcıdan veri geldiğinde maliyet modeli hesabı (Stub veriyle)
+        val stubSegment = TrafficSegment(
             coordinates = listOf(GeoPoint(41.0, 29.0), GeoPoint(41.01, 29.01)),
             currentSpeed = 20.0,
             freeFlowSpeed = 60.0,
             delaySeconds = 180L
         )
-        val activeStatus = TrafficRouteCostModel.calculateTrafficStatus(listOf(segment), hasProvider = true)
-        assertTrue(activeStatus.verified)
+        val activeStatus = TrafficRouteCostModel.calculateTrafficStatus(
+            listOf(stubSegment),
+            hasProvider = true,
+            providerName = "TomTom Traffic Flow API v4"
+        )
+        assertTrue("Veri varken verified true olmalı", activeStatus.verified)
+        assertTrue("Veri varken isLiveApi true olmalı", activeStatus.isLiveApi)
         assertEquals(180L, activeStatus.delaySeconds)
         assertEquals(TrafficLevel.SEVERE, activeStatus.trafficLevel)
+        assertEquals("TomTom Traffic Flow API v4", activeStatus.sourceName)
     }
 
     @Test
