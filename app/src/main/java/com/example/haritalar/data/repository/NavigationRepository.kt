@@ -44,7 +44,9 @@ class NavigationRepository(context: Context) {
     fun getEffectiveTomTomKey(): String {
         val custom = prefs.getString("custom_tomtom_api_key", null)?.trim()
         if (!custom.isNullOrBlank()) return custom
-        return BuildConfig.TOMTOM_API_KEY.trim().removeSurrounding("\"")
+        val buildKey = BuildConfig.TOMTOM_API_KEY.trim().removeSurrounding("\"")
+        if (buildKey == "MY_TOMTOM_API_KEY" || buildKey == "null") return ""
+        return buildKey
     }
 
     fun setCustomTomTomKey(newKey: String) {

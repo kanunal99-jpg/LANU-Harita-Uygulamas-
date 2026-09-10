@@ -29,7 +29,7 @@ class TomTomTrafficProvider(
 ) : TrafficProvider {
     override val name: String = "TomTom Traffic Flow API v4"
     override val isAvailable: Boolean
-        get() = apiKey.isNotBlank() && apiKey != "\"\"" && apiKey != "\"null\"" && apiKey != "null"
+        get() = apiKey.isNotBlank() && apiKey != "\"\"" && apiKey != "\"null\"" && apiKey != "null" && apiKey != "MY_TOMTOM_API_KEY"
 
     var lastResponseCode: Int? = null
         private set
