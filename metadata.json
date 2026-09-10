@@ -1,0 +1,7 @@
+{
+  "name": "Haritalar",
+  "description": "Profesyonel Android Navigasyon Uygulaması. GPS takip, canlı rota alternatifleri, Türkçe sesli yönlendirme ve harita katmanları.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
