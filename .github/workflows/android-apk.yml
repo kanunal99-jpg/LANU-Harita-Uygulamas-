@@ -6,10 +6,11 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-apk:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -43,7 +44,21 @@ jobs:
         env:
           CI: true
 
-      - name: Upload APK
+      - name: Publish latest APK into repository
+        run: |
+          mkdir -p downloads
+          cp app/build/outputs/apk/debug/*.apk downloads/LANU-Harita-latest.apk
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/LANU-Harita-latest.apk
+          if git diff --cached --quiet; then
+            echo 'APK unchanged; no repository commit needed.'
+          else
+            git commit -m 'build: publish latest LANU Harita APK [skip ci]'
+            git push
+          fi
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: lanu-harita-debug-apk
