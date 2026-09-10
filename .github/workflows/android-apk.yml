@@ -58,6 +58,20 @@ jobs:
             git push
           fi
 
+      - name: Publish APK to latest GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: LANU Harita — Latest APK
+          body: |
+            Bu yayın her başarılı Android APK derlemesinde güncellenir.
+
+            **Güncel APK:** `LANU-Harita-latest.apk`
+          files: app/build/outputs/apk/debug/*.apk
+          make_latest: true
+          prerelease: false
+          draft: false
+
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
