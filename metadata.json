@@ -1,6 +1,6 @@
 {
-  "name": "Haritalar",
-  "description": "Profesyonel Android Navigasyon Uygulaması. GPS takip, canlı rota alternatifleri, Türkçe sesli yönlendirme ve harita katmanları.",
+  "name": "Lanu Harita",
+  "description": "Profesyonel Navigasyon Uygulaması. GPS takip, 3D/2D harita, canlı rota alternatifleri, dinamik trafik, şerit yönlendirme ve Türkçe sesli navigasyon.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

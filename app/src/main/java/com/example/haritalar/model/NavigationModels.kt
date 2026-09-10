@@ -89,12 +89,40 @@ data class GeoPoint(
     }
 }
 
+enum class LaneDirection {
+    STRAIGHT,
+    LEFT,
+    SLIGHT_LEFT,
+    SHARP_LEFT,
+    RIGHT,
+    SLIGHT_RIGHT,
+    SHARP_RIGHT,
+    UTURN
+}
+
+data class LaneInfo(
+    val directions: List<LaneDirection>,
+    val isActive: Boolean,
+    val isRecommended: Boolean = isActive
+)
+
+data class TripSummary(
+    val totalDistanceMeters: Double,
+    val totalDurationSeconds: Long,
+    val averageSpeedKmh: Double,
+    val startAddress: String,
+    val destinationAddress: String,
+    val completedTimestamp: Long = System.currentTimeMillis()
+)
+
 data class TurnManeuver(
     val instruction: String,
     val distanceMeters: Double,
     val type: ManeuverType,
     val point: GeoPoint,
-    val roadName: String = ""
+    val roadName: String = "",
+    val lanes: List<LaneInfo> = emptyList(),
+    val speedLimitKmh: Int? = null
 )
 
 data class RouteOption(

@@ -167,6 +167,7 @@ fun HaritalarNavigationApp(
                     progress = uiState.navigationProgress,
                     isOffRoute = uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING ||
                             (uiState.navigationProgress?.isOffRoute == true),
+                    isGpsWeak = uiState.userLocation?.isGpsWeak == true,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
@@ -193,7 +194,7 @@ fun HaritalarNavigationApp(
                     )
             )
 
-            // 5. Route Selection Carousel (Showing the 7 calculated route alternatives)
+            // 5. Route Selection Carousel (Showing the calculated route alternatives)
             AnimatedVisibility(
                 visible = uiState.navigationState == NavigationState.ROUTE_SELECTION && uiState.routeOptions.isNotEmpty(),
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -221,7 +222,30 @@ fun HaritalarNavigationApp(
                     progress = uiState.navigationProgress,
                     speedKmh = uiState.userLocation?.speedKmh ?: 0f,
                     trafficStatus = currentTrafficStatus,
+                    isMuted = uiState.isMuted,
+                    onToggleMute = { viewModel.toggleMute() },
+                    onOpenSearchAlongRoute = { viewModel.openSearchAlongRoute() },
                     onStopNavigation = { viewModel.stopNavigation() }
+                )
+            }
+
+            // 7. Search Along Route Dialog
+            if (uiState.isSearchAlongRouteOpen) {
+                SearchAlongRouteDialog(
+                    alongRoutePois = uiState.alongRoutePois,
+                    isLoading = uiState.isLoadingAlongRoute,
+                    onSelectCategory = { cat -> viewModel.searchAlongRouteCategory(cat) },
+                    onSelectPoi = { poi -> viewModel.selectAlongRoutePoi(poi) },
+                    onDismiss = { viewModel.closeSearchAlongRoute() }
+                )
+            }
+
+            // 8. Trip Summary Dialog on Arrival
+            val tripSummary = uiState.tripSummary
+            if (uiState.navigationState == NavigationState.ARRIVED && tripSummary != null) {
+                TripSummaryDialog(
+                    summary = tripSummary,
+                    onDismiss = { viewModel.dismissTripSummary() }
                 )
             }
 

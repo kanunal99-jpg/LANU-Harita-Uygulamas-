@@ -5,6 +5,7 @@ import com.example.haritalar.model.ManeuverType
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.TurnManeuver
+import com.example.haritalar.navigation.LaneGuidanceHelper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -177,13 +178,19 @@ class ValhallaRoutingProvider(
                     val shapeIndex = m.optInt("begin_shape_index", 0)
                     val point = if (shapeIndex in decodedGeometry.indices) decodedGeometry[shapeIndex] else start
 
+                    val mType = mapValhallaManeuverType(typeCode)
+                    val lanes = LaneGuidanceHelper.generateLanesForManeuver(mType, road)
+                    val speedLimit = LaneGuidanceHelper.determineSpeedLimit(road)
+
                     maneuvers.add(
                         TurnManeuver(
                             instruction = instruction,
                             distanceMeters = lengthKm * 1000.0,
-                            type = mapValhallaManeuverType(typeCode),
+                            type = mType,
                             point = point,
-                            roadName = road
+                            roadName = road,
+                            lanes = lanes,
+                            speedLimitKmh = speedLimit
                         )
                     )
                 }
@@ -320,13 +327,19 @@ class OsrmRoutingProvider(
                             }
 
                             val instruction = formatOsrmInstruction(manTypeStr, modifier, stepName)
+                            val mType = mapOsrmManeuverType(manTypeStr, modifier)
+                            val lanes = LaneGuidanceHelper.generateLanesForManeuver(mType, stepName)
+                            val speedLimit = LaneGuidanceHelper.determineSpeedLimit(stepName)
+
                             maneuvers.add(
                                 TurnManeuver(
                                     instruction = instruction,
                                     distanceMeters = stepDist,
-                                    type = mapOsrmManeuverType(manTypeStr, modifier),
+                                    type = mType,
                                     point = stepPoint,
-                                    roadName = stepName
+                                    roadName = stepName,
+                                    lanes = lanes,
+                                    speedLimitKmh = speedLimit
                                 )
                             )
                         }

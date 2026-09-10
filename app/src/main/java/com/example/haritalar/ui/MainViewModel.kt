@@ -16,6 +16,7 @@ import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
+import com.example.haritalar.model.TripSummary
 import com.example.haritalar.navigation.AppLocationManager
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationProgress
@@ -51,7 +52,11 @@ data class MainUiState(
     val isSimulationActive: Boolean = false,
     val activeGenerationId: Long = 0L,
     val statusMessage: String? = null,
-    val isLoadingRoutes: Boolean = false
+    val isLoadingRoutes: Boolean = false,
+    val tripSummary: TripSummary? = null,
+    val isSearchAlongRouteOpen: Boolean = false,
+    val alongRoutePois: List<PoiItem> = emptyList(),
+    val isLoadingAlongRoute: Boolean = false
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -71,7 +76,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val navigationEngine = NavigationEngine(
         ttsManager = ttsManager,
         onOffRouteDetected = { currentPoint -> handleOffRoute(currentPoint) },
-        onArrivalDetected = { handleArrival() }
+        onArrivalDetected = { summary -> handleArrival(summary) }
     )
 
     private var searchJob: Job? = null
@@ -83,10 +88,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             locationManager.userLocation.collect { loc ->
                 if (loc != null) {
-                    _uiState.value = _uiState.value.copy(userLocation = loc)
                     if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
                         val progress = navigationEngine.processLocationUpdate(loc)
-                        _uiState.value = _uiState.value.copy(navigationProgress = progress)
+                        val displayLoc = if (progress.snappedLocation != null) {
+                            loc.copy(
+                                point = progress.snappedLocation,
+                                bearing = progress.snappedBearing ?: loc.bearing
+                            )
+                        } else {
+                            loc
+                        }
+                        _uiState.value = _uiState.value.copy(
+                            userLocation = displayLoc,
+                            navigationProgress = progress
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(userLocation = loc)
                     }
                 }
             }
@@ -211,7 +228,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D,
             mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false,
-            statusMessage = null
+            statusMessage = null,
+            isSearchAlongRouteOpen = false,
+            alongRoutePois = emptyList(),
+            isLoadingAlongRoute = false
         )
     }
 
@@ -249,11 +269,53 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private fun handleArrival() {
+    private fun handleArrival(summary: TripSummary) {
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.ARRIVED,
+            tripSummary = summary,
             statusMessage = "Hedefinize ulaştınız!"
         )
+    }
+
+    fun dismissTripSummary() {
+        stopNavigation()
+        _uiState.value = _uiState.value.copy(tripSummary = null)
+    }
+
+    fun openSearchAlongRoute() {
+        _uiState.value = _uiState.value.copy(isSearchAlongRouteOpen = true)
+    }
+
+    fun closeSearchAlongRoute() {
+        _uiState.value = _uiState.value.copy(
+            isSearchAlongRouteOpen = false,
+            alongRoutePois = emptyList(),
+            isLoadingAlongRoute = false
+        )
+    }
+
+    fun searchAlongRouteCategory(category: PoiCategory) {
+        val focus = _uiState.value.userLocation?.point ?: return
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isLoadingAlongRoute = true)
+            val pois = repository.fetchPois(focus, category)
+            _uiState.value = _uiState.value.copy(
+                alongRoutePois = pois,
+                isLoadingAlongRoute = false
+            )
+        }
+    }
+
+    fun selectAlongRoutePoi(poi: PoiItem) {
+        closeSearchAlongRoute()
+        val dest = SearchResult(
+            id = poi.id,
+            name = poi.name,
+            displayName = poi.address ?: poi.name,
+            point = poi.point,
+            type = "poi"
+        )
+        selectSearchResult(dest)
     }
 
     private fun startPeriodicTrafficRefresh() {

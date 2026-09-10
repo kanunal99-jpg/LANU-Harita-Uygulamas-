@@ -72,7 +72,11 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener {
     }
 
     fun announceArrival() {
-        speak("Hedefinize ulaştınız. Haritalar iyi günler diler.", isPriority = true)
+        speak("Hedefinize ulaştınız. Lanu Harita iyi yolculuklar diler.", isPriority = true)
+    }
+
+    fun announceLaneGuidance(laneHint: String) {
+        speak(laneHint, isPriority = false)
     }
 
     fun stop() {

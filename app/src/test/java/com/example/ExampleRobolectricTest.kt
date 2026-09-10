@@ -27,7 +27,7 @@ class ExampleRobolectricTest {
     fun `read string from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val appName = context.getString(R.string.app_name)
-        assertEquals("Haritalar", appName)
+        assertEquals("Lanu Harita", appName)
     }
 
     @Test
@@ -101,5 +101,33 @@ class ExampleRobolectricTest {
         assertEquals("Evim", list[0].title)
 
         db.close()
+    }
+
+    @Test
+    fun `test lane guidance helper and speed limits`() {
+        // Highway speed limit
+        val otoyolLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Kuzey Marmara Otoyolu")
+        assertEquals(130, otoyolLimit)
+
+        // Boulevard speed limit
+        val bulvarLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Barbaros Bulvarı")
+        assertEquals(70, bulvarLimit)
+
+        // Street speed limit
+        val sokakLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Karanfil Sokak")
+        assertEquals(50, sokakLimit)
+
+        // Lane generation for right turn
+        val lanesRight = com.example.haritalar.navigation.LaneGuidanceHelper.generateLanesForManeuver(
+            com.example.haritalar.model.ManeuverType.RIGHT,
+            "Barbaros Bulvarı"
+        )
+        assertTrue(lanesRight.isNotEmpty())
+        assertTrue(lanesRight.last().isActive)
+
+        // Voice hint generation
+        val voiceHint = com.example.haritalar.navigation.LaneGuidanceHelper.buildLaneVoiceHint(lanesRight)
+        assertNotNull(voiceHint)
+        assertTrue(voiceHint!!.contains("şerit"))
     }
 }
