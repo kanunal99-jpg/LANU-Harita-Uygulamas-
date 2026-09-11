@@ -7,6 +7,7 @@ import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
 import com.example.haritalar.model.CameraMode
+import com.example.haritalar.model.DepartureGuidance
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.MapTrackingMode
 import com.example.haritalar.model.NavigationState
@@ -19,9 +20,12 @@ import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
 import com.example.haritalar.model.TripSummary
 import com.example.haritalar.navigation.AppLocationManager
+import com.example.haritalar.navigation.CompassHeadingSensor
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
+import com.example.haritalar.navigation.VehicleHeadingManager
+import com.example.haritalar.navigation.VehicleHeadingState
 import com.example.haritalar.voice.TurkishTtsManager
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -34,6 +38,9 @@ import kotlinx.coroutines.launch
 
 data class MainUiState(
     val userLocation: UserLocationData? = null,
+    val vehicleHeadingState: VehicleHeadingState = VehicleHeadingState(),
+    val departureGuidance: DepartureGuidance? = null,
+    val isWrongWay: Boolean = false,
     val searchQuery: String = "",
     val searchResults: List<SearchResult> = emptyList(),
     val isSearching: Boolean = false,
@@ -68,6 +75,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = NavigationRepository(application)
     val locationManager = AppLocationManager(application)
     val ttsManager = TurkishTtsManager(application)
+    val compassSensor = CompassHeadingSensor(application)
+    val vehicleHeadingManager = VehicleHeadingManager(compassSensor)
 
     private val _uiState = MutableStateFlow(MainUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
@@ -93,23 +102,55 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             locationManager.userLocation.collect { loc ->
                 if (loc != null) {
+                    val headingState = vehicleHeadingManager.processLocation(loc)
                     if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
                         val progress = navigationEngine.processLocationUpdate(loc)
+                        val wrongWay = vehicleHeadingManager.evaluateWrongWay(
+                            currentHeading = headingState.heading,
+                            routeSegmentBearing = progress.snappedBearing,
+                            speedKmh = loc.speedKmh
+                        )
+
+                        // Clear departure banner once vehicle has proceeded beyond start (~65m)
+                        val startDist = _uiState.value.selectedRoute?.geometry?.firstOrNull()?.distanceTo(loc.point) ?: 100.0
+                        val currentDep = if (startDist > 65.0) null else _uiState.value.departureGuidance
+
                         val displayLoc = if (progress.snappedLocation != null) {
                             loc.copy(
                                 point = progress.snappedLocation,
-                                bearing = progress.snappedBearing ?: loc.bearing
+                                bearing = headingState.heading
                             )
                         } else {
-                            loc
+                            loc.copy(bearing = headingState.heading)
                         }
                         _uiState.value = _uiState.value.copy(
                             userLocation = displayLoc,
-                            navigationProgress = progress
+                            vehicleHeadingState = headingState,
+                            navigationProgress = progress,
+                            departureGuidance = currentDep,
+                            isWrongWay = wrongWay
                         )
                     } else {
-                        _uiState.value = _uiState.value.copy(userLocation = loc)
+                        _uiState.value = _uiState.value.copy(
+                            userLocation = loc.copy(bearing = headingState.heading),
+                            vehicleHeadingState = headingState
+                        )
                     }
+                }
+            }
+        }
+
+        // Observe compass sensor updates when vehicle is stopped or at low speed (< 4.5 km/h)
+        viewModelScope.launch {
+            compassSensor.sensorHeading.collect { _ ->
+                val currentLoc = _uiState.value.userLocation
+                if (currentLoc != null && currentLoc.speedKmh < 4.5f) {
+                    val headingState = vehicleHeadingManager.processLocation(currentLoc)
+                    val updatedLoc = currentLoc.copy(bearing = headingState.heading)
+                    _uiState.value = _uiState.value.copy(
+                        userLocation = updatedLoc,
+                        vehicleHeadingState = headingState
+                    )
                 }
             }
         }
@@ -207,10 +248,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startNavigation() {
         val route = _uiState.value.selectedRoute ?: return
+        val userLoc = _uiState.value.userLocation
+        val userPoint = userLoc?.point ?: route.geometry.firstOrNull() ?: GeoPoint(41.0082, 28.9784)
+        val currentHeading = _uiState.value.vehicleHeadingState.heading
+
+        val depGuidance = VehicleHeadingManager.buildDepartureGuidance(
+            vehicleHeading = currentHeading,
+            route = route,
+            userPoint = userPoint
+        )
+
+        vehicleHeadingManager.start()
+
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.NAVIGATING,
             cameraMode = CameraMode.THREE_D, // 3D perspective during navigation as required!
-            mapTrackingMode = MapTrackingMode.FOLLOW_BEARING
+            mapTrackingMode = MapTrackingMode.FOLLOW_BEARING,
+            departureGuidance = depGuidance,
+            isWrongWay = depGuidance.isWrongWay
         )
 
         navigationEngine.startNavigation(route)
@@ -218,6 +273,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopNavigation() {
+        vehicleHeadingManager.stop()
+        vehicleHeadingManager.resetSession()
         navigationEngine.stop()
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
@@ -236,11 +293,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = null,
             isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(),
-            isLoadingAlongRoute = false
+            isLoadingAlongRoute = false,
+            departureGuidance = null,
+            isWrongWay = false
         )
     }
 
     private fun handleOffRoute(currentPoint: GeoPoint) {
+        vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
         val genId = ++generationCounter
 
@@ -484,6 +544,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        vehicleHeadingManager.stop()
         locationManager.stopLocationUpdates()
         ttsManager.shutdown()
         navigationEngine.stop()

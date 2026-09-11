@@ -46,6 +46,11 @@ class NavigationEngine(
     private var announced50m = false
     private var announcedLane = false
 
+    // Announcement session tracking
+    private var hasAnnouncedStartSequence = false
+    private var hasAnnouncedArrival = false
+    private var arrivalConsecutiveCount = 0
+
     // Trip statistics tracking
     private var tripStartTime: Long = 0L
     private var accumulatedDistanceMeters: Double = 0.0
@@ -65,11 +70,15 @@ class NavigationEngine(
         maxSpeedKmh = 0f
         sumSpeedKmh = 0.0
         speedSampleCount = 0
+        hasAnnouncedArrival = false
+        arrivalConsecutiveCount = 0
         resetVoiceGates()
 
-        // Announce route start
-        val firstInstruction = route.maneuvers.firstOrNull()?.instruction ?: "Rotaya doğru hareket edin"
-        ttsManager.speak("Navigasyon başlatıldı. $firstInstruction", isPriority = true)
+        // Play pre-trip safety announcement followed by route start greeting once per session
+        if (!hasAnnouncedStartSequence) {
+            hasAnnouncedStartSequence = true
+            ttsManager.playNavigationStartSequence()
+        }
     }
 
     fun updateRoute(newRoute: RouteOption) {
@@ -77,6 +86,7 @@ class NavigationEngine(
         currentManeuverIndex = 0
         offRouteConsecutiveCount = 0
         resetVoiceGates()
+        // Note: Safety & start announcements are not repeated on reroute
     }
 
     private fun resetVoiceGates() {
@@ -114,8 +124,19 @@ class NavigationEngine(
             speedSampleCount++
         }
 
-        // 1. Arrival detection
-        if (distToDest <= arrivalThresholdMeters) {
+        // 1. Arrival detection (with consecutive count & accuracy filter to prevent false arrival on GPS spikes)
+        val isGpsAccurate = location.accuracyMeters <= 45f
+        val isNearDest = distToDest <= arrivalThresholdMeters
+
+        if (isNearDest && isGpsAccurate) {
+            arrivalConsecutiveCount++
+        } else if (distToDest > arrivalThresholdMeters + 10.0) {
+            arrivalConsecutiveCount = 0
+        }
+
+        val isArrivalConfirmed = (arrivalConsecutiveCount >= 2) || (distToDest <= 15.0 && isGpsAccurate)
+
+        if (isArrivalConfirmed) {
             val elapsedSec = Math.max(1L, (System.currentTimeMillis() - tripStartTime) / 1000L)
             val avgSpeedKmh = if (speedSampleCount > 0) {
                 sumSpeedKmh / speedSampleCount
@@ -131,8 +152,12 @@ class NavigationEngine(
                 destinationAddress = route.title
             )
 
-            ttsManager.announceArrival()
-            onArrivalDetected(summary)
+            // Ensure arrival announcement only fires once per session
+            if (!hasAnnouncedArrival) {
+                hasAnnouncedArrival = true
+                ttsManager.announceArrival()
+                onArrivalDetected(summary)
+            }
 
             return NavigationProgress(
                 currentManeuver = TurnManeuver("Hedefe ulaştınız", 0.0, ManeuverType.REACH_DESTINATION, destination),
@@ -236,6 +261,9 @@ class NavigationEngine(
         currentManeuverIndex = 0
         offRouteConsecutiveCount = 0
         lastProcessedPoint = null
+        hasAnnouncedStartSequence = false
+        hasAnnouncedArrival = false
+        arrivalConsecutiveCount = 0
     }
 
     private data class SnapResult(

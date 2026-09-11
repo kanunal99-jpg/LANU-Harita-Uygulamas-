@@ -32,6 +32,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.haritalar.model.DepartureGuidance
+import com.example.haritalar.model.DepartureTurn
 import com.example.haritalar.model.LaneDirection
 import com.example.haritalar.model.LaneInfo
 import com.example.haritalar.model.ManeuverType
@@ -49,6 +51,8 @@ fun DrivingTopInstructionBanner(
     progress: NavigationProgress?,
     isOffRoute: Boolean,
     isGpsWeak: Boolean = false,
+    departureGuidance: DepartureGuidance? = null,
+    isWrongWay: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     if (progress == null) return
@@ -62,7 +66,87 @@ fun DrivingTopInstructionBanner(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
-        // Weak GPS alert banner if needed
+        // 1. Wrong-Way Warning Banner (High Priority Safety)
+        if (isWrongWay) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFFD32F2F),
+                contentColor = Color.White,
+                shadowElevation = 6.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+                    .testTag("wrong_way_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = "Ters Yön",
+                        modifier = Modifier.size(24.dp),
+                        tint = Color.Yellow
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column {
+                        Text(
+                            text = "TERS YÖN UYARISI",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Lütfen uygun ilk noktadan güvenle geriye dönün",
+                            fontSize = 12.sp,
+                            color = Color(0xFFFFEBEE)
+                        )
+                    }
+                }
+            }
+        }
+
+        // 2. Initial Departure Guidance Banner (Route start assistance)
+        if (departureGuidance != null && departureGuidance.turnType != DepartureTurn.STRAIGHT) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF0284C7),
+                contentColor = Color.White,
+                shadowElevation = 4.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 6.dp)
+                    .testTag("departure_guidance_banner")
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = when (departureGuidance.turnType) {
+                            DepartureTurn.SLIGHT_RIGHT, DepartureTurn.RIGHT, DepartureTurn.SHARP_RIGHT ->
+                                Icons.AutoMirrored.Filled.ArrowForward
+                            DepartureTurn.SLIGHT_LEFT, DepartureTurn.LEFT, DepartureTurn.SHARP_LEFT ->
+                                Icons.AutoMirrored.Filled.ArrowBack
+                            DepartureTurn.UTURN -> Icons.Default.Undo
+                            else -> Icons.Default.Navigation
+                        },
+                        contentDescription = "Başlangıç Yönü",
+                        modifier = Modifier.size(20.dp),
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Rota Başlangıcı: ${departureGuidance.instruction}",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                }
+            }
+        }
+
+        // 3. Weak GPS alert banner if needed
         if (isGpsWeak) {
             Surface(
                 shape = RoundedCornerShape(12.dp),

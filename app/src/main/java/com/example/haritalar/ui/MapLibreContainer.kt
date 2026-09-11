@@ -1,6 +1,11 @@
 package com.example.haritalar.ui
 
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Path
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -28,10 +33,12 @@ import org.maplibre.android.geometry.LatLng
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.Style
+import org.maplibre.android.style.expressions.Expression.get
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.*
+import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
 private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
@@ -53,6 +60,8 @@ private const val LAYER_POIS = "layer_pois"
 private const val SRC_USER_LOC = "src_user_loc"
 private const val LAYER_USER_LOC_PULSE = "layer_user_loc_pulse"
 private const val LAYER_USER_LOC = "layer_user_loc"
+private const val LAYER_VEHICLE_ARROW = "layer_vehicle_arrow"
+private const val ICON_VEHICLE_ARROW = "icon_vehicle_arrow"
 
 private const val SRC_DEST_MARKER = "src_dest_marker"
 private const val LAYER_DEST_MARKER = "layer_dest_marker"
@@ -71,6 +80,7 @@ fun MapLibreContainer(
     cameraMode: CameraMode,
     mapTrackingMode: MapTrackingMode,
     navigationState: NavigationState,
+    vehicleHeading: Float = userLocation?.bearing ?: 0f,
     onMapClick: (GeoPoint) -> Unit,
     onMapDrag: () -> Unit,
     modifier: Modifier = Modifier
@@ -97,7 +107,7 @@ fun MapLibreContainer(
 
                 map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
                     mapStyle = style
-                    setupLayers(style)
+                    setupLayers(style, context)
                 }
 
                 map.addOnMapClickListener { latLng ->
@@ -171,12 +181,27 @@ fun MapLibreContainer(
         }
     }
 
-    // Update User Location layer
-    LaunchedEffect(userLocation, mapStyle) {
+    // Update User Location layer (Dynamic Arrow Puck during Navigation, Dot when Free)
+    LaunchedEffect(userLocation, vehicleHeading, navigationState, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_USER_LOC) ?: return@LaunchedEffect
+        val pulseLayer = style.getLayer(LAYER_USER_LOC_PULSE)
+        val userLayer = style.getLayer(LAYER_USER_LOC)
+        val arrowLayer = style.getLayer(LAYER_VEHICLE_ARROW)
+
+        val isNavigating = (navigationState == NavigationState.NAVIGATING)
+
+        // Stale puck prevention: only show vehicle arrow during active navigation with valid location
+        pulseLayer?.setProperties(visibility(if (isNavigating || userLocation == null) Property.NONE else Property.VISIBLE))
+        userLayer?.setProperties(visibility(if (isNavigating || userLocation == null) Property.NONE else Property.VISIBLE))
+        arrowLayer?.setProperties(visibility(if (isNavigating && userLocation != null) Property.VISIBLE else Property.NONE))
+
         if (userLocation != null) {
-            val geoJson = createPointGeoJson(userLocation.point)
+            val geoJson = createUserLocationGeoJson(
+                point = userLocation.point,
+                bearing = vehicleHeading,
+                isNavigating = isNavigating
+            )
             src.setGeoJson(geoJson)
         } else {
             src.setGeoJson(createEmptyFeatureCollection())
@@ -250,7 +275,7 @@ fun MapLibreContainer(
     )
 }
 
-private fun setupLayers(style: Style) {
+private fun setupLayers(style: Style, context: Context) {
     // 1. Alternative routes source & layer (Gray)
     val altSrc = GeoJsonSource(SRC_ALT_ROUTES, createEmptyFeatureCollection())
     style.addSource(altSrc)
@@ -329,10 +354,11 @@ private fun setupLayers(style: Style) {
     }
     style.addLayer(poiLayer)
 
-    // 6. User Location Puck
+    // 6. User Location Puck & Vehicle Arrow
     val userSrc = GeoJsonSource(SRC_USER_LOC, createEmptyFeatureCollection())
     style.addSource(userSrc)
 
+    // Standard blue pulsing dot (Free mode / route selection)
     val pulseLayer = CircleLayer(LAYER_USER_LOC_PULSE, SRC_USER_LOC).apply {
         setProperties(
             circleRadius(18f),
@@ -351,6 +377,119 @@ private fun setupLayers(style: Style) {
         )
     }
     style.addLayer(userLayer)
+
+    // Dynamic Vehicle Navigation Arrow (Navigating mode)
+    // Register custom 3D arrow puck icon
+    val arrowBitmap = createVehicleArrowBitmap(context)
+    style.addImage(ICON_VEHICLE_ARROW, arrowBitmap)
+
+    val arrowLayer = SymbolLayer(LAYER_VEHICLE_ARROW, SRC_USER_LOC).apply {
+        setProperties(
+            iconImage(ICON_VEHICLE_ARROW),
+            iconRotate(get("bearing")),
+            iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
+            iconAllowOverlap(true),
+            iconIgnorePlacement(true),
+            iconAnchor(Property.ICON_ANCHOR_CENTER),
+            visibility(Property.NONE)
+        )
+    }
+    style.addLayer(arrowLayer)
+}
+
+private fun createUserLocationGeoJson(point: GeoPoint, bearing: Float, isNavigating: Boolean): String {
+    val feature = JSONObject().apply {
+        put("type", "Feature")
+        put("properties", JSONObject().apply {
+            put("bearing", bearing.toDouble())
+            put("isNavigating", isNavigating)
+        })
+        put("geometry", JSONObject().apply {
+            put("type", "Point")
+            put("coordinates", JSONArray().apply {
+                put(point.longitude)
+                put(point.latitude)
+            })
+        })
+    }
+    return JSONObject().apply {
+        put("type", "FeatureCollection")
+        put("features", JSONArray().apply { put(feature) })
+    }.toString()
+}
+
+/**
+ * Creates high-visibility 3D Navigation Arrow Puck Bitmap with outer puck border,
+ * dual-tone 3D arrow facets, and soft drop shadow.
+ */
+fun createVehicleArrowBitmap(context: Context): Bitmap {
+    val density = context.resources.displayMetrics.density
+    val sizePx = (52 * density).toInt().coerceAtLeast(64)
+    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = sizePx / 2f
+    val cy = sizePx / 2f
+
+    // 1. Soft drop shadow (dark semi-transparent)
+    val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#44000000")
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy + (2.5f * density), 19f * density, shadowPaint)
+
+    // 2. Outer circular white puck backing for contrast on any map style
+    val puckWhitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.FILL
+    }
+    canvas.drawCircle(cx, cy, 19f * density, puckWhitePaint)
+
+    // 3. Subtle blue outline ring
+    val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#E0E7FF")
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f * density
+    }
+    canvas.drawCircle(cx, cy, 18.5f * density, ringPaint)
+
+    // 4. Directional Navigation Arrow (Pointing Up/North at 0 deg)
+    val pathLeft = Path().apply {
+        moveTo(cx, cy - 13f * density)
+        lineTo(cx - 9.5f * density, cy + 10f * density)
+        lineTo(cx, cy + 5.5f * density)
+        close()
+    }
+    val pathRight = Path().apply {
+        moveTo(cx, cy - 13f * density)
+        lineTo(cx, cy + 5.5f * density)
+        lineTo(cx + 9.5f * density, cy + 10f * density)
+        close()
+    }
+
+    // Left facet: Electric LANU Blue
+    val leftPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#007AFF")
+        style = Paint.Style.FILL
+    }
+    canvas.drawPath(pathLeft, leftPaint)
+
+    // Right facet: Deeper blue for 3D lighting
+    val rightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.parseColor("#0056B3")
+        style = Paint.Style.FILL
+    }
+    canvas.drawPath(pathRight, rightPaint)
+
+    // Center spine highlight
+    val spinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        style = Paint.Style.STROKE
+        strokeWidth = 1.6f * density
+        strokeCap = Paint.Cap.ROUND
+    }
+    canvas.drawLine(cx, cy - 11.5f * density, cx, cy + 4.5f * density, spinePaint)
+
+    return bitmap
 }
 
 private fun createEmptyFeatureCollection(): String = "{\"type\":\"FeatureCollection\",\"features\":[]}"

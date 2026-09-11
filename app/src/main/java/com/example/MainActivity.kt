@@ -127,6 +127,7 @@ fun HaritalarNavigationApp(
                 cameraMode = uiState.cameraMode,
                 mapTrackingMode = uiState.mapTrackingMode,
                 navigationState = uiState.navigationState,
+                vehicleHeading = uiState.vehicleHeadingState.heading,
                 onMapClick = { point ->
                     if (uiState.navigationState != NavigationState.NAVIGATING) {
                         viewModel.selectDestinationPoint(point)
@@ -168,6 +169,8 @@ fun HaritalarNavigationApp(
                     isOffRoute = uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING ||
                             (uiState.navigationProgress?.isOffRoute == true),
                     isGpsWeak = uiState.userLocation?.isGpsWeak == true,
+                    departureGuidance = uiState.departureGuidance,
+                    isWrongWay = uiState.isWrongWay,
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
