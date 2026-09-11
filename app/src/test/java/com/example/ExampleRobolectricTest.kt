@@ -20,7 +20,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [36])
+@Config(sdk = [35])
 class ExampleRobolectricTest {
 
     @Test
@@ -46,12 +46,10 @@ class ExampleRobolectricTest {
             GeoPoint(41.0150, 28.9850)
         )
 
-        // Point near route (< 40m)
         val nearPoint = GeoPoint(41.00825, 28.97845)
         val isNear = TrafficRouteMatcher.isPointNearPolyline(nearPoint, route, 40.0)
         assertTrue(isNear)
 
-        // Distant point (> 1km away)
         val farPoint = GeoPoint(41.0500, 29.0200)
         val isFarNear = TrafficRouteMatcher.isPointNearPolyline(farPoint, route, 40.0)
         assertFalse(isFarNear)
@@ -61,8 +59,6 @@ class ExampleRobolectricTest {
     fun `test traffic cost model with in-memory stub segments`() {
         // [STUB/MOCK TEST NOTE]: Bu bir birim testidir ve izole mantığı test etmek için
         // hafıza-içi Mock/Stub TrafficSegment verisi kullanmaktadır. Canlı ağ kanıtı DEĞİLDİR.
-        
-        // 1. Durum: API anahtarı veya canlı sağlayıcı olmadığında (Fallback profili)
         val fallbackStatus = TrafficRouteCostModel.calculateTrafficStatus(emptyList(), hasProvider = false)
         assertFalse("Sağlayıcı yokken verified false olmalı", fallbackStatus.verified)
         assertFalse("Sağlayıcı yokken isLiveApi false olmalı", fallbackStatus.isLiveApi)
@@ -70,7 +66,6 @@ class ExampleRobolectricTest {
         assertEquals(TrafficLevel.UNKNOWN, fallbackStatus.trafficLevel)
         assertEquals("OSRM / Valhalla Statik Yol Profili", fallbackStatus.sourceName)
 
-        // 2. Durum: Canlı sağlayıcıdan veri geldiğinde maliyet modeli hesabı (Stub veriyle)
         val stubSegment = TrafficSegment(
             coordinates = listOf(GeoPoint(41.0, 29.0), GeoPoint(41.01, 29.01)),
             currentSpeed = 20.0,
@@ -116,19 +111,15 @@ class ExampleRobolectricTest {
 
     @Test
     fun `test lane guidance helper and speed limits`() {
-        // Highway speed limit
         val otoyolLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Kuzey Marmara Otoyolu")
         assertEquals(130, otoyolLimit)
 
-        // Boulevard speed limit
         val bulvarLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Barbaros Bulvarı")
         assertEquals(70, bulvarLimit)
 
-        // Street speed limit
         val sokakLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Karanfil Sokak")
         assertEquals(50, sokakLimit)
 
-        // Lane generation for right turn
         val lanesRight = com.example.haritalar.navigation.LaneGuidanceHelper.generateLanesForManeuver(
             com.example.haritalar.model.ManeuverType.RIGHT,
             "Barbaros Bulvarı"
@@ -136,7 +127,6 @@ class ExampleRobolectricTest {
         assertTrue(lanesRight.isNotEmpty())
         assertTrue(lanesRight.last().isActive)
 
-        // Voice hint generation
         val voiceHint = com.example.haritalar.navigation.LaneGuidanceHelper.buildLaneVoiceHint(lanesRight)
         assertNotNull(voiceHint)
         assertTrue(voiceHint!!.contains("şerit"))
