@@ -174,6 +174,12 @@ enum class AddressResultType {
     PLACE           // Genel coğrafi konum
 }
 
+enum class HouseNumberStatus {
+    NONE,          // Kullanıcı bina no aramadı veya aranmadı
+    VERIFIED,      // Bina numarası sağlayıcı tarafından doğrulandı ve sonuçta mevcut
+    UNVERIFIED     // Kullanıcı bina no aradı ancak sağlayıcı verisinde doğrulanamadı (cadde seviyesi)
+}
+
 data class TurkishAddressDetails(
     val country: String = "Türkiye",
     val province: String? = null,      // İl (örn. İstanbul, Ankara)
@@ -195,7 +201,10 @@ data class SearchResult(
     val resultType: AddressResultType = AddressResultType.PLACE,
     val provider: String = "OpenStreetMap",
     val confidence: Float = 1.0f,
-    val addressDetails: TurkishAddressDetails? = null
+    val addressDetails: TurkishAddressDetails? = null,
+    val requestedHouseNumber: String? = null,
+    val houseNumberStatus: HouseNumberStatus = HouseNumberStatus.NONE,
+    val relevanceScore: Int = 0
 )
 
 sealed class SearchResponse {

@@ -25,7 +25,7 @@ class NominatimSearchProvider(
         .build()
 ) : SearchProvider {
 
-    override val name: String = "OpenStreetMap"
+    override val name: String = "Nominatim (OSM)"
 
     override suspend fun search(query: String, focusPoint: GeoPoint?): List<SearchResult> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
@@ -171,7 +171,13 @@ class NominatimSearchProvider(
             }
         }
 
-        val houseNumber = addrObj.optString("house_number").ifBlank { null }
+        val houseNumber = addrObj.optString("house_number").ifBlank {
+            addrObj.optString("housenumber").ifBlank {
+                addrObj.optString("street_number").ifBlank {
+                    addrObj.optString("conscriptionnumber").ifBlank { null }
+                }
+            }
+        }
         val postalCode = addrObj.optString("postcode").ifBlank { null }
 
         val poiName = rawName.ifBlank {

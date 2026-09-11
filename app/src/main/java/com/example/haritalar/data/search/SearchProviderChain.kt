@@ -1,18 +1,23 @@
 package com.example.haritalar.data.search
 
 import com.example.haritalar.model.GeoPoint
+import com.example.haritalar.model.HouseNumberStatus
 import com.example.haritalar.model.SearchResponse
 import com.example.haritalar.model.SearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
+import kotlin.math.abs
 
 /**
- * Resilient search controller executing the provider chain:
+ * Resilient multi-provider search chain:
  * Primary Provider (Nominatim OSM)
  * -> Alternative Provider (Komoot Photon)
  * -> Cache / Recent Searches
- * -> Safe Empty / Error State
+ * -> Safe Fallback / Error State
+ *
+ * Provides house-number verification, intelligent fallback to alternative
+ * providers if building level isn't found in primary, deduplication, and
+ * relevance ranking.
  */
 class SearchProviderChain(
     val primaryProvider: SearchProvider = NominatimSearchProvider(),
@@ -26,55 +31,90 @@ class SearchProviderChain(
             return@withContext SearchResponse.Empty(query)
         }
 
+        val parsedQuery = TurkishAddressHelper.parseAddressQuery(trimmed)
         val queryVariations = TurkishAddressHelper.generateSearchQueries(trimmed)
-        var networkExceptionOccurred = false
-        var lastErrorMessage: String? = null
+
+        val collectedResults = mutableListOf<SearchResult>()
+        var activeProviderName = primaryProvider.name
+        var primaryExceptionOccurred = false
+        var alternativeExceptionOccurred = false
+        var hasVerifiedBuildingInPrimary = false
 
         // 1. Try Primary Provider (Nominatim) with generated query variations
         for (q in queryVariations) {
             try {
                 val results = primaryProvider.search(q, focusPoint)
                 if (results.isNotEmpty()) {
-                    cacheProvider.put(trimmed, results)
-                    return@withContext SearchResponse.Success(results, primaryProvider.name)
+                    collectedResults.addAll(results)
+                    if (parsedQuery.isBuildingLevelRequested) {
+                        hasVerifiedBuildingInPrimary = results.any { res ->
+                            !res.addressDetails?.houseNumber.isNullOrBlank() &&
+                            TurkishAddressHelper.isHouseNumberMatch(parsedQuery.houseNumber, res.addressDetails?.houseNumber)
+                        }
+                    }
+                    break
                 }
             } catch (e: Exception) {
-                networkExceptionOccurred = true
-                lastErrorMessage = e.message
-                // Log and continue to alternative provider
+                primaryExceptionOccurred = true
                 break
             }
         }
 
-        // 2. Fallback to Alternative Provider (Photon)
-        for (q in queryVariations) {
-            try {
-                val results = alternativeProvider.search(q, focusPoint)
-                if (results.isNotEmpty()) {
-                    cacheProvider.put(trimmed, results)
-                    return@withContext SearchResponse.Success(results, alternativeProvider.name)
+        // 2. Query Alternative Provider (Photon) if:
+        // - Primary failed/errored, OR
+        // - Primary returned no results, OR
+        // - User requested a building number AND primary did not return a verified building
+        val shouldQueryAlternative = primaryExceptionOccurred ||
+                collectedResults.isEmpty() ||
+                (parsedQuery.isBuildingLevelRequested && !hasVerifiedBuildingInPrimary)
+
+        if (shouldQueryAlternative) {
+            for (q in queryVariations) {
+                try {
+                    val altResults = alternativeProvider.search(q, focusPoint)
+                    if (altResults.isNotEmpty()) {
+                        val hasVerifiedInAlt = parsedQuery.isBuildingLevelRequested && altResults.any { res ->
+                            !res.addressDetails?.houseNumber.isNullOrBlank() &&
+                            TurkishAddressHelper.isHouseNumberMatch(parsedQuery.houseNumber, res.addressDetails?.houseNumber)
+                        }
+                        if (hasVerifiedInAlt || collectedResults.isEmpty()) {
+                            activeProviderName = alternativeProvider.name
+                        }
+                        collectedResults.addAll(altResults)
+                        break
+                    }
+                } catch (e: Exception) {
+                    alternativeExceptionOccurred = true
+                    break
                 }
-            } catch (e: Exception) {
-                networkExceptionOccurred = true
-                lastErrorMessage = e.message
-                break
             }
         }
 
-        // 3. Fallback to Cache / Recent Search results
+        // 3. If online results were found, deduplicate, rank, and cache
+        if (collectedResults.isNotEmpty()) {
+            val deduplicated = deduplicateResults(collectedResults)
+            val ranked = SearchRankingEvaluator.rankAndEvaluateResults(deduplicated, parsedQuery, focusPoint)
+            cacheProvider.put(trimmed, ranked)
+            return@withContext SearchResponse.Success(ranked, activeProviderName)
+        }
+
+        // 4. Fallback to Local Cache / Recent Search results
         try {
             val cachedResults = cacheProvider.search(trimmed, focusPoint)
             if (cachedResults.isNotEmpty()) {
-                return@withContext SearchResponse.Success(cachedResults, cacheProvider.name)
+                val ranked = SearchRankingEvaluator.rankAndEvaluateResults(cachedResults, parsedQuery, focusPoint)
+                return@withContext SearchResponse.Success(ranked, cacheProvider.name)
             }
         } catch (e: Exception) {
             // Ignore cache read failures
         }
 
-        // 4. Determine final response state: Error vs Empty
-        if (networkExceptionOccurred) {
+        // 5. Determine final response state: Error vs Empty
+        // Clear separation between network/provider failure and "no results found"
+        if (primaryExceptionOccurred && (alternativeExceptionOccurred || collectedResults.isEmpty())) {
             SearchResponse.Error(
-                message = "Arama servisine şu anda ulaşılamıyor. Lütfen internet bağlantınızı kontrol edip tekrar deneyin."
+                message = "Arama servisine şu anda ulaşılamıyor. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
+                canRetry = true
             )
         } else {
             SearchResponse.Empty(query = trimmed)
@@ -109,5 +149,21 @@ class SearchProviderChain(
         }
 
         null
+    }
+
+    private fun deduplicateResults(results: List<SearchResult>): List<SearchResult> {
+        val unique = mutableListOf<SearchResult>()
+        for (item in results) {
+            val isDuplicate = unique.any { existing ->
+                val closeCoordinates = abs(existing.point.latitude - item.point.latitude) < 0.0002 &&
+                        abs(existing.point.longitude - item.point.longitude) < 0.0002
+                val sameName = existing.name.equals(item.name, ignoreCase = true)
+                closeCoordinates || sameName
+            }
+            if (!isDuplicate) {
+                unique.add(item)
+            }
+        }
+        return unique
     }
 }

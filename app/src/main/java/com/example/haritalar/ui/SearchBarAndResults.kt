@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.model.AddressResultType
+import com.example.haritalar.model.HouseNumberStatus
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.SearchUiStatus
@@ -531,6 +532,38 @@ private fun SearchResultRow(
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Medium,
                             color = iconTint
+                        )
+                    }
+                }
+
+                if (result.houseNumberStatus == HouseNumberStatus.VERIFIED) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = Color(0xFFDCFCE7),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.testTag("house_number_verified_badge")
+                    ) {
+                        Text(
+                            text = "✓ Doğrulandı",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF15803D),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                        )
+                    }
+                } else if (result.houseNumberStatus == HouseNumberStatus.UNVERIFIED) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        color = Color(0xFFFEF3C7),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.testTag("house_number_unverified_badge")
+                    ) {
+                        Text(
+                            text = "Bina no yok",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color(0xFFB45309),
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                         )
                     }
                 }
