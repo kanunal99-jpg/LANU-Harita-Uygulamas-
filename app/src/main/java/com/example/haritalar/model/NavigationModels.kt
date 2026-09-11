@@ -164,13 +164,53 @@ data class RouteOption(
         get() = durationSeconds + trafficDelaySeconds
 }
 
+enum class AddressResultType {
+    ADDRESS,        // Bina, kapı no, tam sokak adresi
+    STREET,         // Cadde, sokak, bulvar, yol
+    NEIGHBORHOOD,   // Mahalle, semt, köy
+    DISTRICT,       // İlçe
+    CITY,           // İl / Şehir
+    POI,            // İşletme, mekan, hastane, okul, restoran, benzinlik
+    PLACE           // Genel coğrafi konum
+}
+
+data class TurkishAddressDetails(
+    val country: String = "Türkiye",
+    val province: String? = null,      // İl (örn. İstanbul, Ankara)
+    val district: String? = null,      // İlçe (örn. Kadıköy, Çankaya)
+    val neighborhood: String? = null,  // Mahalle (örn. Selimiye, Adnan Kahveci)
+    val street: String? = null,        // Cadde/Sokak/Bulvar (örn. Atatürk Bulvarı, Bağdat Caddesi)
+    val houseNumber: String? = null,   // Bina / Kapı No (örn. 14, 25/A)
+    val postalCode: String? = null,
+    val poiName: String? = null
+)
+
 data class SearchResult(
     val id: String,
     val name: String,
     val displayName: String,
     val point: GeoPoint,
-    val type: String
+    val type: String = "place",
+    val shortAddress: String = "",
+    val resultType: AddressResultType = AddressResultType.PLACE,
+    val provider: String = "OpenStreetMap",
+    val confidence: Float = 1.0f,
+    val addressDetails: TurkishAddressDetails? = null
 )
+
+sealed class SearchResponse {
+    data class Success(val results: List<SearchResult>, val provider: String) : SearchResponse()
+    data class Empty(val query: String) : SearchResponse()
+    data class Error(val message: String, val canRetry: Boolean = true) : SearchResponse()
+}
+
+enum class SearchUiStatus {
+    IDLE,
+    SEARCHING,
+    SUCCESS,
+    EMPTY,
+    ERROR
+}
 
 data class PoiItem(
     val id: String,

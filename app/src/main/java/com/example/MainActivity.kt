@@ -144,8 +144,12 @@ fun HaritalarNavigationApp(
                 SearchHeader(
                     searchQuery = uiState.searchQuery,
                     onQueryChanged = { viewModel.onSearchQueryChanged(it) },
-                    onClearQuery = { viewModel.onSearchQueryChanged("") },
+                    onClearQuery = { viewModel.clearSearchQuery() },
                     isSearching = uiState.isSearching,
+                    searchStatus = uiState.searchStatus,
+                    searchErrorMessage = uiState.searchErrorMessage,
+                    searchActiveProvider = uiState.searchActiveProvider,
+                    onRetrySearch = { viewModel.retrySearch() },
                     searchResults = uiState.searchResults,
                     onSelectResult = { viewModel.selectSearchResult(it) },
                     selectedCategory = uiState.selectedPoiCategory,
@@ -158,6 +162,12 @@ fun HaritalarNavigationApp(
                         )
                     },
                     recentSearches = recentSearches,
+                    onSelectRecentSearch = { item ->
+                        viewModel.selectDestinationPoint(
+                            com.example.haritalar.model.GeoPoint(item.latitude, item.longitude),
+                            item.query
+                        )
+                    },
                     modifier = Modifier.align(Alignment.TopCenter)
                 )
             }
@@ -197,7 +207,28 @@ fun HaritalarNavigationApp(
                     )
             )
 
-            // 5. Route Selection Carousel (Showing the calculated route alternatives)
+            // 5. Selected Destination Preview Card (shown upon selecting a result before or during route selection)
+            AnimatedVisibility(
+                visible = uiState.isDestinationCardVisible && uiState.selectedDestination != null &&
+                        uiState.navigationState != NavigationState.NAVIGATING && uiState.routeOptions.isEmpty(),
+                enter = slideInVertically(initialOffsetY = { it }),
+                exit = slideOutVertically(targetOffsetY = { it }),
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                uiState.selectedDestination?.let { dest ->
+                    DestinationPreviewCard(
+                        destination = dest,
+                        onCalculateRoutes = { viewModel.calculateRoutes(dest.point) },
+                        onStartNavigation = {
+                            viewModel.calculateRoutes(dest.point)
+                            viewModel.startNavigation()
+                        },
+                        onDismiss = { viewModel.dismissDestinationCard() }
+                    )
+                }
+            }
+
+            // 6. Route Selection Carousel (Showing the calculated route alternatives)
             AnimatedVisibility(
                 visible = uiState.navigationState == NavigationState.ROUTE_SELECTION && uiState.routeOptions.isNotEmpty(),
                 enter = slideInVertically(initialOffsetY = { it }),

@@ -208,12 +208,23 @@ fun MapLibreContainer(
         }
     }
 
-    // Update Destination marker
-    LaunchedEffect(destinationPoint, mapStyle) {
+    // Update Destination marker and animate camera to target
+    LaunchedEffect(destinationPoint, mapStyle, mapInstance) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_DEST_MARKER) ?: return@LaunchedEffect
         if (destinationPoint != null) {
             src.setGeoJson(createPointGeoJson(destinationPoint))
+            if (navigationState != NavigationState.NAVIGATING) {
+                mapInstance?.let { map ->
+                    val target = LatLng(destinationPoint.latitude, destinationPoint.longitude)
+                    val cam = CameraPosition.Builder()
+                        .target(target)
+                        .zoom(16.5)
+                        .tilt(0.0)
+                        .build()
+                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 700)
+                }
+            }
         } else {
             src.setGeoJson(createEmptyFeatureCollection())
         }

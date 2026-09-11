@@ -44,6 +44,11 @@ data class MainUiState(
     val searchQuery: String = "",
     val searchResults: List<SearchResult> = emptyList(),
     val isSearching: Boolean = false,
+    val searchStatus: com.example.haritalar.model.SearchUiStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
+    val searchErrorMessage: String? = null,
+    val searchActiveProvider: String? = null,
+    val isSearchFocused: Boolean = false,
+    val isDestinationCardVisible: Boolean = false,
     val selectedDestination: SearchResult? = null,
     val routeOptions: List<RouteOption> = emptyList(),
     val selectedRoute: RouteOption? = null,
@@ -160,28 +165,105 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.startLocationUpdates(hasFinePermission)
     }
 
+    private var searchGenerationId = 0L
+
+    fun onSearchFocusChanged(focused: Boolean) {
+        _uiState.value = _uiState.value.copy(isSearchFocused = focused)
+    }
+
+    fun clearSearchQuery() {
+        searchJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            searchQuery = "",
+            searchResults = emptyList(),
+            searchStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
+            isSearching = false,
+            searchErrorMessage = null
+        )
+    }
+
     fun onSearchQueryChanged(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
         searchJob?.cancel()
+        val currentGen = ++searchGenerationId
+
         if (query.trim().length < 2) {
-            _uiState.value = _uiState.value.copy(searchResults = emptyList(), isSearching = false)
+            _uiState.value = _uiState.value.copy(
+                searchResults = emptyList(),
+                isSearching = false,
+                searchStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
+                searchErrorMessage = null
+            )
             return
         }
 
         searchJob = viewModelScope.launch {
-            delay(350L) // debounce
-            _uiState.value = _uiState.value.copy(isSearching = true)
+            _uiState.value = _uiState.value.copy(
+                isSearching = true,
+                searchStatus = com.example.haritalar.model.SearchUiStatus.SEARCHING,
+                searchErrorMessage = null
+            )
+            delay(300L) // 300ms debounce
             val focus = _uiState.value.userLocation?.point
-            val results = repository.searchPlaces(query, focus)
-            _uiState.value = _uiState.value.copy(searchResults = results, isSearching = false)
+            val response = repository.searchPlacesResponse(query, focus)
+
+            // Stale response guard
+            if (currentGen == searchGenerationId) {
+                when (response) {
+                    is com.example.haritalar.model.SearchResponse.Success -> {
+                        _uiState.value = _uiState.value.copy(
+                            searchResults = response.results,
+                            isSearching = false,
+                            searchStatus = com.example.haritalar.model.SearchUiStatus.SUCCESS,
+                            searchActiveProvider = response.provider,
+                            searchErrorMessage = null
+                        )
+                    }
+                    is com.example.haritalar.model.SearchResponse.Empty -> {
+                        _uiState.value = _uiState.value.copy(
+                            searchResults = emptyList(),
+                            isSearching = false,
+                            searchStatus = com.example.haritalar.model.SearchUiStatus.EMPTY,
+                            searchErrorMessage = null
+                        )
+                    }
+                    is com.example.haritalar.model.SearchResponse.Error -> {
+                        _uiState.value = _uiState.value.copy(
+                            searchResults = emptyList(),
+                            isSearching = false,
+                            searchStatus = com.example.haritalar.model.SearchUiStatus.ERROR,
+                            searchErrorMessage = response.message
+                        )
+                    }
+                }
+            }
         }
+    }
+
+    fun retrySearch() {
+        val q = _uiState.value.searchQuery
+        if (q.isNotBlank()) {
+            onSearchQueryChanged(q)
+        }
+    }
+
+    fun dismissDestinationCard() {
+        _uiState.value = _uiState.value.copy(
+            selectedDestination = null,
+            isDestinationCardVisible = false,
+            routeOptions = emptyList(),
+            selectedRoute = null,
+            navigationState = NavigationState.IDLE
+        )
     }
 
     fun selectSearchResult(result: SearchResult) {
         _uiState.value = _uiState.value.copy(
             selectedDestination = result,
             searchQuery = result.name,
-            searchResults = emptyList()
+            searchResults = emptyList(),
+            searchStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
+            isDestinationCardVisible = true
         )
         calculateRoutes(result.point)
     }
@@ -193,13 +275,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 id = "custom_${System.currentTimeMillis()}",
                 name = title,
                 displayName = address,
+                shortAddress = address.split(",").take(2).joinToString(", "),
                 point = point,
-                type = "point"
+                type = "point",
+                resultType = com.example.haritalar.model.AddressResultType.PLACE,
+                provider = "Harita Dokunma"
             )
             _uiState.value = _uiState.value.copy(
                 selectedDestination = result,
                 searchQuery = title,
-                searchResults = emptyList()
+                searchResults = emptyList(),
+                searchStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
+                isDestinationCardVisible = true
             )
             calculateRoutes(point)
         }

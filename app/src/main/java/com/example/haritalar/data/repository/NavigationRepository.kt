@@ -30,6 +30,13 @@ class NavigationRepository(context: Context) {
     private val searchHistoryDao = db.searchHistoryDao()
     private val prefs = context.getSharedPreferences("lanu_navigation_prefs", Context.MODE_PRIVATE)
 
+    val cacheSearchProvider = com.example.haritalar.data.search.CacheSearchProvider(searchHistoryDao)
+    val searchProviderChain = com.example.haritalar.data.search.SearchProviderChain(
+        primaryProvider = com.example.haritalar.data.search.NominatimSearchProvider(),
+        alternativeProvider = com.example.haritalar.data.search.PhotonSearchProvider(),
+        cacheProvider = cacheSearchProvider
+    )
+
     private val geocodingService = NominatimGeocodingService()
     private val poiService = PoiNetworkService()
     private val valhallaProvider = ValhallaRoutingProvider()
@@ -63,10 +70,10 @@ class NavigationRepository(context: Context) {
     val favorites: Flow<List<FavoritePlace>> = favoriteDao.getAllFavorites()
     val recentSearches: Flow<List<SearchHistoryItem>> = searchHistoryDao.getRecentSearches()
 
-    suspend fun searchPlaces(query: String, focusPoint: GeoPoint?): List<SearchResult> {
-        val results = geocodingService.search(query, focusPoint)
-        if (results.isNotEmpty()) {
-            val top = results.first()
+    suspend fun searchPlacesResponse(query: String, focusPoint: GeoPoint?): com.example.haritalar.model.SearchResponse {
+        val response = searchProviderChain.executeSearch(query, focusPoint)
+        if (response is com.example.haritalar.model.SearchResponse.Success && response.results.isNotEmpty()) {
+            val top = response.results.first()
             searchHistoryDao.insertSearch(
                 SearchHistoryItem(
                     query = query,
@@ -76,11 +83,16 @@ class NavigationRepository(context: Context) {
                 )
             )
         }
-        return results
+        return response
+    }
+
+    suspend fun searchPlaces(query: String, focusPoint: GeoPoint?): List<SearchResult> {
+        val response = searchPlacesResponse(query, focusPoint)
+        return if (response is com.example.haritalar.model.SearchResponse.Success) response.results else emptyList()
     }
 
     suspend fun reverseGeocode(point: GeoPoint): String? {
-        return geocodingService.reverseGeocode(point)
+        return searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
     }
 
     suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> {
