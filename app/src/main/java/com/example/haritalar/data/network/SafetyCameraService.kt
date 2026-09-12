@@ -123,9 +123,9 @@ class SafetyCameraService(
                 val id = element.optLong("id", -1L)
                 if (id <= 0L || !seenIds.add(id)) continue
 
-                val lat = element.optString("lat", "").toDoubleOrNull()
-                val lon = element.optString("lon", "").toDoubleOrNull()
-                if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                val lat = element.optDouble("lat", Double.NaN)
+                val lon = element.optDouble("lon", Double.NaN)
+                if (lat.isNaN() || lon.isNaN() || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
                     continue
                 }
 
@@ -147,7 +147,6 @@ class SafetyCameraService(
                 )
             }
         } catch (e: Exception) {
-            // Parser failures are converted to a safe empty result; callers retain cache/error fallback behavior.
             Log.w(TAG, "Invalid speed-camera OSM response: ${e.message}")
         }
 
