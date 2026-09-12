@@ -57,9 +57,12 @@ class SafetyCameraServiceTest {
     fun `parser ignores malformed and duplicate nodes`() {
         val json = """
             {"elements":[
-              {"type":"node","id":10,"lat":91,"lon":29},
-              {"type":"node","id":11,"lat":41,"lon":29},
-              {"type":"node","id":11,"lat":41,"lon":29}
+              {"type":"node","id":10,"lat":91,"lon":29,
+               "tags":{"highway":"speed_camera"}},
+              {"type":"node","id":11,"lat":41,"lon":29,
+               "tags":{"highway":"speed_camera"}},
+              {"type":"node","id":11,"lat":41,"lon":29,
+               "tags":{"highway":"speed_camera"}}
             ]}
         """.trimIndent()
 
