@@ -101,6 +101,10 @@ class SafetyCameraService(
         )
     }
 
+    /**
+     * Pure OSM node parsing used by unit tests and the network layer.
+     * Only nodes explicitly tagged highway=speed_camera are accepted.
+     */
     fun parseOsmResponse(jsonString: String): List<SafetyCamera> {
         val results = mutableListOf<SafetyCamera>()
         val seenIds = mutableSetOf<Long>()
@@ -113,37 +117,38 @@ class SafetyCameraService(
                 val element = elements.optJSONObject(i) ?: continue
                 if (element.optString("type") != "node") continue
 
+                val tagsObject = element.optJSONObject("tags") ?: continue
+                if (tagsObject.optString("highway") != "speed_camera") continue
+
                 val id = element.optLong("id", -1L)
                 if (id <= 0L || !seenIds.add(id)) continue
 
-                val lat = element.optDouble("lat", Double.NaN)
-                val lon = element.optDouble("lon", Double.NaN)
-                if (lat.isNaN() || lon.isNaN() || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                val lat = element.optString("lat", "").toDoubleOrNull()
+                val lon = element.optString("lon", "").toDoubleOrNull()
+                if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
                     continue
                 }
 
-                val tagsObject = element.optJSONObject("tags")
                 val tags = mutableMapOf<String, String>()
-                if (tagsObject != null) {
-                    val keys = tagsObject.keys()
-                    while (keys.hasNext()) {
-                        val key = keys.next()
-                        tags[key] = tagsObject.optString(key, "")
-                    }
+                val keys = tagsObject.keys()
+                while (keys.hasNext()) {
+                    val key = keys.next()
+                    tags[key] = tagsObject.optString(key, "")
                 }
 
                 results += SafetyCamera(
                     id = id,
                     point = GeoPoint(lat, lon),
-                    maxSpeed = tags["maxspeed"],
-                    direction = tags["direction"],
-                    operator = tags["operator"],
-                    reference = tags["ref"] ?: tags["reference"],
+                    maxSpeed = tags["maxspeed"]?.takeIf { it.isNotBlank() },
+                    direction = tags["direction"]?.takeIf { it.isNotBlank() },
+                    operator = tags["operator"]?.takeIf { it.isNotBlank() },
+                    reference = (tags["ref"] ?: tags["reference"])?.takeIf { it.isNotBlank() },
                     rawTags = tags
                 )
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error parsing speed-camera OSM response: ${e.message}", e)
+            // Parser failures are converted to a safe empty result; callers retain cache/error fallback behavior.
+            Log.w(TAG, "Invalid speed-camera OSM response: ${e.message}")
         }
 
         return results
