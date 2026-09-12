@@ -1,271 +1,89 @@
 package com.example.haritalar.model
 
 enum class ManeuverType {
-    STRAIGHT,
-    SLIGHT_RIGHT,
-    RIGHT,
-    SHARP_RIGHT,
-    SLIGHT_LEFT,
-    LEFT,
-    SHARP_LEFT,
-    UTURN,
-    ENTER_ROUNDABOUT,
-    EXIT_ROUNDABOUT,
-    REACH_DESTINATION,
-    START,
-    FERRY,
-    RAMP_RIGHT,
-    RAMP_LEFT,
-    MERGE
+    STRAIGHT, SLIGHT_RIGHT, RIGHT, SHARP_RIGHT, SLIGHT_LEFT, LEFT, SHARP_LEFT, UTURN,
+    ENTER_ROUNDABOUT, EXIT_ROUNDABOUT, REACH_DESTINATION, START, FERRY, RAMP_RIGHT, RAMP_LEFT, MERGE
 }
 
 enum class RouteType(val displayName: String) {
-    FASTEST("En Hızlı"),
-    SHORTEST("En Kısa"),
-    TOLL_FREE("Ücretsiz Yol"),
-    FASTEST_TOLL("Hızlı Ücretli"),
-    WITH_FERRY("Hızlı Feribotlu"),
-    NO_FERRY("Feribotsuz"),
-    TOLL_AND_FERRY_FREE("Ücretsiz & Feribotsuz")
+    FASTEST("En Hızlı"), SHORTEST("En Kısa"), TOLL_FREE("Ücretsiz Yol"), FASTEST_TOLL("Hızlı Ücretli"),
+    WITH_FERRY("Hızlı Feribotlu"), NO_FERRY("Feribotsuz"), TOLL_AND_FERRY_FREE("Ücretsiz & Feribotsuz")
 }
 
-enum class TrafficLevel {
-    UNKNOWN,
-    LOW,
-    MODERATE,
-    HEAVY,
-    SEVERE
-}
-
-enum class CameraMode {
-    TWO_D,
-    THREE_D
-}
+enum class TrafficLevel { UNKNOWN, LOW, MODERATE, HEAVY, SEVERE }
+en
+enum class CameraMode { TWO_D, THREE_D }
 
 enum class DepartureTurn(val iconName: String) {
-    STRAIGHT("straight"),
-    SLIGHT_RIGHT("slight_right"),
-    RIGHT("right"),
-    SHARP_RIGHT("sharp_right"),
-    UTURN("u_turn"),
-    SHARP_LEFT("sharp_left"),
-    LEFT("left"),
-    SLIGHT_LEFT("slight_left")
+    STRAIGHT("straight"), SLIGHT_RIGHT("slight_right"), RIGHT("right"), SHARP_RIGHT("sharp_right"),
+    UTURN("u_turn"), SHARP_LEFT("sharp_left"), LEFT("left"), SLIGHT_LEFT("slight_left")
 }
 
 data class DepartureGuidance(
-    val relativeAngle: Float,
-    val turnType: DepartureTurn,
-    val instruction: String,
-    val isWrongWay: Boolean = false,
-    val routeInitialBearing: Float = 0f,
-    val vehicleHeading: Float = 0f,
-    val departureGuidePoints: List<GeoPoint> = emptyList()
+    val relativeAngle: Float, val turnType: DepartureTurn, val instruction: String,
+    val isWrongWay: Boolean = false, val routeInitialBearing: Float = 0f,
+    val vehicleHeading: Float = 0f, val departureGuidePoints: List<GeoPoint> = emptyList()
 )
 
-enum class MapTrackingMode {
-    FREE,
-    FOLLOW_USER,
-    FOLLOW_BEARING
-}
-
-enum class NavigationState {
-    IDLE,
-    ROUTE_SELECTION,
-    NAVIGATING,
-    OFF_ROUTE_REROUTING,
-    ARRIVED
-}
+enum class MapTrackingMode { FREE, FOLLOW_USER, FOLLOW_BEARING }
+en
+enum class NavigationState { IDLE, ROUTE_SELECTION, NAVIGATING, OFF_ROUTE_REROUTING, ARRIVED }
 
 enum class PoiCategory(val displayName: String, val iconName: String) {
-    RESTAURANT("Restoran", "restaurant"),
-    FUEL("Benzinlik", "local_gas_station"),
-    HOSPITAL("Hastane", "local_hospital"),
-    PHARMACY("Eczane", "local_pharmacy"),
-    MARKET("Market", "shopping_cart"),
-    PARKING("Otopark", "local_parking"),
-    ATM("ATM", "atm"),
-    CAFE("Kafe", "local_cafe"),
-    CHARGING_STATION("Şarj İstasyonu", "ev_station")
+    RESTAURANT("Restoran", "restaurant"), FUEL("Benzinlik", "local_gas_station"),
+    HOSPITAL("Hastane", "local_hospital"), PHARMACY("Eczane", "local_pharmacy"),
+    MARKET("Market", "shopping_cart"), PARKING("Otopark", "local_parking"), ATM("ATM", "atm"),
+    CAFE("Kafe", "local_cafe"), CHARGING_STATION("Şarj İstasyonu", "ev_station")
 }
 
-data class GeoPoint(
-    val latitude: Double,
-    val longitude: Double
-) {
+data class GeoPoint(val latitude: Double, val longitude: Double) {
     fun distanceTo(other: GeoPoint): Double {
-        val lat1 = Math.toRadians(latitude)
-        val lon1 = Math.toRadians(longitude)
-        val lat2 = Math.toRadians(other.latitude)
-        val lon2 = Math.toRadians(other.longitude)
-        val earthRadius = 6371000.0 // meters
-
-        val dLat = lat2 - lat1
-        val dLon = lon2 - lon1
-        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-                Math.cos(lat1) * Math.cos(lat2) *
-                Math.sin(dLon / 2) * Math.sin(dLon / 2)
-        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-        return earthRadius * c
+        val lat1 = Math.toRadians(latitude); val lon1 = Math.toRadians(longitude)
+        val lat2 = Math.toRadians(other.latitude); val lon2 = Math.toRadians(other.longitude)
+        val earthRadius = 6371000.0
+        val dLat = lat2 - lat1; val dLon = lon2 - lon1
+        val a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLon / 2) * Math.sin(dLon / 2)
+        return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
     }
 }
 
-enum class LaneDirection {
-    STRAIGHT,
-    LEFT,
-    SLIGHT_LEFT,
-    SHARP_LEFT,
-    RIGHT,
-    SLIGHT_RIGHT,
-    SHARP_RIGHT,
-    UTURN
+enum class LaneDirection { STRAIGHT, LEFT, SLIGHT_LEFT, SHARP_LEFT, RIGHT, SLIGHT_RIGHT, SHARP_RIGHT, UTURN }
+
+data class LaneInfo(val directions: List<LaneDirection>, val isActive: Boolean, val isRecommended: Boolean = isActive)
+
+data class TripSummary(val totalDistanceMeters: Double, val totalDurationSeconds: Long, val averageSpeedKmh: Double, val startAddress: String, val destinationAddress: String, val completedTimestamp: Long = System.currentTimeMillis())
+
+data class TurnManeuver(val instruction: String, val distanceMeters: Double, val type: ManeuverType, val point: GeoPoint, val roadName: String = "", val lanes: List<LaneInfo> = emptyList(), val speedLimitKmh: Int? = null)
+
+data class RouteOption(val routeId: String, val title: String, val summary: String, val durationSeconds: Long, val distanceMeters: Double, val geometry: List<GeoPoint>, val maneuvers: List<TurnManeuver>, val hasTolls: Boolean = false, val hasFerry: Boolean = false, val routeType: RouteType = RouteType.FASTEST, val trafficDelaySeconds: Long = 0, val generationId: Long = 0) {
+    val totalDurationSeconds: Long get() = durationSeconds + trafficDelaySeconds
 }
 
-data class LaneInfo(
-    val directions: List<LaneDirection>,
-    val isActive: Boolean,
-    val isRecommended: Boolean = isActive
-)
+enum class AddressResultType { ADDRESS, STREET, NEIGHBORHOOD, DISTRICT, CITY, POI, PLACE }
+en
+enum class HouseNumberStatus { NONE, VERIFIED, UNVERIFIED }
 
-data class TripSummary(
-    val totalDistanceMeters: Double,
-    val totalDurationSeconds: Long,
-    val averageSpeedKmh: Double,
-    val startAddress: String,
-    val destinationAddress: String,
-    val completedTimestamp: Long = System.currentTimeMillis()
-)
+data class TurkishAddressDetails(val country: String = "Türkiye", val province: String? = null, val district: String? = null, val neighborhood: String? = null, val street: String? = null, val houseNumber: String? = null, val postalCode: String? = null, val poiName: String? = null)
 
-data class TurnManeuver(
-    val instruction: String,
-    val distanceMeters: Double,
-    val type: ManeuverType,
-    val point: GeoPoint,
-    val roadName: String = "",
-    val lanes: List<LaneInfo> = emptyList(),
-    val speedLimitKmh: Int? = null
-)
+data class SearchResult(val id: String, val name: String, val displayName: String, val point: GeoPoint, val type: String = "place", val shortAddress: String = "", val resultType: AddressResultType = AddressResultType.PLACE, val provider: String = "OpenStreetMap", val confidence: Float = 1.0f, val addressDetails: TurkishAddressDetails? = null, val requestedHouseNumber: String? = null, val houseNumberStatus: HouseNumberStatus = HouseNumberStatus.NONE, val relevanceScore: Int = 0)
 
-data class RouteOption(
-    val routeId: String,
-    val title: String,
-    val summary: String,
-    val durationSeconds: Long,
-    val distanceMeters: Double,
-    val geometry: List<GeoPoint>,
-    val maneuvers: List<TurnManeuver>,
-    val hasTolls: Boolean = false,
-    val hasFerry: Boolean = false,
-    val routeType: RouteType = RouteType.FASTEST,
-    val trafficDelaySeconds: Long = 0,
-    val generationId: Long = 0
-) {
-    val totalDurationSeconds: Long
-        get() = durationSeconds + trafficDelaySeconds
-}
+sealed class SearchResponse { data class Success(val results: List<SearchResult>, val provider: String) : SearchResponse(); data class Empty(val query: String) : SearchResponse(); data class Error(val message: String, val canRetry: Boolean = true) : SearchResponse() }
 
-enum class AddressResultType {
-    ADDRESS,        // Bina, kapı no, tam sokak adresi
-    STREET,         // Cadde, sokak, bulvar, yol
-    NEIGHBORHOOD,   // Mahalle, semt, köy
-    DISTRICT,       // İlçe
-    CITY,           // İl / Şehir
-    POI,            // İşletme, mekan, hastane, okul, restoran, benzinlik
-    PLACE           // Genel coğrafi konum
-}
+enum class SearchUiStatus { IDLE, SEARCHING, SUCCESS, EMPTY, ERROR }
 
-enum class HouseNumberStatus {
-    NONE,          // Kullanıcı bina no aramadı veya aranmadı
-    VERIFIED,      // Bina numarası sağlayıcı tarafından doğrulandı ve sonuçta mevcut
-    UNVERIFIED     // Kullanıcı bina no aradı ancak sağlayıcı verisinde doğrulanamadı (cadde seviyesi)
-}
-
-data class TurkishAddressDetails(
-    val country: String = "Türkiye",
-    val province: String? = null,      // İl (örn. İstanbul, Ankara)
-    val district: String? = null,      // İlçe (örn. Kadıköy, Çankaya)
-    val neighborhood: String? = null,  // Mahalle (örn. Selimiye, Adnan Kahveci)
-    val street: String? = null,        // Cadde/Sokak/Bulvar (örn. Atatürk Bulvarı, Bağdat Caddesi)
-    val houseNumber: String? = null,   // Bina / Kapı No (örn. 14, 25/A)
-    val postalCode: String? = null,
-    val poiName: String? = null
-)
-
-data class SearchResult(
-    val id: String,
-    val name: String,
-    val displayName: String,
-    val point: GeoPoint,
-    val type: String = "place",
-    val shortAddress: String = "",
-    val resultType: AddressResultType = AddressResultType.PLACE,
-    val provider: String = "OpenStreetMap",
-    val confidence: Float = 1.0f,
-    val addressDetails: TurkishAddressDetails? = null,
-    val requestedHouseNumber: String? = null,
-    val houseNumberStatus: HouseNumberStatus = HouseNumberStatus.NONE,
-    val relevanceScore: Int = 0
-)
-
-sealed class SearchResponse {
-    data class Success(val results: List<SearchResult>, val provider: String) : SearchResponse()
-    data class Empty(val query: String) : SearchResponse()
-    data class Error(val message: String, val canRetry: Boolean = true) : SearchResponse()
-}
-
-enum class SearchUiStatus {
-    IDLE,
-    SEARCHING,
-    SUCCESS,
-    EMPTY,
-    ERROR
-}
-
+/** POI metadata from OSM. brand/operator are source data; no logo is inferred from the name. */
 data class PoiItem(
     val id: String,
     val name: String,
     val category: PoiCategory,
     val point: GeoPoint,
-    val address: String? = null
+    val address: String? = null,
+    val brand: String? = null,
+    val operator: String? = null
 )
 
-data class TrafficSegment(
-    val coordinates: List<GeoPoint>,
-    val currentSpeed: Double,
-    val freeFlowSpeed: Double,
-    val delaySeconds: Long,
-    val confidence: Double = 1.0,
-    val roadClosure: Boolean = false
-)
+data class TrafficSegment(val coordinates: List<GeoPoint>, val currentSpeed: Double, val freeFlowSpeed: Double, val delaySeconds: Long, val confidence: Double = 1.0, val roadClosure: Boolean = false)
 
-data class TrafficStatus(
-    val verified: Boolean,
-    val message: String,
-    val delaySeconds: Long = 0,
-    val trafficLevel: TrafficLevel = TrafficLevel.UNKNOWN,
-    val sourceName: String = "OSRM/Valhalla Statik Yol Profili",
-    val isLiveApi: Boolean = false,
-    val httpStatusCode: Int? = null,
-    val segmentCount: Int = 0,
-    val lastCheckTimestamp: Long = 0L,
-    val averageSpeedKmh: Double? = null,
-    val rawSampleDetails: String? = null
-)
+data class TrafficStatus(val verified: Boolean, val message: String, val delaySeconds: Long = 0, val trafficLevel: TrafficLevel = TrafficLevel.UNKNOWN, val sourceName: String = "OSRM/Valhalla Statik Yol Profili", val isLiveApi: Boolean = false, val httpStatusCode: Int? = null, val segmentCount: Int = 0, val lastCheckTimestamp: Long = 0L, val averageSpeedKmh: Double? = null, val rawSampleDetails: String? = null)
 
-data class TrafficTestResult(
-    val timestamp: Long = System.currentTimeMillis(),
-    val sourceUrl: String,
-    val httpStatusCode: Int,
-    val isSuccess: Boolean,
-    val latencyMs: Long,
-    val currentSpeedKmh: Double = 0.0,
-    val freeFlowSpeedKmh: Double = 0.0,
-    val currentTravelTimeSec: Long = 0,
-    val freeFlowTravelTimeSec: Long = 0,
-    val delaySeconds: Long = 0,
-    val confidence: Double = 0.0,
-    val roadClosure: Boolean = false,
-    val coordinateCount: Int = 0,
-    val rawJsonSnippet: String = "",
-    val errorMessage: String? = null
-)
+data class TrafficTestResult(val timestamp: Long = System.currentTimeMillis(), val sourceUrl: String, val httpStatusCode: Int, val isSuccess: Boolean, val latencyMs: Long, val currentSpeedKmh: Double = 0.0, val freeFlowSpeedKmh: Double = 0.0, val currentTravelTimeSec: Long = 0, val freeFlowTravelTimeSec: Long = 0, val delaySeconds: Long = 0, val confidence: Double = 0.0, val roadClosure: Boolean = false, val coordinateCount: Int = 0, val rawJsonSnippet: String = "", val errorMessage: String? = null)
