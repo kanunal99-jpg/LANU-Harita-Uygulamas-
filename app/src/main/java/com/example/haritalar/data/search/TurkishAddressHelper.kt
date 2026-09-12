@@ -26,7 +26,7 @@ data class ParsedAddressQuery(
  */
 object TurkishAddressHelper {
 
-    private val TR_LOCALE = Locale("tr", "TR")
+    private val TR_LOCALE = Locale.forLanguageTag("tr-TR")
 
     // Mapping of Turkish special characters to Latin/ASCII equivalents
     private val TURKISH_CHAR_MAP = mapOf(

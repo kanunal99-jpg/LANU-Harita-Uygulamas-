@@ -92,7 +92,7 @@ class NominatimGeocodingService(
 
             val bodyString = response.body?.string() ?: return@withContext null
             val obj = org.json.JSONObject(bodyString)
-            obj.optString("display_name", null)
+            if (obj.has("display_name")) obj.getString("display_name") else null
         } catch (e: Exception) {
             null
         }

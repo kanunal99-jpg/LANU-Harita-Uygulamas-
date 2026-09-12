@@ -655,6 +655,42 @@ fun DestinationPreviewCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
                     )
+
+                    if (destination.houseNumberStatus == HouseNumberStatus.VERIFIED) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFDCFCE7))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .testTag("destination_verified_badge")
+                        ) {
+                            Text(
+                                text = "✓ Bina Numarası Doğrulandı",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF15803D)
+                            )
+                        }
+                    } else if (destination.houseNumberStatus == HouseNumberStatus.UNVERIFIED) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFFEF3C7))
+                                .padding(horizontal = 8.dp, vertical = 3.dp)
+                                .testTag("destination_unverified_badge")
+                        ) {
+                            Text(
+                                text = "Cadde bulundu, bina numarası doğrulanamadı",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = Color(0xFFB45309)
+                            )
+                        }
+                    }
                 }
 
                 IconButton(
