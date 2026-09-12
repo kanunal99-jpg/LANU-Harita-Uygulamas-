@@ -121,6 +121,8 @@ fun HaritalarNavigationApp(
                 trafficStatus = currentTrafficStatus,
                 trafficSegments = currentTrafficSegments,
                 isTrafficLayerVisible = uiState.isTrafficLayerVisible,
+                isTrafficSignalsLayerVisible = uiState.isTrafficSignalsLayerVisible,
+                trafficSignals = uiState.trafficSignals,
                 isPoiLayerVisible = uiState.isPoiLayerVisible,
                 poiList = uiState.poiList,
                 destinationPoint = uiState.selectedDestination?.point,
@@ -135,6 +137,12 @@ fun HaritalarNavigationApp(
                 },
                 onMapDrag = {
                     viewModel.setFreeTrackingMode()
+                },
+                onViewportChanged = { bbox, zoom ->
+                    viewModel.onViewportChanged(bbox, zoom)
+                },
+                onTrafficSignalClick = { signal ->
+                    viewModel.selectTrafficSignal(signal)
                 },
                 modifier = Modifier.fillMaxSize()
             )
@@ -302,6 +310,7 @@ fun HaritalarNavigationApp(
                 LayersBottomSheet(
                     cameraMode = uiState.cameraMode,
                     isTrafficLayerVisible = uiState.isTrafficLayerVisible,
+                    isTrafficSignalsLayerVisible = uiState.isTrafficSignalsLayerVisible,
                     isPoiLayerVisible = uiState.isPoiLayerVisible,
                     isSimulationActive = uiState.isSimulationActive,
                     hasActiveRoute = uiState.selectedRoute != null,
@@ -314,10 +323,20 @@ fun HaritalarNavigationApp(
                         showLayersSheet = false
                     },
                     onToggleTrafficLayer = { viewModel.toggleTrafficLayer() },
+                    onToggleTrafficSignalsLayer = { viewModel.toggleTrafficSignalsLayer() },
                     onTogglePoiLayer = { viewModel.togglePoiLayer() },
                     onToggleSimulation = { viewModel.toggleSimulation() },
                     onOpenTrafficInspector = { viewModel.openTrafficInspector() },
                     onDismiss = { showLayersSheet = false }
+                )
+            }
+
+            // 11. Real Traffic Signal Detail Sheet
+            uiState.selectedTrafficSignal?.let { signal ->
+                TrafficSignalDetailSheet(
+                    signal = signal,
+                    onNavigateTo = { viewModel.navigateToTrafficSignal(it) },
+                    onDismiss = { viewModel.dismissTrafficSignalDetail() }
                 )
             }
         }

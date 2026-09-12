@@ -25,12 +25,14 @@ import com.example.haritalar.model.CameraMode
 fun LayersBottomSheet(
     cameraMode: CameraMode,
     isTrafficLayerVisible: Boolean,
+    isTrafficSignalsLayerVisible: Boolean = true,
     isPoiLayerVisible: Boolean,
     isSimulationActive: Boolean,
     hasActiveRoute: Boolean,
     onSet2DMode: () -> Unit,
     onSet3DMode: () -> Unit,
     onToggleTrafficLayer: () -> Unit,
+    onToggleTrafficSignalsLayer: () -> Unit = {},
     onTogglePoiLayer: () -> Unit,
     onToggleSimulation: () -> Unit,
     onOpenTrafficInspector: () -> Unit = {},
@@ -137,6 +139,22 @@ fun LayersBottomSheet(
                     )
                 }
             }
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 12.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // Real Traffic Signals Layer Toggle (Physical Infrastructure)
+            LayerSwitchRow(
+                title = "Trafik Işıkları (Sinyalizasyon)",
+                description = "Gerçek OSM kavşak ve yaya geçidi sinyalizasyon ışıkları",
+                icon = Icons.Default.VerticalAlignBottom,
+                iconColor = Color(0xFFEF4444),
+                isChecked = isTrafficSignalsLayerVisible,
+                onCheckedChange = { onToggleTrafficSignalsLayer() },
+                testTag = "layer_traffic_signals_switch"
+            )
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 12.dp),

@@ -22,13 +22,20 @@ import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
+import com.example.haritalar.data.cache.TrafficSignalCache
+import com.example.haritalar.data.network.TrafficSignalService
 import kotlinx.coroutines.flow.Flow
 
 class NavigationRepository(context: Context) {
-    private val db = AppDatabase.getInstance(context)
+    val db = AppDatabase.getInstance(context)
     private val favoriteDao = db.favoriteDao()
     private val searchHistoryDao = db.searchHistoryDao()
+    val trafficSignalDao = db.trafficSignalDao()
     private val prefs = context.getSharedPreferences("lanu_navigation_prefs", Context.MODE_PRIVATE)
+
+    val trafficSignalService = TrafficSignalService()
+    val trafficSignalCache = TrafficSignalCache(trafficSignalDao = trafficSignalDao)
+    val trafficSignalRepository = TrafficSignalRepository(trafficSignalService, trafficSignalCache)
 
     val cacheSearchProvider = com.example.haritalar.data.search.CacheSearchProvider(searchHistoryDao)
     val searchProviderChain = com.example.haritalar.data.search.SearchProviderChain(

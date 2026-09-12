@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
+import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.DepartureGuidance
 import com.example.haritalar.model.GeoPoint
@@ -16,6 +17,9 @@ import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
+import com.example.haritalar.model.TrafficSignal
+import com.example.haritalar.model.TrafficSignalBoundingBox
+import com.example.haritalar.model.TrafficSignalFetchResult
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
 import com.example.haritalar.model.TripSummary
@@ -58,6 +62,10 @@ data class MainUiState(
     val cameraMode: CameraMode = CameraMode.TWO_D,
     val mapTrackingMode: MapTrackingMode = MapTrackingMode.FOLLOW_USER,
     val isTrafficLayerVisible: Boolean = true,
+    val isTrafficSignalsLayerVisible: Boolean = true,
+    val trafficSignals: List<TrafficSignal> = emptyList(),
+    val selectedTrafficSignal: TrafficSignal? = null,
+    val isLoadingTrafficSignals: Boolean = false,
     val isPoiLayerVisible: Boolean = false,
     val selectedPoiCategory: PoiCategory? = null,
     val poiList: List<PoiItem> = emptyList(),
@@ -100,7 +108,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var searchJob: Job? = null
     private var trafficRefreshJob: Job? = null
+    private var trafficSignalJob: Job? = null
     private var generationCounter = 1L
+
+    private val trafficSignalRepository = repository.trafficSignalRepository
 
     init {
         // Observe location updates
@@ -627,6 +638,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearStatusMessage() {
         _uiState.value = _uiState.value.copy(statusMessage = null)
+    }
+
+    /**
+     * Called when the map camera moves/stops and viewport changes.
+     * Throttles/debounces and retrieves real traffic signals from OSM.
+     */
+    fun onViewportChanged(bbox: TrafficSignalBoundingBox, zoomLevel: Float) {
+        if (!_uiState.value.isTrafficSignalsLayerVisible) return
+        if (zoomLevel < TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS) {
+            return
+        }
+
+        trafficSignalJob?.cancel()
+        trafficSignalJob = viewModelScope.launch {
+            delay(500L) // 500ms debounce when camera stops panning
+            _uiState.value = _uiState.value.copy(isLoadingTrafficSignals = true)
+            val result = trafficSignalRepository.getTrafficSignalsForViewport(bbox, zoomLevel)
+            when (result) {
+                is TrafficSignalFetchResult.Success -> {
+                    val merged = trafficSignalRepository.deduplicateSignals(
+                        _uiState.value.trafficSignals + result.signals
+                    )
+                    _uiState.value = _uiState.value.copy(
+                        trafficSignals = merged,
+                        isLoadingTrafficSignals = false
+                    )
+                }
+                is TrafficSignalFetchResult.Error -> {
+                    if (result.fallbackSignals.isNotEmpty()) {
+                        val merged = trafficSignalRepository.deduplicateSignals(
+                            _uiState.value.trafficSignals + result.fallbackSignals
+                        )
+                        _uiState.value = _uiState.value.copy(
+                            trafficSignals = merged,
+                            isLoadingTrafficSignals = false
+                        )
+                    } else {
+                        _uiState.value = _uiState.value.copy(isLoadingTrafficSignals = false)
+                    }
+                }
+            }
+        }
+    }
+
+    fun toggleTrafficSignalsLayer() {
+        val next = !_uiState.value.isTrafficSignalsLayerVisible
+        _uiState.value = _uiState.value.copy(isTrafficSignalsLayerVisible = next)
+    }
+
+    fun selectTrafficSignal(signal: TrafficSignal) {
+        _uiState.value = _uiState.value.copy(selectedTrafficSignal = signal)
+    }
+
+    fun dismissTrafficSignalDetail() {
+        _uiState.value = _uiState.value.copy(selectedTrafficSignal = null)
+    }
+
+    fun navigateToTrafficSignal(signal: TrafficSignal) {
+        dismissTrafficSignalDetail()
+        selectDestinationPoint(signal.point, signal.displayTitle)
     }
 
     override fun onCleared() {

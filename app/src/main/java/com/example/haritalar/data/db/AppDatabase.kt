@@ -55,14 +55,47 @@ interface SearchHistoryDao {
     suspend fun clearHistory()
 }
 
+@Entity(tableName = "cached_traffic_signals")
+data class CachedTrafficSignalEntity(
+    @PrimaryKey val id: Long, // OSM node id
+    val latitude: Double,
+    val longitude: Double,
+    val crossing: String?,
+    val direction: String?,
+    val hasSound: Boolean,
+    val hasVibration: Boolean,
+    val hasArrow: Boolean,
+    val reference: String?,
+    val cachedAt: Long = System.currentTimeMillis()
+)
+
+@Dao
+interface TrafficSignalDao {
+    @Query("SELECT * FROM cached_traffic_signals WHERE latitude BETWEEN :minLat AND :maxLat AND longitude BETWEEN :minLon AND :maxLon")
+    suspend fun getSignalsInBoundingBox(minLat: Double, maxLat: Double, minLon: Double, maxLon: Double): List<CachedTrafficSignalEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSignals(signals: List<CachedTrafficSignalEntity>)
+
+    @Query("SELECT COUNT(*) FROM cached_traffic_signals")
+    suspend fun getCount(): Int
+
+    @Query("DELETE FROM cached_traffic_signals WHERE cachedAt < :expiryTime")
+    suspend fun deleteExpired(expiryTime: Long)
+
+    @Query("SELECT * FROM cached_traffic_signals ORDER BY cachedAt DESC LIMIT 200")
+    suspend fun getRecentSignals(): List<CachedTrafficSignalEntity>
+}
+
 @Database(
-    entities = [FavoritePlace::class, SearchHistoryItem::class],
-    version = 1,
+    entities = [FavoritePlace::class, SearchHistoryItem::class, CachedTrafficSignalEntity::class],
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun favoriteDao(): FavoriteDao
     abstract fun searchHistoryDao(): SearchHistoryDao
+    abstract fun trafficSignalDao(): TrafficSignalDao
 
     companion object {
         @Volatile
@@ -74,7 +107,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "haritalar_nav.db"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }

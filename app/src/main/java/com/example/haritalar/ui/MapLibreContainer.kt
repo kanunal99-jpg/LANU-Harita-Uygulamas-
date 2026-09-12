@@ -22,6 +22,8 @@ import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
+import com.example.haritalar.model.TrafficSignal
+import com.example.haritalar.model.TrafficSignalBoundingBox
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.navigation.UserLocationData
 import org.json.JSONArray
@@ -54,6 +56,10 @@ private const val LAYER_ALT_ROUTES = "layer_alt_routes"
 private const val SRC_TRAFFIC = "src_traffic"
 private const val LAYER_TRAFFIC = "layer_traffic"
 
+private const val SRC_TRAFFIC_SIGNALS = "src_traffic_signals"
+private const val LAYER_TRAFFIC_SIGNALS = "layer_traffic_signals"
+private const val ICON_TRAFFIC_SIGNAL = "icon_traffic_signal"
+
 private const val SRC_POIS = "src_pois"
 private const val LAYER_POIS = "layer_pois"
 
@@ -74,6 +80,8 @@ fun MapLibreContainer(
     trafficStatus: TrafficStatus?,
     trafficSegments: List<TrafficSegment>,
     isTrafficLayerVisible: Boolean,
+    isTrafficSignalsLayerVisible: Boolean = true,
+    trafficSignals: List<TrafficSignal> = emptyList(),
     isPoiLayerVisible: Boolean,
     poiList: List<PoiItem>,
     destinationPoint: GeoPoint?,
@@ -83,10 +91,19 @@ fun MapLibreContainer(
     vehicleHeading: Float = userLocation?.bearing ?: 0f,
     onMapClick: (GeoPoint) -> Unit,
     onMapDrag: () -> Unit,
+    onViewportChanged: (TrafficSignalBoundingBox, Float) -> Unit = { _, _ -> },
+    onTrafficSignalClick: (TrafficSignal) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    val currentOnViewportChanged by rememberUpdatedState(onViewportChanged)
+    val currentOnTrafficSignalClick by rememberUpdatedState(onTrafficSignalClick)
+    val currentOnMapClick by rememberUpdatedState(onMapClick)
+    val currentOnMapDrag by rememberUpdatedState(onMapDrag)
+    val currentTrafficSignals by rememberUpdatedState(trafficSignals)
+    val currentIsTrafficSignalsVisible by rememberUpdatedState(isTrafficSignalsLayerVisible)
 
     // Initialize MapLibre singleton
     remember {
@@ -110,14 +127,38 @@ fun MapLibreContainer(
                     setupLayers(style, context)
                 }
 
+                map.addOnCameraIdleListener {
+                    val zoom = map.cameraPosition.zoom.toFloat()
+                    try {
+                        val bounds = map.projection.visibleRegion.latLngBounds
+                        val bbox = TrafficSignalBoundingBox(
+                            south = bounds.latitudeSouth,
+                            west = bounds.longitudeWest,
+                            north = bounds.latitudeNorth,
+                            east = bounds.longitudeEast
+                        )
+                        currentOnViewportChanged(bbox, zoom)
+                    } catch (e: Exception) {
+                        android.util.Log.w("MapLibreContainer", "Error reading visible bounds: ${e.message}")
+                    }
+                }
+
                 map.addOnMapClickListener { latLng ->
-                    onMapClick(GeoPoint(latLng.latitude, latLng.longitude))
+                    val clickPoint = GeoPoint(latLng.latitude, latLng.longitude)
+                    if (currentIsTrafficSignalsVisible && currentTrafficSignals.isNotEmpty()) {
+                        val closest = currentTrafficSignals.minByOrNull { it.point.distanceTo(clickPoint) }
+                        if (closest != null && closest.point.distanceTo(clickPoint) <= 35.0) {
+                            currentOnTrafficSignalClick(closest)
+                            return@addOnMapClickListener true
+                        }
+                    }
+                    currentOnMapClick(clickPoint)
                     true
                 }
 
                 map.addOnMoveListener(object : org.maplibre.android.maps.MapLibreMap.OnMoveListener {
                     override fun onMoveBegin(detector: org.maplibre.android.gestures.MoveGestureDetector) {
-                        onMapDrag()
+                        currentOnMapDrag()
                     }
                     override fun onMove(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
                     override fun onMoveEnd(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
@@ -280,6 +321,21 @@ fun MapLibreContainer(
         }
     }
 
+    // Update Real Traffic Signals layer
+    LaunchedEffect(isTrafficSignalsLayerVisible, trafficSignals, mapStyle) {
+        val style = mapStyle ?: return@LaunchedEffect
+        val signalSrc = style.getSourceAs<GeoJsonSource>(SRC_TRAFFIC_SIGNALS) ?: return@LaunchedEffect
+        val signalLayer = style.getLayer(LAYER_TRAFFIC_SIGNALS)
+
+        if (!isTrafficSignalsLayerVisible || trafficSignals.isEmpty()) {
+            signalSrc.setGeoJson(createEmptyFeatureCollection())
+            signalLayer?.setProperties(visibility(Property.NONE))
+        } else {
+            signalLayer?.setProperties(visibility(Property.VISIBLE))
+            signalSrc.setGeoJson(createTrafficSignalsGeoJson(trafficSignals))
+        }
+    }
+
     AndroidView(
         factory = { mapView },
         modifier = modifier.fillMaxSize()
@@ -365,7 +421,26 @@ private fun setupLayers(style: Style, context: Context) {
     }
     style.addLayer(poiLayer)
 
-    // 6. User Location Puck & Vehicle Arrow
+    // 6. Traffic Signals source & layer (OSM physical infrastructure)
+    val signalBitmap = createTrafficSignalBitmap(context)
+    style.addImage(ICON_TRAFFIC_SIGNAL, signalBitmap)
+
+    val signalSrc = GeoJsonSource(SRC_TRAFFIC_SIGNALS, createEmptyFeatureCollection())
+    style.addSource(signalSrc)
+
+    val signalLayer = SymbolLayer(LAYER_TRAFFIC_SIGNALS, SRC_TRAFFIC_SIGNALS).apply {
+        setProperties(
+            iconImage(ICON_TRAFFIC_SIGNAL),
+            iconAllowOverlap(true),
+            iconIgnorePlacement(true),
+            iconSize(0.7f),
+            iconAnchor(Property.ICON_ANCHOR_CENTER),
+            visibility(Property.VISIBLE)
+        )
+    }
+    style.addLayer(signalLayer)
+
+    // 7. User Location Puck & Vehicle Arrow
     val userSrc = GeoJsonSource(SRC_USER_LOC, createEmptyFeatureCollection())
     style.addSource(userSrc)
 
@@ -619,3 +694,83 @@ private fun createPoisGeoJson(pois: List<PoiItem>): String {
         put("features", features)
     }.toString()
 }
+
+private fun createTrafficSignalsGeoJson(signals: List<TrafficSignal>): String {
+    val features = JSONArray()
+    for (s in signals) {
+        val feature = JSONObject().apply {
+            put("type", "Feature")
+            put("id", s.id)
+            put("properties", JSONObject().apply {
+                put("id", s.id)
+                put("title", s.displayTitle)
+                put("crossing", s.crossing ?: "")
+                put("hasSound", s.hasSound)
+                put("hasVibration", s.hasVibration)
+                put("hasArrow", s.hasArrow)
+            })
+            put("geometry", JSONObject().apply {
+                put("type", "Point")
+                put("coordinates", JSONArray().apply {
+                    put(s.point.longitude)
+                    put(s.point.latitude)
+                })
+            })
+        }
+        features.put(feature)
+    }
+    return JSONObject().apply {
+        put("type", "FeatureCollection")
+        put("features", features)
+    }.toString()
+}
+
+/**
+ * Creates high-visibility Traffic Light Icon Bitmap with dark housing,
+ * crisp white border, and 3 LED lights (Red, Amber, Green).
+ */
+fun createTrafficSignalBitmap(context: Context): Bitmap {
+    val density = context.resources.displayMetrics.density
+    val widthPx = (24 * density).toInt().coerceAtLeast(32)
+    val heightPx = (44 * density).toInt().coerceAtLeast(60)
+    val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    val pad = 3f * density
+    val rect = android.graphics.RectF(pad, pad, widthPx - pad, heightPx - pad)
+    val cornerRadius = 8f * density
+
+    // 1. Dark outer housing
+    paint.color = Color.parseColor("#0F172A")
+    paint.style = Paint.Style.FILL
+    canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+    // 2. Crisp border for contrast over any map style
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 1.5f * density
+    paint.color = Color.parseColor("#F8FAFC")
+    canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+    // 3. Three distinct signal lights: Red (top), Amber (middle), Green (bottom)
+    val cx = widthPx / 2f
+    val bulbRadius = 3.5f * density
+    val stepY = (heightPx - (2 * pad)) / 4f
+
+    paint.style = Paint.Style.FILL
+
+    // Red light (top)
+    paint.color = Color.parseColor("#EF4444")
+    canvas.drawCircle(cx, pad + stepY, bulbRadius, paint)
+
+    // Amber light (middle)
+    paint.color = Color.parseColor("#F59E0B")
+    canvas.drawCircle(cx, pad + (stepY * 2f), bulbRadius, paint)
+
+    // Green light (bottom)
+    paint.color = Color.parseColor("#10B981")
+    canvas.drawCircle(cx, pad + (stepY * 3f), bulbRadius, paint)
+
+    return bitmap
+}
+
