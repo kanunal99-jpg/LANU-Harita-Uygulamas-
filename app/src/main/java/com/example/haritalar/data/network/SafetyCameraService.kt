@@ -5,13 +5,13 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraFetchResult
+import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
-import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,6 +33,7 @@ class SafetyCameraService(
 ) {
     companion object {
         private const val TAG = "SafetyCameraService"
+        private val JSON_ADAPTER = Moshi.Builder().build().adapter(Map::class.java)
     }
 
     suspend fun fetchSpeedCamerasInBoundingBox(
@@ -103,38 +104,42 @@ class SafetyCameraService(
 
     /**
      * Pure OSM node parsing used by unit tests and the network layer.
+     * Moshi is used instead of Android's JSONObject so the parser is deterministic
+     * in JVM unit tests as well as on Android.
      * Only nodes explicitly tagged highway=speed_camera are accepted.
      */
+    @Suppress("UNCHECKED_CAST")
     fun parseOsmResponse(jsonString: String): List<SafetyCamera> {
         val results = mutableListOf<SafetyCamera>()
         val seenIds = mutableSetOf<Long>()
 
         try {
-            val root = JSONObject(jsonString)
-            val elements = root.optJSONArray("elements") ?: return emptyList()
+            val root = JSON_ADAPTER.fromJson(jsonString) as? Map<*, *> ?: return emptyList()
+            val elements = root["elements"] as? List<*> ?: return emptyList()
 
-            for (i in 0 until elements.length()) {
-                val element = elements.optJSONObject(i) ?: continue
-                if (element.optString("type") != "node") continue
+            for (rawElement in elements) {
+                val element = rawElement as? Map<*, *> ?: continue
+                if (element["type"] != "node") continue
 
-                val tagsObject = element.optJSONObject("tags") ?: continue
-                if (tagsObject.optString("highway") != "speed_camera") continue
+                val tagsObject = element["tags"] as? Map<*, *> ?: continue
+                if (tagsObject["highway"] != "speed_camera") continue
 
-                val id = element.optLong("id", -1L)
+                val id = numberAsLong(element["id"]) ?: continue
                 if (id <= 0L || !seenIds.add(id)) continue
 
-                val lat = element.optDouble("lat", Double.NaN)
-                val lon = element.optDouble("lon", Double.NaN)
-                if (lat.isNaN() || lon.isNaN() || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                val lat = numberAsDouble(element["lat"])
+                val lon = numberAsDouble(element["lon"])
+                if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
                     continue
                 }
 
-                val tags = mutableMapOf<String, String>()
-                val keys = tagsObject.keys()
-                while (keys.hasNext()) {
-                    val key = keys.next()
-                    tags[key] = tagsObject.optString(key, "")
-                }
+                val tags = tagsObject.entries
+                    .mapNotNull { (key, value) ->
+                        val tagKey = key as? String ?: return@mapNotNull null
+                        val tagValue = value?.toString() ?: return@mapNotNull null
+                        tagKey to tagValue
+                    }
+                    .toMap()
 
                 results += SafetyCamera(
                     id = id,
@@ -151,5 +156,17 @@ class SafetyCameraService(
         }
 
         return results
+    }
+
+    private fun numberAsLong(value: Any?): Long? = when (value) {
+        is Number -> value.toLong()
+        is String -> value.toLongOrNull()
+        else -> null
+    }
+
+    private fun numberAsDouble(value: Any?): Double? = when (value) {
+        is Number -> value.toDouble()
+        is String -> value.toDoubleOrNull()
+        else -> null
     }
 }
