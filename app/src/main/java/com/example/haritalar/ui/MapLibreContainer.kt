@@ -20,7 +20,7 @@ import com.example.haritalar.model.MapTrackingMode
 import com.example.haritalar.model.NavigationState
 import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
-import com.example.haritalar.model.TrafficLevel
+import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficSignal
 import com.example.haritalar.model.TrafficSignalBoundingBox
@@ -43,32 +43,31 @@ import org.maplibre.android.style.layers.PropertyFactory.*
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
-private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
-private const val BACKUP_STYLE_URL = "https://demotiles.maplibre.org/style.json"
-
+private const val STYLE_URL = MapStyleFallbackPolicy.PRIMARY_STYLE_URL
+private const val BACKUP_STYLE_URL = MapStyleFallbackPolicy.BACKUP_STYLE_URL
+private const val STYLE_FALLBACK_TAG = "MapLibreContainer"
 private const val SRC_ACTIVE_ROUTE = "src_active_route"
 private const val LAYER_ACTIVE_ROUTE_CASING = "layer_active_route_casing"
 private const val LAYER_ACTIVE_ROUTE = "layer_active_route"
-
 private const val SRC_ALT_ROUTES = "src_alt_routes"
 private const val LAYER_ALT_ROUTES = "layer_alt_routes"
-
 private const val SRC_TRAFFIC = "src_traffic"
 private const val LAYER_TRAFFIC = "layer_traffic"
-
 private const val SRC_TRAFFIC_SIGNALS = "src_traffic_signals"
 private const val LAYER_TRAFFIC_SIGNALS = "layer_traffic_signals"
 private const val ICON_TRAFFIC_SIGNAL = "icon_traffic_signal"
-
 private const val SRC_POIS = "src_pois"
 private const val LAYER_POIS = "layer_pois"
-
+private const val ICON_POI_GENERIC = "icon_poi_generic"
+private const val ICON_POI_BRAND = "icon_poi_brand"
+private const val SRC_SAFETY_CAMERAS = "src_safety_cameras"
+private const val LAYER_SAFETY_CAMERAS = "layer_safety_cameras"
+private const val ICON_SAFETY_CAMERA = "icon_safety_camera"
 private const val SRC_USER_LOC = "src_user_loc"
 private const val LAYER_USER_LOC_PULSE = "layer_user_loc_pulse"
 private const val LAYER_USER_LOC = "layer_user_loc"
 private const val LAYER_VEHICLE_ARROW = "layer_vehicle_arrow"
 private const val ICON_VEHICLE_ARROW = "icon_vehicle_arrow"
-
 private const val SRC_DEST_MARKER = "src_dest_marker"
 private const val LAYER_DEST_MARKER = "layer_dest_marker"
 
@@ -84,6 +83,8 @@ fun MapLibreContainer(
     trafficSignals: List<TrafficSignal> = emptyList(),
     isPoiLayerVisible: Boolean,
     poiList: List<PoiItem>,
+    safetyCameras: List<SafetyCamera> = emptyList(),
+    isSafetyCamerasLayerVisible: Boolean = true,
     destinationPoint: GeoPoint?,
     cameraMode: CameraMode,
     mapTrackingMode: MapTrackingMode,
@@ -97,19 +98,14 @@ fun MapLibreContainer(
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-
     val currentOnViewportChanged by rememberUpdatedState(onViewportChanged)
     val currentOnTrafficSignalClick by rememberUpdatedState(onTrafficSignalClick)
     val currentOnMapClick by rememberUpdatedState(onMapClick)
     val currentOnMapDrag by rememberUpdatedState(onMapDrag)
     val currentTrafficSignals by rememberUpdatedState(trafficSignals)
-    val currentIsTrafficSignalsVisible by rememberUpdatedState(isTrafficSignalsLayerVisible)
+    val currentSignalsVisible by rememberUpdatedState(isTrafficSignalsLayerVisible)
 
-    // Initialize MapLibre singleton
-    remember {
-        MapLibre.getInstance(context)
-    }
-
+    remember { MapLibre.getInstance(context) }
     var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
     var mapStyle by remember { mutableStateOf<Style?>(null) }
 
@@ -121,53 +117,65 @@ fun MapLibreContainer(
                 map.uiSettings.isAttributionEnabled = true
                 map.uiSettings.isLogoEnabled = false
                 map.uiSettings.isCompassEnabled = true
-
-                map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
-                    mapStyle = style
-                    setupLayers(style, context)
-                }
-
-                map.addOnCameraIdleListener {
-                    val zoom = map.cameraPosition.zoom.toFloat()
-                    try {
-                        val bounds = map.projection.visibleRegion.latLngBounds
-                        val bbox = TrafficSignalBoundingBox(
-                            south = bounds.latitudeSouth,
-                            west = bounds.longitudeWest,
-                            north = bounds.latitudeNorth,
-                            east = bounds.longitudeEast
-                        )
-                        currentOnViewportChanged(bbox, zoom)
-                    } catch (e: Exception) {
-                        android.util.Log.w("MapLibreContainer", "Error reading visible bounds: ${e.message}")
+                var styleAttempt = 0
+                fun loadStyleCandidate() {
+                    val candidate = MapStyleFallbackPolicy.candidates.getOrNull(styleAttempt)
+                    if (candidate == null) {
+                        android.util.Log.e(STYLE_FALLBACK_TAG, "All map styles failed; keeping safe blank map state")
+                        return
+                    }
+                    android.util.Log.i(STYLE_FALLBACK_TAG, "Loading map style candidate #${styleAttempt + 1}: $candidate")
+                    map.setStyle(Style.Builder().fromUri(candidate)) { style ->
+                        mapStyle = style
+                        setupLayers(style, context)
+                        android.util.Log.i(STYLE_FALLBACK_TAG, "Map style loaded: $candidate")
                     }
                 }
-
+                val styleFailureListener = object : MapView.OnDidFailLoadingMapListener {
+                    override fun onDidFailLoadingMap(errorMessage: String) {
+                        if (styleAttempt < MapStyleFallbackPolicy.candidates.lastIndex) {
+                            styleAttempt += 1
+                            android.util.Log.w(STYLE_FALLBACK_TAG, "Map style candidate failed; trying fallback #${styleAttempt + 1}: $errorMessage")
+                            loadStyleCandidate()
+                        } else {
+                            android.util.Log.e(STYLE_FALLBACK_TAG, "Map style fallback exhausted: $errorMessage")
+                        }
+                    }
+                }
+                addOnDidFailLoadingMapListener(styleFailureListener)
+                loadStyleCandidate()
+                map.addOnCameraIdleListener {
+                    try {
+                        val b = map.projection.visibleRegion.latLngBounds
+                        currentOnViewportChanged(
+                            TrafficSignalBoundingBox(b.latitudeSouth, b.longitudeWest, b.latitudeNorth, b.longitudeEast),
+                            map.cameraPosition.zoom.toFloat()
+                        )
+                    } catch (e: Exception) {
+                        android.util.Log.w("MapLibreContainer", "viewport: ${e.message}")
+                    }
+                }
                 map.addOnMapClickListener { latLng ->
-                    val clickPoint = GeoPoint(latLng.latitude, latLng.longitude)
-                    if (currentIsTrafficSignalsVisible && currentTrafficSignals.isNotEmpty()) {
-                        val closest = currentTrafficSignals.minByOrNull { it.point.distanceTo(clickPoint) }
-                        if (closest != null && closest.point.distanceTo(clickPoint) <= 35.0) {
+                    val point = GeoPoint(latLng.latitude, latLng.longitude)
+                    if (currentSignalsVisible && currentTrafficSignals.isNotEmpty()) {
+                        val closest = currentTrafficSignals.minByOrNull { it.point.distanceTo(point) }
+                        if (closest != null && closest.point.distanceTo(point) <= 35.0) {
                             currentOnTrafficSignalClick(closest)
                             return@addOnMapClickListener true
                         }
                     }
-                    currentOnMapClick(clickPoint)
+                    currentOnMapClick(point)
                     true
                 }
-
-                map.addOnMoveListener(object : org.maplibre.android.maps.MapLibreMap.OnMoveListener {
-                    override fun onMoveBegin(detector: org.maplibre.android.gestures.MoveGestureDetector) {
-                        currentOnMapDrag()
-                    }
-                    override fun onMove(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
-                    override fun onMoveEnd(detector: org.maplibre.android.gestures.MoveGestureDetector) {}
+                map.addOnMoveListener(object : MapLibreMap.OnMoveListener {
+                    override fun onMoveBegin(detector: org.maplibre.android.gestures.MoveGestureDetector) = currentOnMapDrag()
+                    override fun onMove(detector: org.maplibre.android.gestures.MoveGestureDetector) = Unit
+                    override fun onMoveEnd(detector: org.maplibre.android.gestures.MoveGestureDetector) = Unit
                 })
             }
         }
     }
 
-    // Lifecycle integration
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -180,597 +188,273 @@ fun MapLibreContainer(
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-            mapView.onDestroy()
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer); mapView.onDestroy() }
     }
 
-    // Update Camera position / 2D / 3D / Tracking
     LaunchedEffect(userLocation, cameraMode, mapTrackingMode, navigationState, mapInstance, mapStyle) {
         val map = mapInstance ?: return@LaunchedEffect
-        val style = mapStyle ?: return@LaunchedEffect
-
+        mapStyle ?: return@LaunchedEffect
         val pitch = if (cameraMode == CameraMode.THREE_D) 55.0 else 0.0
-
         if (mapTrackingMode == MapTrackingMode.FOLLOW_USER && userLocation != null) {
             val target = LatLng(userLocation.point.latitude, userLocation.point.longitude)
-            val cam = CameraPosition.Builder()
-                .target(target)
-                .zoom(16.0)
-                .tilt(pitch)
-                .bearing(if (navigationState == NavigationState.NAVIGATING) userLocation.bearing.toDouble() else map.cameraPosition.bearing)
-                .build()
-            map.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 600)
+            map.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(target).zoom(16.0).tilt(pitch).bearing(if (navigationState == NavigationState.NAVIGATING) userLocation.bearing.toDouble() else map.cameraPosition.bearing).build()), 600)
         } else if (mapTrackingMode == MapTrackingMode.FOLLOW_BEARING && userLocation != null) {
             val target = LatLng(userLocation.point.latitude, userLocation.point.longitude)
-            val cam = CameraPosition.Builder()
-                .target(target)
-                .zoom(17.5)
-                .tilt(55.0) // 3D driving view
-                .bearing(userLocation.bearing.toDouble())
-                .build()
-            map.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 400)
-        } else {
-            // Apply camera pitch change if in free mode
-            if (Math.abs(map.cameraPosition.tilt - pitch) > 5.0) {
-                val cam = CameraPosition.Builder(map.cameraPosition)
-                    .tilt(pitch)
-                    .build()
-                map.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 400)
-            }
+            map.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(target).zoom(17.5).tilt(55.0).bearing(userLocation.bearing.toDouble()).build()), 400)
+        } else if (Math.abs(map.cameraPosition.tilt - pitch) > 5.0) {
+            map.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder(map.cameraPosition).tilt(pitch).build()), 400)
         }
     }
 
-    // Update User Location layer (Dynamic Arrow Puck during Navigation, Dot when Free)
     LaunchedEffect(userLocation, vehicleHeading, navigationState, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_USER_LOC) ?: return@LaunchedEffect
-        val pulseLayer = style.getLayer(LAYER_USER_LOC_PULSE)
-        val userLayer = style.getLayer(LAYER_USER_LOC)
-        val arrowLayer = style.getLayer(LAYER_VEHICLE_ARROW)
-
-        val isNavigating = (navigationState == NavigationState.NAVIGATING)
-
-        // Stale puck prevention: only show vehicle arrow during active navigation with valid location
-        pulseLayer?.setProperties(visibility(if (isNavigating || userLocation == null) Property.NONE else Property.VISIBLE))
-        userLayer?.setProperties(visibility(if (isNavigating || userLocation == null) Property.NONE else Property.VISIBLE))
-        arrowLayer?.setProperties(visibility(if (isNavigating && userLocation != null) Property.VISIBLE else Property.NONE))
-
-        if (userLocation != null) {
-            val geoJson = createUserLocationGeoJson(
-                point = userLocation.point,
-                bearing = vehicleHeading,
-                isNavigating = isNavigating
-            )
-            src.setGeoJson(geoJson)
-        } else {
-            src.setGeoJson(createEmptyFeatureCollection())
-        }
+        val navigating = navigationState == NavigationState.NAVIGATING
+        style.getLayer(LAYER_USER_LOC_PULSE)?.setProperties(visibility(if (navigating || userLocation == null) Property.NONE else Property.VISIBLE))
+        style.getLayer(LAYER_USER_LOC)?.setProperties(visibility(if (navigating || userLocation == null) Property.NONE else Property.VISIBLE))
+        style.getLayer(LAYER_VEHICLE_ARROW)?.setProperties(visibility(if (navigating && userLocation != null) Property.VISIBLE else Property.NONE))
+        src.setGeoJson(if (userLocation != null) createUserLocationGeoJson(userLocation.point, vehicleHeading, navigating) else createEmptyFeatureCollection())
     }
 
-    // Update Destination marker and animate camera to target
     LaunchedEffect(destinationPoint, mapStyle, mapInstance) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_DEST_MARKER) ?: return@LaunchedEffect
         if (destinationPoint != null) {
             src.setGeoJson(createPointGeoJson(destinationPoint))
             if (navigationState != NavigationState.NAVIGATING) {
-                mapInstance?.let { map ->
-                    val target = LatLng(destinationPoint.latitude, destinationPoint.longitude)
-                    val cam = CameraPosition.Builder()
-                        .target(target)
-                        .zoom(16.5)
-                        .tilt(0.0)
-                        .build()
-                    map.animateCamera(CameraUpdateFactory.newCameraPosition(cam), 700)
-                }
+                val target = LatLng(destinationPoint.latitude, destinationPoint.longitude)
+                mapInstance?.animateCamera(CameraUpdateFactory.newCameraPosition(CameraPosition.Builder().target(target).zoom(16.5).tilt(0.0).build()), 700)
             }
-        } else {
-            src.setGeoJson(createEmptyFeatureCollection())
-        }
+        } else src.setGeoJson(createEmptyFeatureCollection())
     }
 
-    // Update Active Route & Alternatives
     LaunchedEffect(activeRoute, alternativeRoutes, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
-        val activeSrc = style.getSourceAs<GeoJsonSource>(SRC_ACTIVE_ROUTE)
-        val altSrc = style.getSourceAs<GeoJsonSource>(SRC_ALT_ROUTES)
-
-        if (activeRoute != null) {
-            activeSrc?.setGeoJson(createLineStringGeoJson(activeRoute.geometry))
-        } else {
-            activeSrc?.setGeoJson(createEmptyFeatureCollection())
-        }
-
-        val altsWithoutActive = alternativeRoutes.filter { it.routeId != activeRoute?.routeId }
-        if (altsWithoutActive.isNotEmpty()) {
-            altSrc?.setGeoJson(createMultiLineStringGeoJson(altsWithoutActive.map { it.geometry }))
-        } else {
-            altSrc?.setGeoJson(createEmptyFeatureCollection())
-        }
+        style.getSourceAs<GeoJsonSource>(SRC_ACTIVE_ROUTE)?.setGeoJson(if (activeRoute != null) createLineStringGeoJson(activeRoute.geometry) else createEmptyFeatureCollection())
+        val alternatives = alternativeRoutes.filter { it.routeId != activeRoute?.routeId }
+        style.getSourceAs<GeoJsonSource>(SRC_ALT_ROUTES)?.setGeoJson(if (alternatives.isNotEmpty()) createMultiLineStringGeoJson(alternatives.map { it.geometry }) else createEmptyFeatureCollection())
     }
 
-    // Update Traffic layer
     LaunchedEffect(isTrafficLayerVisible, trafficSegments, activeRoute, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
-        val trafficSrc = style.getSourceAs<GeoJsonSource>(SRC_TRAFFIC) ?: return@LaunchedEffect
-        val trafficLayer = style.getLayer(LAYER_TRAFFIC)
-
+        val src = style.getSourceAs<GeoJsonSource>(SRC_TRAFFIC) ?: return@LaunchedEffect
+        val layer = style.getLayer(LAYER_TRAFFIC)
         if (!isTrafficLayerVisible || trafficSegments.isEmpty() || activeRoute == null) {
-            trafficSrc.setGeoJson(createEmptyFeatureCollection())
-            trafficLayer?.setProperties(visibility(Property.NONE))
+            src.setGeoJson(createEmptyFeatureCollection()); layer?.setProperties(visibility(Property.NONE))
         } else {
-            trafficLayer?.setProperties(visibility(Property.VISIBLE))
-            trafficSrc.setGeoJson(createTrafficGeoJson(trafficSegments))
+            layer?.setProperties(visibility(Property.VISIBLE)); src.setGeoJson(createTrafficGeoJson(trafficSegments))
         }
     }
 
-    // Update POI layer
     LaunchedEffect(isPoiLayerVisible, poiList, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
-        val poiSrc = style.getSourceAs<GeoJsonSource>(SRC_POIS) ?: return@LaunchedEffect
-        val poiLayer = style.getLayer(LAYER_POIS)
-
+        val src = style.getSourceAs<GeoJsonSource>(SRC_POIS) ?: return@LaunchedEffect
+        val layer = style.getLayer(LAYER_POIS)
         if (!isPoiLayerVisible || poiList.isEmpty()) {
-            poiSrc.setGeoJson(createEmptyFeatureCollection())
-            poiLayer?.setProperties(visibility(Property.NONE))
+            src.setGeoJson(createEmptyFeatureCollection()); layer?.setProperties(visibility(Property.NONE))
         } else {
-            poiLayer?.setProperties(visibility(Property.VISIBLE))
-            poiSrc.setGeoJson(createPoisGeoJson(poiList))
+            layer?.setProperties(visibility(Property.VISIBLE)); src.setGeoJson(createPoisGeoJson(poiList))
         }
     }
 
-    // Update Real Traffic Signals layer
+    LaunchedEffect(isSafetyCamerasLayerVisible, safetyCameras, mapStyle) {
+        val style = mapStyle ?: return@LaunchedEffect
+        val src = style.getSourceAs<GeoJsonSource>(SRC_SAFETY_CAMERAS) ?: return@LaunchedEffect
+        val layer = style.getLayer(LAYER_SAFETY_CAMERAS)
+        if (!isSafetyCamerasLayerVisible || safetyCameras.isEmpty()) {
+            src.setGeoJson(createEmptyFeatureCollection()); layer?.setProperties(visibility(Property.NONE))
+        } else {
+            layer?.setProperties(visibility(Property.VISIBLE)); src.setGeoJson(createSafetyCamerasGeoJson(safetyCameras))
+        }
+    }
+
     LaunchedEffect(isTrafficSignalsLayerVisible, trafficSignals, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
-        val signalSrc = style.getSourceAs<GeoJsonSource>(SRC_TRAFFIC_SIGNALS) ?: return@LaunchedEffect
-        val signalLayer = style.getLayer(LAYER_TRAFFIC_SIGNALS)
-
+        val src = style.getSourceAs<GeoJsonSource>(SRC_TRAFFIC_SIGNALS) ?: return@LaunchedEffect
+        val layer = style.getLayer(LAYER_TRAFFIC_SIGNALS)
         if (!isTrafficSignalsLayerVisible || trafficSignals.isEmpty()) {
-            signalSrc.setGeoJson(createEmptyFeatureCollection())
-            signalLayer?.setProperties(visibility(Property.NONE))
+            src.setGeoJson(createEmptyFeatureCollection()); layer?.setProperties(visibility(Property.NONE))
         } else {
-            signalLayer?.setProperties(visibility(Property.VISIBLE))
-            signalSrc.setGeoJson(createTrafficSignalsGeoJson(trafficSignals))
+            layer?.setProperties(visibility(Property.VISIBLE)); src.setGeoJson(createTrafficSignalsGeoJson(trafficSignals))
         }
     }
 
-    AndroidView(
-        factory = { mapView },
-        modifier = modifier.fillMaxSize()
-    )
+    AndroidView(factory = { mapView }, modifier = modifier.fillMaxSize())
 }
 
 private fun setupLayers(style: Style, context: Context) {
-    // 1. Alternative routes source & layer (Gray)
-    val altSrc = GeoJsonSource(SRC_ALT_ROUTES, createEmptyFeatureCollection())
-    style.addSource(altSrc)
-    val altLayer = LineLayer(LAYER_ALT_ROUTES, SRC_ALT_ROUTES).apply {
-        setProperties(
-            lineColor(Color.parseColor("#8E8E93")),
-            lineWidth(5f),
-            lineCap(Property.LINE_CAP_ROUND),
-            lineJoin(Property.LINE_JOIN_ROUND),
-            lineOpacity(0.75f)
-        )
-    }
-    style.addLayer(altLayer)
+    style.addSource(GeoJsonSource(SRC_ALT_ROUTES, createEmptyFeatureCollection()))
+    style.addLayer(LineLayer(LAYER_ALT_ROUTES, SRC_ALT_ROUTES).apply { setProperties(lineColor(Color.parseColor("#8E8E93")), lineWidth(5f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND), lineOpacity(0.75f)) })
+    style.addSource(GeoJsonSource(SRC_ACTIVE_ROUTE, createEmptyFeatureCollection()))
+    style.addLayer(LineLayer(LAYER_ACTIVE_ROUTE_CASING, SRC_ACTIVE_ROUTE).apply { setProperties(lineColor(Color.parseColor("#0A2540")), lineWidth(9f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)) })
+    style.addLayer(LineLayer(LAYER_ACTIVE_ROUTE, SRC_ACTIVE_ROUTE).apply { setProperties(lineColor(Color.parseColor("#007AFF")), lineWidth(6f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)) })
+    style.addSource(GeoJsonSource(SRC_TRAFFIC, createEmptyFeatureCollection()))
+    style.addLayer(LineLayer(LAYER_TRAFFIC, SRC_TRAFFIC).apply { setProperties(lineColor(Color.parseColor("#FF9500")), lineWidth(6f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND), visibility(Property.VISIBLE)) })
+    style.addSource(GeoJsonSource(SRC_DEST_MARKER, createEmptyFeatureCollection()))
+    style.addLayer(CircleLayer(LAYER_DEST_MARKER, SRC_DEST_MARKER).apply { setProperties(circleRadius(9f), circleColor(Color.parseColor("#FF3B30")), circleStrokeWidth(3f), circleStrokeColor(Color.WHITE)) })
 
-    // 2. Active route source & layers (Electric Blue with navy casing)
-    val activeSrc = GeoJsonSource(SRC_ACTIVE_ROUTE, createEmptyFeatureCollection())
-    style.addSource(activeSrc)
-
-    val casingLayer = LineLayer(LAYER_ACTIVE_ROUTE_CASING, SRC_ACTIVE_ROUTE).apply {
-        setProperties(
-            lineColor(Color.parseColor("#0A2540")),
-            lineWidth(9f),
-            lineCap(Property.LINE_CAP_ROUND),
-            lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    }
-    style.addLayer(casingLayer)
-
-    val activeLayer = LineLayer(LAYER_ACTIVE_ROUTE, SRC_ACTIVE_ROUTE).apply {
-        setProperties(
-            lineColor(Color.parseColor("#007AFF")),
-            lineWidth(6f),
-            lineCap(Property.LINE_CAP_ROUND),
-            lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    }
-    style.addLayer(activeLayer)
-
-    // 3. Traffic layer
-    val trafficSrc = GeoJsonSource(SRC_TRAFFIC, createEmptyFeatureCollection())
-    style.addSource(trafficSrc)
-    val trafficLayer = LineLayer(LAYER_TRAFFIC, SRC_TRAFFIC).apply {
-        setProperties(
-            lineColor(Color.parseColor("#FF9500")), // default fallback orange
-            lineWidth(6f),
-            lineCap(Property.LINE_CAP_ROUND),
-            lineJoin(Property.LINE_JOIN_ROUND),
-            visibility(Property.VISIBLE)
-        )
-    }
-    style.addLayer(trafficLayer)
-
-    // 4. Destination marker
-    val destSrc = GeoJsonSource(SRC_DEST_MARKER, createEmptyFeatureCollection())
-    style.addSource(destSrc)
-    val destLayer = CircleLayer(LAYER_DEST_MARKER, SRC_DEST_MARKER).apply {
-        setProperties(
-            circleRadius(9f),
-            circleColor(Color.parseColor("#FF3B30")),
-            circleStrokeWidth(3f),
-            circleStrokeColor(Color.WHITE)
-        )
-    }
-    style.addLayer(destLayer)
-
-    // 5. POIs source & layer
     val poiSrc = GeoJsonSource(SRC_POIS, createEmptyFeatureCollection())
     style.addSource(poiSrc)
-    val poiLayer = CircleLayer(LAYER_POIS, SRC_POIS).apply {
-        setProperties(
-            circleRadius(7f),
-            circleColor(Color.parseColor("#5856D6")),
-            circleStrokeWidth(2f),
-            circleStrokeColor(Color.WHITE)
-        )
-    }
-    style.addLayer(poiLayer)
+    style.addImage(ICON_POI_GENERIC, createPoiBitmap(context, Color.parseColor("#5856D6"), "POI", 56))
+    style.addImage(ICON_POI_BRAND, createPoiBitmap(context, Color.WHITE, "★", 64))
+    style.addLayer(SymbolLayer(LAYER_POIS, SRC_POIS).apply {
+        setProperties(iconImage(org.maplibre.android.style.expressions.Expression.match(get("hasBrand"), org.maplibre.android.style.expressions.Expression.literal(true), org.maplibre.android.style.expressions.Expression.literal(ICON_POI_BRAND), org.maplibre.android.style.expressions.Expression.literal(ICON_POI_GENERIC))), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(0.8f), iconAnchor(Property.ICON_ANCHOR_CENTER), visibility(Property.VISIBLE))
+    })
 
-    // 6. Traffic Signals source & layer (OSM physical infrastructure)
-    val signalBitmap = createTrafficSignalBitmap(context)
-    style.addImage(ICON_TRAFFIC_SIGNAL, signalBitmap)
+    style.addImage(ICON_SAFETY_CAMERA, createSafetyCameraBitmap(context))
+    style.addSource(GeoJsonSource(SRC_SAFETY_CAMERAS, createEmptyFeatureCollection()))
+    style.addLayer(SymbolLayer(LAYER_SAFETY_CAMERAS, SRC_SAFETY_CAMERAS).apply { setProperties(iconImage(ICON_SAFETY_CAMERA), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(1.0f), iconAnchor(Property.ICON_ANCHOR_CENTER), visibility(Property.VISIBLE)) })
 
-    val signalSrc = GeoJsonSource(SRC_TRAFFIC_SIGNALS, createEmptyFeatureCollection())
-    style.addSource(signalSrc)
+    style.addImage(ICON_TRAFFIC_SIGNAL, createTrafficSignalBitmap(context))
+    style.addSource(GeoJsonSource(SRC_TRAFFIC_SIGNALS, createEmptyFeatureCollection()))
+    style.addLayer(SymbolLayer(LAYER_TRAFFIC_SIGNALS, SRC_TRAFFIC_SIGNALS).apply { setProperties(iconImage(ICON_TRAFFIC_SIGNAL), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(0.7f), iconAnchor(Property.ICON_ANCHOR_CENTER), visibility(Property.VISIBLE)) })
 
-    val signalLayer = SymbolLayer(LAYER_TRAFFIC_SIGNALS, SRC_TRAFFIC_SIGNALS).apply {
-        setProperties(
-            iconImage(ICON_TRAFFIC_SIGNAL),
-            iconAllowOverlap(true),
-            iconIgnorePlacement(true),
-            iconSize(0.7f),
-            iconAnchor(Property.ICON_ANCHOR_CENTER),
-            visibility(Property.VISIBLE)
-        )
-    }
-    style.addLayer(signalLayer)
-
-    // 7. User Location Puck & Vehicle Arrow
-    val userSrc = GeoJsonSource(SRC_USER_LOC, createEmptyFeatureCollection())
-    style.addSource(userSrc)
-
-    // Standard blue pulsing dot (Free mode / route selection)
-    val pulseLayer = CircleLayer(LAYER_USER_LOC_PULSE, SRC_USER_LOC).apply {
-        setProperties(
-            circleRadius(18f),
-            circleColor(Color.parseColor("#007AFF")),
-            circleOpacity(0.2f)
-        )
-    }
-    style.addLayer(pulseLayer)
-
-    val userLayer = CircleLayer(LAYER_USER_LOC, SRC_USER_LOC).apply {
-        setProperties(
-            circleRadius(8f),
-            circleColor(Color.parseColor("#007AFF")),
-            circleStrokeWidth(3f),
-            circleStrokeColor(Color.WHITE)
-        )
-    }
-    style.addLayer(userLayer)
-
-    // Dynamic Vehicle Navigation Arrow (Navigating mode)
-    // Register custom 3D arrow puck icon
-    val arrowBitmap = createVehicleArrowBitmap(context)
-    style.addImage(ICON_VEHICLE_ARROW, arrowBitmap)
-
-    val arrowLayer = SymbolLayer(LAYER_VEHICLE_ARROW, SRC_USER_LOC).apply {
-        setProperties(
-            iconImage(ICON_VEHICLE_ARROW),
-            iconRotate(get("bearing")),
-            iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP),
-            iconAllowOverlap(true),
-            iconIgnorePlacement(true),
-            iconAnchor(Property.ICON_ANCHOR_CENTER),
-            visibility(Property.NONE)
-        )
-    }
-    style.addLayer(arrowLayer)
+    style.addSource(GeoJsonSource(SRC_USER_LOC, createEmptyFeatureCollection()))
+    style.addLayer(CircleLayer(LAYER_USER_LOC_PULSE, SRC_USER_LOC).apply { setProperties(circleRadius(18f), circleColor(Color.parseColor("#007AFF")), circleOpacity(0.2f)) })
+    style.addLayer(CircleLayer(LAYER_USER_LOC, SRC_USER_LOC).apply { setProperties(circleRadius(8f), circleColor(Color.parseColor("#007AFF")), circleStrokeWidth(3f), circleStrokeColor(Color.WHITE)) })
+    style.addImage(ICON_VEHICLE_ARROW, createVehicleArrowBitmap(context))
+    style.addLayer(SymbolLayer(LAYER_VEHICLE_ARROW, SRC_USER_LOC).apply { setProperties(iconImage(ICON_VEHICLE_ARROW), iconRotate(get("bearing")), iconRotationAlignment(Property.ICON_ROTATION_ALIGNMENT_MAP), iconAllowOverlap(true), iconIgnorePlacement(true), iconAnchor(Property.ICON_ANCHOR_CENTER), visibility(Property.NONE)) })
 }
 
-private fun createUserLocationGeoJson(point: GeoPoint, bearing: Float, isNavigating: Boolean): String {
-    val feature = JSONObject().apply {
-        put("type", "Feature")
-        put("properties", JSONObject().apply {
-            put("bearing", bearing.toDouble())
-            put("isNavigating", isNavigating)
-        })
-        put("geometry", JSONObject().apply {
-            put("type", "Point")
-            put("coordinates", JSONArray().apply {
-                put(point.longitude)
-                put(point.latitude)
-            })
-        })
-    }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", JSONArray().apply { put(feature) })
-    }.toString()
-}
+private fun createUserLocationGeoJson(point: GeoPoint, bearing: Float, isNavigating: Boolean): String = featureCollection(feature(JSONObject().apply { put("properties", JSONObject().apply { put("bearing", bearing.toDouble()); put("isNavigating", isNavigating) }); put("geometry", pointGeometry(point)) }))
 
-/**
- * Creates high-visibility 3D Navigation Arrow Puck Bitmap with outer puck border,
- * dual-tone 3D arrow facets, and soft drop shadow.
- */
-fun createVehicleArrowBitmap(context: Context): Bitmap {
-    val density = context.resources.displayMetrics.density
-    val sizePx = (52 * density).toInt().coerceAtLeast(64)
-    val bitmap = Bitmap.createBitmap(sizePx, sizePx, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
-    val cx = sizePx / 2f
-    val cy = sizePx / 2f
-
-    // 1. Soft drop shadow (dark semi-transparent)
-    val shadowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#44000000")
-        style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy + (2.5f * density), 19f * density, shadowPaint)
-
-    // 2. Outer circular white puck backing for contrast on any map style
-    val puckWhitePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.FILL
-    }
-    canvas.drawCircle(cx, cy, 19f * density, puckWhitePaint)
-
-    // 3. Subtle blue outline ring
-    val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#E0E7FF")
-        style = Paint.Style.STROKE
-        strokeWidth = 1.5f * density
-    }
-    canvas.drawCircle(cx, cy, 18.5f * density, ringPaint)
-
-    // 4. Directional Navigation Arrow (Pointing Up/North at 0 deg)
-    val pathLeft = Path().apply {
-        moveTo(cx, cy - 13f * density)
-        lineTo(cx - 9.5f * density, cy + 10f * density)
-        lineTo(cx, cy + 5.5f * density)
-        close()
-    }
-    val pathRight = Path().apply {
-        moveTo(cx, cy - 13f * density)
-        lineTo(cx, cy + 5.5f * density)
-        lineTo(cx + 9.5f * density, cy + 10f * density)
-        close()
-    }
-
-    // Left facet: Electric LANU Blue
-    val leftPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#007AFF")
-        style = Paint.Style.FILL
-    }
-    canvas.drawPath(pathLeft, leftPaint)
-
-    // Right facet: Deeper blue for 3D lighting
-    val rightPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#0056B3")
-        style = Paint.Style.FILL
-    }
-    canvas.drawPath(pathRight, rightPaint)
-
-    // Center spine highlight
-    val spinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        style = Paint.Style.STROKE
-        strokeWidth = 1.6f * density
-        strokeCap = Paint.Cap.ROUND
-    }
-    canvas.drawLine(cx, cy - 11.5f * density, cx, cy + 4.5f * density, spinePaint)
-
-    return bitmap
-}
-
-private fun createEmptyFeatureCollection(): String = "{\"type\":\"FeatureCollection\",\"features\":[]}"
-
-private fun createPointGeoJson(point: GeoPoint): String {
-    val feature = JSONObject().apply {
-        put("type", "Feature")
-        put("geometry", JSONObject().apply {
-            put("type", "Point")
-            put("coordinates", JSONArray().apply {
-                put(point.longitude)
-                put(point.latitude)
-            })
-        })
-    }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", JSONArray().apply { put(feature) })
-    }.toString()
-}
+private fun createPointGeoJson(point: GeoPoint): String = featureCollection(feature(JSONObject().apply { put("geometry", pointGeometry(point)) }))
 
 private fun createLineStringGeoJson(points: List<GeoPoint>): String {
-    val coords = JSONArray()
-    for (p in points) {
-        val pt = JSONArray().apply {
-            put(p.longitude)
-            put(p.latitude)
-        }
-        coords.put(pt)
-    }
-    val feature = JSONObject().apply {
-        put("type", "Feature")
-        put("geometry", JSONObject().apply {
-            put("type", "LineString")
-            put("coordinates", coords)
-        })
-    }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", JSONArray().apply { put(feature) })
-    }.toString()
+    val coords = JSONArray(); points.forEach { coords.put(JSONArray().apply { put(it.longitude); put(it.latitude) }) }
+    return featureCollection(feature(JSONObject().apply { put("geometry", JSONObject().apply { put("type", "LineString"); put("coordinates", coords) }) }))
 }
 
 private fun createMultiLineStringGeoJson(lines: List<List<GeoPoint>>): String {
     val features = JSONArray()
-    for (line in lines) {
-        val coords = JSONArray()
-        for (p in line) {
-            coords.put(JSONArray().apply {
-                put(p.longitude)
-                put(p.latitude)
-            })
-        }
-        val feature = JSONObject().apply {
-            put("type", "Feature")
-            put("geometry", JSONObject().apply {
-                put("type", "LineString")
-                put("coordinates", coords)
-            })
-        }
-        features.put(feature)
+    lines.forEach { line ->
+        val coords = JSONArray(); line.forEach { coords.put(JSONArray().apply { put(it.longitude); put(it.latitude) }) }
+        features.put(feature(JSONObject().apply { put("geometry", JSONObject().apply { put("type", "LineString"); put("coordinates", coords) }) }))
     }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", features)
-    }.toString()
+    return featureCollection(features)
 }
 
 private fun createTrafficGeoJson(segments: List<TrafficSegment>): String {
     val features = JSONArray()
-    for (seg in segments) {
-        if (seg.coordinates.size < 2) continue
-        val coords = JSONArray()
-        for (p in seg.coordinates) {
-            coords.put(JSONArray().apply {
-                put(p.longitude)
-                put(p.latitude)
-            })
-        }
-        val feature = JSONObject().apply {
-            put("type", "Feature")
-            put("geometry", JSONObject().apply {
-                put("type", "LineString")
-                put("coordinates", coords)
-            })
-        }
-        features.put(feature)
+    segments.filter { it.coordinates.size >= 2 }.forEach { seg ->
+        val coords = JSONArray(); seg.coordinates.forEach { coords.put(JSONArray().apply { put(it.longitude); put(it.latitude) }) }
+        features.put(feature(JSONObject().apply { put("geometry", JSONObject().apply { put("type", "LineString"); put("coordinates", coords) }) }))
     }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", features)
-    }.toString()
+    return featureCollection(features)
 }
 
 private fun createPoisGeoJson(pois: List<PoiItem>): String {
     val features = JSONArray()
-    for (poi in pois) {
-        val feature = JSONObject().apply {
-            put("type", "Feature")
-            put("properties", JSONObject().apply {
-                put("name", poi.name)
-                put("category", poi.category.displayName)
-            })
-            put("geometry", JSONObject().apply {
-                put("type", "Point")
-                put("coordinates", JSONArray().apply {
-                    put(poi.point.longitude)
-                    put(poi.point.latitude)
-                })
-            })
-        }
-        features.put(feature)
+    pois.forEach { poi ->
+        val brand = (poi.brand ?: poi.operator)?.trim()?.takeIf { it.isNotEmpty() }
+        features.put(feature(JSONObject().apply {
+            put("properties", JSONObject().apply { put("name", poi.name); put("category", poi.category.displayName); put("brand", brand ?: ""); put("hasBrand", brand != null) })
+            put("geometry", pointGeometry(poi.point))
+        }))
     }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", features)
-    }.toString()
+    return featureCollection(features)
+}
+
+private fun createSafetyCamerasGeoJson(cameras: List<SafetyCamera>): String {
+    val features = JSONArray()
+    cameras.forEach { camera ->
+        features.put(feature(JSONObject().apply {
+            put("properties", JSONObject().apply {
+                put("id", camera.id); put("title", camera.displayTitle); put("maxSpeed", camera.maxSpeed ?: ""); put("direction", camera.direction ?: ""); put("operator", camera.operator ?: ""); put("reference", camera.reference ?: "")
+            })
+            put("geometry", pointGeometry(camera.point))
+        }))
+    }
+    return featureCollection(features)
 }
 
 private fun createTrafficSignalsGeoJson(signals: List<TrafficSignal>): String {
     val features = JSONArray()
-    for (s in signals) {
-        val feature = JSONObject().apply {
-            put("type", "Feature")
+    signals.forEach { s ->
+        features.put(feature(JSONObject().apply {
             put("id", s.id)
-            put("properties", JSONObject().apply {
-                put("id", s.id)
-                put("title", s.displayTitle)
-                put("crossing", s.crossing ?: "")
-                put("hasSound", s.hasSound)
-                put("hasVibration", s.hasVibration)
-                put("hasArrow", s.hasArrow)
-            })
-            put("geometry", JSONObject().apply {
-                put("type", "Point")
-                put("coordinates", JSONArray().apply {
-                    put(s.point.longitude)
-                    put(s.point.latitude)
-                })
-            })
-        }
-        features.put(feature)
+            put("properties", JSONObject().apply { put("id", s.id); put("title", s.displayTitle); put("crossing", s.crossing ?: ""); put("hasSound", s.hasSound); put("hasVibration", s.hasVibration); put("hasArrow", s.hasArrow) })
+            put("geometry", pointGeometry(s.point))
+        }))
     }
-    return JSONObject().apply {
-        put("type", "FeatureCollection")
-        put("features", features)
-    }.toString()
+    return featureCollection(features)
 }
 
-/**
- * Creates high-visibility Traffic Light Icon Bitmap with dark housing,
- * crisp white border, and 3 LED lights (Red, Amber, Green).
- */
-fun createTrafficSignalBitmap(context: Context): Bitmap {
-    val density = context.resources.displayMetrics.density
-    val widthPx = (24 * density).toInt().coerceAtLeast(32)
-    val heightPx = (44 * density).toInt().coerceAtLeast(60)
-    val bitmap = Bitmap.createBitmap(widthPx, heightPx, Bitmap.Config.ARGB_8888)
+private fun pointGeometry(point: GeoPoint): JSONObject = JSONObject().apply { put("type", "Point"); put("coordinates", JSONArray().apply { put(point.longitude); put(point.latitude) }) }
+private fun feature(body: JSONObject): JSONObject { body.put("type", "Feature"); return body }
+private fun featureCollection(features: JSONArray): String = JSONObject().apply { put("type", "FeatureCollection"); put("features", features) }.toString()
+private fun featureCollection(single: JSONObject): String = featureCollection(JSONArray().apply { put(single) })
+private fun createEmptyFeatureCollection(): String = "{\"type\":\"FeatureCollection\",\"features\":[]}"
+
+fun createSafetyCameraBitmap(context: Context): Bitmap {
+    val d = context.resources.displayMetrics.density
+    val size = (58 * d).toInt().coerceAtLeast(64)
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-
-    val pad = 3f * density
-    val rect = android.graphics.RectF(pad, pad, widthPx - pad, heightPx - pad)
-    val cornerRadius = 8f * density
-
-    // 1. Dark outer housing
-    paint.color = Color.parseColor("#0F172A")
-    paint.style = Paint.Style.FILL
-    canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
-
-    // 2. Crisp border for contrast over any map style
-    paint.style = Paint.Style.STROKE
-    paint.strokeWidth = 1.5f * density
-    paint.color = Color.parseColor("#F8FAFC")
-    canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
-
-    // 3. Three distinct signal lights: Red (top), Amber (middle), Green (bottom)
-    val cx = widthPx / 2f
-    val bulbRadius = 3.5f * density
-    val stepY = (heightPx - (2 * pad)) / 4f
-
-    paint.style = Paint.Style.FILL
-
-    // Red light (top)
-    paint.color = Color.parseColor("#EF4444")
-    canvas.drawCircle(cx, pad + stepY, bulbRadius, paint)
-
-    // Amber light (middle)
-    paint.color = Color.parseColor("#F59E0B")
-    canvas.drawCircle(cx, pad + (stepY * 2f), bulbRadius, paint)
-
-    // Green light (bottom)
-    paint.color = Color.parseColor("#10B981")
-    canvas.drawCircle(cx, pad + (stepY * 3f), bulbRadius, paint)
-
+    val cx = size / 2f
+    val cy = size / 2f
+    val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(80, 0, 0, 0) }
+    canvas.drawCircle(cx, cy + 2 * d, 24 * d, shadow)
+    val outer = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    canvas.drawCircle(cx, cy, 24 * d, outer)
+    val red = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#DC2626") }
+    canvas.drawCircle(cx, cy, 20 * d, red)
+    val dark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#111827"); style = Paint.Style.STROKE; strokeWidth = 2 * d }
+    canvas.drawCircle(cx, cy, 20 * d, dark)
+    val lens = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    canvas.drawCircle(cx, cy, 6 * d, lens)
     return bitmap
 }
 
+private fun createPoiBitmap(context: Context, background: Int, label: String, sizeDp: Int): Bitmap {
+    val d = context.resources.displayMetrics.density
+    val size = (sizeDp * d).toInt().coerceAtLeast(64)
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = size / 2f
+    val cy = size / 2f
+    val bg = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = background }
+    canvas.drawCircle(cx, cy, size * 0.42f, bg)
+    val border = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; style = Paint.Style.STROKE; strokeWidth = 2 * d }
+    canvas.drawCircle(cx, cy, size * 0.42f, border)
+    val text = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = if (background == Color.WHITE) Color.parseColor("#111827") else Color.WHITE; textAlign = Paint.Align.CENTER; textSize = size * 0.23f; isFakeBoldText = true }
+    canvas.drawText(label.take(4), cx, cy - (text.ascent() + text.descent()) / 2f, text)
+    return bitmap
+}
+
+fun createTrafficSignalBitmap(context: Context): Bitmap {
+    val d = context.resources.displayMetrics.density
+    val width = (24 * d).toInt().coerceAtLeast(32)
+    val height = (44 * d).toInt().coerceAtLeast(60)
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val pad = 3f * d
+    val rect = android.graphics.RectF(pad, pad, width - pad, height - pad)
+    paint.color = Color.parseColor("#0F172A"); paint.style = Paint.Style.FILL
+    canvas.drawRoundRect(rect, 8f * d, 8f * d, paint)
+    paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.5f * d; paint.color = Color.WHITE
+    canvas.drawRoundRect(rect, 8f * d, 8f * d, paint)
+    paint.style = Paint.Style.FILL
+    val cx = width / 2f; val r = 3.5f * d; val step = (height - 2 * pad) / 4f
+    paint.color = Color.parseColor("#EF4444"); canvas.drawCircle(cx, pad + step, r, paint)
+    paint.color = Color.parseColor("#F59E0B"); canvas.drawCircle(cx, pad + step * 2f, r, paint)
+    paint.color = Color.parseColor("#10B981"); canvas.drawCircle(cx, pad + step * 3f, r, paint)
+    return bitmap
+}
+
+fun createVehicleArrowBitmap(context: Context): Bitmap {
+    val d = context.resources.displayMetrics.density
+    val size = (52 * d).toInt().coerceAtLeast(64)
+    val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap); val cx = size / 2f; val cy = size / 2f
+    Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = Color.argb(68, 0, 0, 0); canvas.drawCircle(cx, cy + 2.5f * d, 19f * d, it) }
+    Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = Color.WHITE; canvas.drawCircle(cx, cy, 19f * d, it) }
+    Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = Color.parseColor("#E0E7FF"); it.style = Paint.Style.STROKE; it.strokeWidth = 1.5f * d; canvas.drawCircle(cx, cy, 18.5f * d, it) }
+    val left = Path().apply { moveTo(cx, cy - 13f * d); lineTo(cx - 9.5f * d, cy + 10f * d); lineTo(cx, cy + 5.5f * d); close() }
+    val right = Path().apply { moveTo(cx, cy - 13f * d); lineTo(cx, cy + 5.5f * d); lineTo(cx + 9.5f * d, cy + 10f * d); close() }
+    Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = Color.parseColor("#007AFF"); canvas.drawPath(left, it) }
+    Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = Color.parseColor("#0056B3"); canvas.drawPath(right, it) }
+    Paint(Paint.ANTI_ALIAS_FLAG).also { it.color = Color.WHITE; it.style = Paint.Style.STROKE; it.strokeWidth = 1.6f * d; it.strokeCap = Paint.Cap.ROUND; canvas.drawLine(cx, cy - 11.5f * d, cx, cy + 4.5f * d, it) }
+    return bitmap
+}

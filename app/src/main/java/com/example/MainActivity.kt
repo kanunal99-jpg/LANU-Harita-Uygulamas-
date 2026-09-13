@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.haritalar.model.NavigationState
+import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
 import com.example.ui.theme.MyApplicationTheme
 
@@ -41,12 +42,14 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun HaritalarNavigationApp(
-    viewModel: MainViewModel = viewModel()
+    viewModel: MainViewModel = viewModel(),
+    safetyCameraViewModel: SafetyCameraLayerViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     val favorites by viewModel.favorites.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
+    val safetyCameras by safetyCameraViewModel.cameras.collectAsState()
 
     var showLayersSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -113,7 +116,7 @@ fun HaritalarNavigationApp(
         }
     ) { _ ->
         Box(modifier = Modifier.fillMaxSize()) {
-            // 1. Base Map Layer (MapLibre Native with 2D/3D, Lines, Traffic, POIs)
+            // 1. Base Map Layer (MapLibre Native with 2D/3D, Lines, Traffic, POIs, Safety Cameras)
             MapLibreContainer(
                 userLocation = uiState.userLocation,
                 activeRoute = uiState.selectedRoute,
@@ -125,6 +128,7 @@ fun HaritalarNavigationApp(
                 trafficSignals = uiState.trafficSignals,
                 isPoiLayerVisible = uiState.isPoiLayerVisible,
                 poiList = uiState.poiList,
+                safetyCameras = safetyCameras,
                 destinationPoint = uiState.selectedDestination?.point,
                 cameraMode = uiState.cameraMode,
                 mapTrackingMode = uiState.mapTrackingMode,
@@ -140,6 +144,15 @@ fun HaritalarNavigationApp(
                 },
                 onViewportChanged = { bbox, zoom ->
                     viewModel.onViewportChanged(bbox, zoom)
+                    safetyCameraViewModel.onViewportChanged(
+                        SafetyCameraBoundingBox(
+                            south = bbox.south,
+                            west = bbox.west,
+                            north = bbox.north,
+                            east = bbox.east
+                        ),
+                        zoom
+                    )
                 },
                 onTrafficSignalClick = { signal ->
                     viewModel.selectTrafficSignal(signal)

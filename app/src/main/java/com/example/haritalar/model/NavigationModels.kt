@@ -98,7 +98,7 @@ data class GeoPoint(
         val lon1 = Math.toRadians(longitude)
         val lat2 = Math.toRadians(other.latitude)
         val lon2 = Math.toRadians(other.longitude)
-        val earthRadius = 6371000.0 // meters
+        val earthRadius = 6371000.0
 
         val dLat = lat2 - lat1
         val dLon = lon2 - lon1
@@ -165,28 +165,28 @@ data class RouteOption(
 }
 
 enum class AddressResultType {
-    ADDRESS,        // Bina, kapı no, tam sokak adresi
-    STREET,         // Cadde, sokak, bulvar, yol
-    NEIGHBORHOOD,   // Mahalle, semt, köy
-    DISTRICT,       // İlçe
-    CITY,           // İl / Şehir
-    POI,            // İşletme, mekan, hastane, okul, restoran, benzinlik
-    PLACE           // Genel coğrafi konum
+    ADDRESS,
+    STREET,
+    NEIGHBORHOOD,
+    DISTRICT,
+    CITY,
+    POI,
+    PLACE
 }
 
 enum class HouseNumberStatus {
-    NONE,          // Kullanıcı bina no aramadı veya aranmadı
-    VERIFIED,      // Bina numarası sağlayıcı tarafından doğrulandı ve sonuçta mevcut
-    UNVERIFIED     // Kullanıcı bina no aradı ancak sağlayıcı verisinde doğrulanamadı (cadde seviyesi)
+    NONE,
+    VERIFIED,
+    UNVERIFIED
 }
 
 data class TurkishAddressDetails(
     val country: String = "Türkiye",
-    val province: String? = null,      // İl (örn. İstanbul, Ankara)
-    val district: String? = null,      // İlçe (örn. Kadıköy, Çankaya)
-    val neighborhood: String? = null,  // Mahalle (örn. Selimiye, Adnan Kahveci)
-    val street: String? = null,        // Cadde/Sokak/Bulvar (örn. Atatürk Bulvarı, Bağdat Caddesi)
-    val houseNumber: String? = null,   // Bina / Kapı No (örn. 14, 25/A)
+    val province: String? = null,
+    val district: String? = null,
+    val neighborhood: String? = null,
+    val street: String? = null,
+    val houseNumber: String? = null,
     val postalCode: String? = null,
     val poiName: String? = null
 )
@@ -221,12 +221,15 @@ enum class SearchUiStatus {
     ERROR
 }
 
+/** OSM POI metadata; brand/operator are source fields and are not inferred. */
 data class PoiItem(
     val id: String,
     val name: String,
     val category: PoiCategory,
     val point: GeoPoint,
-    val address: String? = null
+    val address: String? = null,
+    val brand: String? = null,
+    val operator: String? = null
 )
 
 data class TrafficSegment(
