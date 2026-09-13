@@ -26,4 +26,17 @@ class MapStyleFallbackPolicyTest {
         )
         assertTrue(MapStyleFallbackPolicy.candidates.size >= 3)
     }
+
+    @Test
+    fun candidates_form_an_ordered_three_step_chain() {
+        assertEquals(3, MapStyleFallbackPolicy.candidates.size)
+        assertEquals(
+            listOf(
+                MapStyleFallbackPolicy.PRIMARY_STYLE_URL,
+                MapStyleFallbackPolicy.BACKUP_STYLE_URL,
+                MapStyleFallbackPolicy.SAFE_DEFAULT_STYLE_URI
+            ),
+            MapStyleFallbackPolicy.candidates
+        )
+    }
 }
