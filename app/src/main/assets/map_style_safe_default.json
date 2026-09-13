@@ -1,0 +1,14 @@
+{
+  "version": 8,
+  "name": "LANU Safe Default",
+  "sources": {},
+  "layers": [
+    {
+      "id": "background",
+      "type": "background",
+      "paint": {
+        "background-color": "#F2F2F7"
+      }
+    }
+  ]
+}

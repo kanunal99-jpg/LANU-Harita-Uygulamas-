@@ -43,7 +43,9 @@ import org.maplibre.android.style.layers.PropertyFactory.*
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
 
-private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"
+private const val STYLE_URL = MapStyleFallbackPolicy.PRIMARY_STYLE_URL
+private const val BACKUP_STYLE_URL = MapStyleFallbackPolicy.BACKUP_STYLE_URL
+private const val STYLE_FALLBACK_TAG = "MapLibreContainer"
 private const val SRC_ACTIVE_ROUTE = "src_active_route"
 private const val LAYER_ACTIVE_ROUTE_CASING = "layer_active_route_casing"
 private const val LAYER_ACTIVE_ROUTE = "layer_active_route"
@@ -115,10 +117,33 @@ fun MapLibreContainer(
                 map.uiSettings.isAttributionEnabled = true
                 map.uiSettings.isLogoEnabled = false
                 map.uiSettings.isCompassEnabled = true
-                map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->
-                    mapStyle = style
-                    setupLayers(style, context)
+                var styleAttempt = 0
+                fun loadStyleCandidate() {
+                    val candidate = MapStyleFallbackPolicy.candidates.getOrNull(styleAttempt)
+                    if (candidate == null) {
+                        android.util.Log.e(STYLE_FALLBACK_TAG, "All map styles failed; keeping safe blank map state")
+                        return
+                    }
+                    android.util.Log.i(STYLE_FALLBACK_TAG, "Loading map style candidate #${styleAttempt + 1}: $candidate")
+                    map.setStyle(Style.Builder().fromUri(candidate)) { style ->
+                        mapStyle = style
+                        setupLayers(style, context)
+                        android.util.Log.i(STYLE_FALLBACK_TAG, "Map style loaded: $candidate")
+                    }
                 }
+                val styleFailureListener = object : MapView.OnDidFailLoadingMapListener {
+                    override fun onDidFailLoadingMap(errorMessage: String) {
+                        if (styleAttempt < MapStyleFallbackPolicy.candidates.lastIndex) {
+                            styleAttempt += 1
+                            android.util.Log.w(STYLE_FALLBACK_TAG, "Map style candidate failed; trying fallback #${styleAttempt + 1}: $errorMessage")
+                            loadStyleCandidate()
+                        } else {
+                            android.util.Log.e(STYLE_FALLBACK_TAG, "Map style fallback exhausted: $errorMessage")
+                        }
+                    }
+                }
+                mapView.addOnDidFailLoadingMapListener(styleFailureListener)
+                loadStyleCandidate()
                 map.addOnCameraIdleListener {
                     try {
                         val b = map.projection.visibleRegion.latLngBounds
