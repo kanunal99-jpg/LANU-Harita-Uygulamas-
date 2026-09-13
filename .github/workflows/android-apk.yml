@@ -47,9 +47,10 @@ jobs:
         if: always()
         run: |
           set +e
-          adb devices -l > adb-devices.txt 2>&1
-          adb logcat -d > android-logcat.txt 2>&1
-          adb shell dumpsys activity exit-info com.aistudio.haritalar.navtr > android-exit-info.txt 2>&1
+          timeout 20s adb devices -l > adb-devices.txt 2>&1 || true
+          timeout 30s adb logcat -d > android-logcat.txt 2>&1 || true
+          timeout 20s adb shell dumpsys activity exit-info com.aistudio.haritalar.navtr > android-exit-info.txt 2>&1 || true
+          echo 'Diagnostics collection completed.'
       - name: Upload Android diagnostics
         if: always()
         uses: actions/upload-artifact@v4
