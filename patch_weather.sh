@@ -1,0 +1,1 @@
+sed -i 's/_uiState.value = _uiState.value.copy(selectedRoute = route)/_uiState.value = _uiState.value.copy(selectedRoute = route)\n        fetchWeatherForRoute(route)/' app/src/main/java/com/example/haritalar/ui/MainViewModel.kt

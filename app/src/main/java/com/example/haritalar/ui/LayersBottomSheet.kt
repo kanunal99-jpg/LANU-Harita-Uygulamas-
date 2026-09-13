@@ -26,16 +26,21 @@ fun LayersBottomSheet(
     cameraMode: CameraMode,
     isTrafficLayerVisible: Boolean,
     isTrafficSignalsLayerVisible: Boolean = true,
+    isSafetyCamerasLayerVisible: Boolean = true,
     isPoiLayerVisible: Boolean,
     isSimulationActive: Boolean,
     hasActiveRoute: Boolean,
+    offlineDownloadProgress: Float? = null,
+    offlineDownloadMessage: String? = null,
     onSet2DMode: () -> Unit,
     onSet3DMode: () -> Unit,
     onToggleTrafficLayer: () -> Unit,
     onToggleTrafficSignalsLayer: () -> Unit = {},
+    onToggleSafetyCamerasLayer: () -> Unit = {},
     onTogglePoiLayer: () -> Unit,
     onToggleSimulation: () -> Unit,
     onOpenTrafficInspector: () -> Unit = {},
+    onDownloadOfflineMap: () -> Unit = {},
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(
@@ -111,6 +116,62 @@ fun LayersBottomSheet(
                 testTag = "layer_traffic_switch"
             )
 
+            if (isTrafficLayerVisible) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 52.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Trafik Akış Göstergeleri:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = 16.dp, height = 4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(Color(0xFF10B981))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Yeşil (Akıcı)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = 16.dp, height = 4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(Color(0xFFF59E0B))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Sarı (Yavaş)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(width = 16.dp, height = 4.dp)
+                                        .clip(RoundedCornerShape(2.dp))
+                                        .background(Color(0xFFEF4444))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Kırmızı (Sıkışık)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
+            }
+
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -161,6 +222,22 @@ fun LayersBottomSheet(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             )
 
+            // Safety Cameras Layer Toggle
+            LayerSwitchRow(
+                title = "Radar ve Hız Kameraları",
+                description = "Sabit hız kameraları ve radar uyarı sistemi",
+                icon = Icons.Default.CameraAlt,
+                iconColor = Color(0xFFEAB308),
+                isChecked = isSafetyCamerasLayerVisible,
+                onCheckedChange = { onToggleSafetyCamerasLayer() },
+                testTag = "layer_safety_cameras_switch"
+            )
+
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 12.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
             // POI Layer Toggle
             LayerSwitchRow(
                 title = "İlgi Noktaları (POI)",
@@ -189,6 +266,43 @@ fun LayersBottomSheet(
                     testTag = "layer_simulation_switch"
                 )
             }
+            
+            HorizontalDivider(
+                modifier = Modifier.padding(vertical = 12.dp),
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+            )
+
+            // Offline Download Section
+            Text(
+                text = "Çevrimdışı Harita",
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(bottom = 8.dp, start = 4.dp)
+            )
+            
+            if (offlineDownloadProgress != null) {
+                Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)) {
+                    Text(text = offlineDownloadMessage ?: "İndiriliyor...", fontSize = 14.sp)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { offlineDownloadProgress / 100f },
+                        modifier = Modifier.fillMaxWidth().height(8.dp),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                }
+            } else {
+                Button(
+                    onClick = onDownloadOfflineMap,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp)
+                ) {
+                    Icon(imageVector = Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(text = "Ekranda Görünen Alanı İndir")
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
         }
     }
 }

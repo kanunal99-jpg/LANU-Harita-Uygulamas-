@@ -24,6 +24,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
+import com.example.haritalar.data.traffic.TrafficTrendPredictor
+import com.example.haritalar.model.TrafficLevel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +40,7 @@ fun TrafficInspectorDialog(
 ) {
     var inputKey by remember(currentApiKey) { mutableStateOf(currentApiKey) }
     var showKey by remember { mutableStateOf(false) }
+    var selectedHour by remember { mutableStateOf(java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)) }
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -242,6 +245,277 @@ fun TrafficInspectorDialog(
                         Icon(Icons.Default.Save, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Anahtarı Kaydet ve Uygula")
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Section 3: Tarihsel Trafik Trend Tahminleri & Gecikme Analizi
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("traffic_trend_prediction_card")
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Timeline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Trafik Yoğunluk & Zaman Trendi",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "YAPAY ZEKA TAHMİNİ",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Text(
+                        text = "Günün belirli saatleri için geçmiş trafik örüntülerini analiz edebilir ve olası gecikmeleri önceden tahmin edebilirsiniz.",
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Hour display and slider
+                    val prediction = TrafficTrendPredictor.predictTrafficForHour(selectedHour, trafficStatus)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Tahmin Saati: ${selectedHour.toString().padStart(2, '0')}:00",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            text = prediction.periodName,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    Slider(
+                        value = selectedHour.toFloat(),
+                        onValueChange = { selectedHour = it.toInt() },
+                        valueRange = 0f..23f,
+                        steps = 22,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("traffic_trend_slider"),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary,
+                            inactiveTrackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Prediction result visualization
+                    val levelColor = when (prediction.predictedTrafficLevel) {
+                        TrafficLevel.LOW -> Color(0xFF2E7D32) // Green
+                        TrafficLevel.MODERATE -> Color(0xFFEF6C00) // Orange
+                        TrafficLevel.HEAVY -> Color(0xFFD84315) // Red-Orange
+                        TrafficLevel.SEVERE -> Color(0xFFC62828) // Severe Red
+                        else -> MaterialTheme.colorScheme.onSurface
+                    }
+
+                    val levelBg = when (prediction.predictedTrafficLevel) {
+                        TrafficLevel.LOW -> Color(0xFFE8F5E9)
+                        TrafficLevel.MODERATE -> Color(0xFFFFF3E0)
+                        TrafficLevel.HEAVY -> Color(0xFFFBE9E7)
+                        TrafficLevel.SEVERE -> Color(0xFFFFEBEE)
+                        else -> MaterialTheme.colorScheme.surfaceVariant
+                    }
+
+                    val levelLabel = when (prediction.predictedTrafficLevel) {
+                        TrafficLevel.LOW -> "Akıcı / Açık Yol"
+                        TrafficLevel.MODERATE -> "Hafif Yoğun"
+                        TrafficLevel.HEAVY -> "Yoğun Trafik"
+                        TrafficLevel.SEVERE -> "Çok Yoğun / Dur-Kalk"
+                        else -> "Bilinmiyor"
+                    }
+
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = levelBg,
+                        border = androidx.compose.foundation.BorderStroke(1.dp, levelColor.copy(alpha = 0.3f))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        Icons.Default.Speed,
+                                        contentDescription = null,
+                                        tint = levelColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = levelLabel,
+                                        color = levelColor,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                Text(
+                                    text = String.format("Yoğunluk: %.1fx", prediction.congestionMultiplier),
+                                    color = levelColor,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.HourglassEmpty,
+                                    contentDescription = null,
+                                    tint = levelColor,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (prediction.predictedDelaySeconds > 0) {
+                                        "Tahmini Gecikme: +${prediction.predictedDelaySeconds / 60} dakika"
+                                    } else {
+                                        "Tahmini Gecikme: Gecikme beklenmiyor"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = levelColor
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White.copy(alpha = 0.6f),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(8.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Icon(
+                                        Icons.Default.Lightbulb,
+                                        contentDescription = null,
+                                        tint = levelColor,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = prediction.advice,
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // Horizontal quick-compare cards for Peak Periods
+                    Text(
+                        text = "Günün Önemli Zaman Dilimleri:",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Morning Rush
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Sabah Yoğunluğu", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("07:30 - 09:30", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("🔴 Yoğun", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFD84315))
+                        }
+
+                        // Midday
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Gün Ortası", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("09:30 - 17:00", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("🟡 Orta", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF6C00))
+                        }
+
+                        // Evening Rush
+                        Column(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(6.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Text("Akşam Yoğunluğu", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("17:00 - 19:30", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("🛑 Çok Yoğun", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
+                        }
                     }
                 }
             }

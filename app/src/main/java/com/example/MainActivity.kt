@@ -2,6 +2,8 @@ package com.example
 
 import android.Manifest
 import android.app.Activity
+import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.WindowManager
@@ -50,6 +52,9 @@ fun HaritalarNavigationApp(
     val favorites by viewModel.favorites.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val safetyCameras by safetyCameraViewModel.cameras.collectAsState()
+    
+    val offlineDownloadProgress by viewModel.offlineMapManager.downloadProgress.collectAsState()
+    val offlineDownloadMessage by viewModel.offlineMapManager.downloadMessage.collectAsState()
 
     var showLayersSheet by remember { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
@@ -100,9 +105,59 @@ fun HaritalarNavigationApp(
         }
     }
 
+    LaunchedEffect(uiState.liveShareUrl) {
+        val url = uiState.liveShareUrl
+        if (url != null) {
+            val etaMins = uiState.navigationProgress?.totalRemainingSeconds?.let { it / 60 }
+            val etaText = if (etaMins != null) " ETA: $etaMins dk." else ""
+            val shareText = "Canlı konumumu ve varış tahminimi buradan takip et:$etaText $url"
+            
+            val sendIntent: Intent = Intent().apply {
+                action = Intent.ACTION_SEND
+                putExtra(Intent.EXTRA_TEXT, shareText)
+                type = "text/plain"
+            }
+            val shareIntent = Intent.createChooser(sendIntent, "Canlı Takibi Paylaş")
+            context.startActivity(shareIntent)
+        }
+    }
+
+    LaunchedEffect(uiState.userLocation, safetyCameras) {
+        viewModel.checkSafetyCameraProximity(safetyCameras)
+        viewModel.checkWeatherProximity()
+    }
+
     val selectedTrafficPair = uiState.selectedRoute?.let { uiState.trafficStatusMap[it.routeId] }
     val currentTrafficStatus = selectedTrafficPair?.first
     val currentTrafficSegments = selectedTrafficPair?.second ?: emptyList()
+
+    LaunchedEffect(uiState.navigationProgress, uiState.navigationState, currentTrafficStatus) {
+        val prefs = context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
+        val isNavigating = uiState.navigationState == NavigationState.NAVIGATING
+        
+        val etaMins = uiState.navigationProgress?.totalRemainingSeconds?.let { it / 60 }
+        val etaStr = if (etaMins != null) "$etaMins dk" else "--"
+        val destName = uiState.selectedDestination?.displayName ?: "Hedef"
+        val trafficLabel = when (currentTrafficStatus?.trafficLevel) {
+            com.example.haritalar.model.TrafficLevel.LOW -> "Akıcı"
+            com.example.haritalar.model.TrafficLevel.MODERATE -> "Yoğun"
+            com.example.haritalar.model.TrafficLevel.HEAVY, com.example.haritalar.model.TrafficLevel.SEVERE -> "Sıkışık"
+            else -> "--"
+        }
+
+        prefs.edit().apply {
+            putBoolean("is_navigating", isNavigating)
+            putString("eta", etaStr)
+            putString("destination", destName)
+            putString("traffic", trafficLabel)
+            apply()
+        }
+
+        val updateIntent = Intent(context, com.example.haritalar.widget.RouteWidgetProvider::class.java).apply {
+            action = com.example.haritalar.widget.RouteWidgetProvider.ACTION_UPDATE_WIDGET
+        }
+        context.sendBroadcast(updateIntent)
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -129,6 +184,7 @@ fun HaritalarNavigationApp(
                 isPoiLayerVisible = uiState.isPoiLayerVisible,
                 poiList = uiState.poiList,
                 safetyCameras = safetyCameras,
+                isSafetyCamerasLayerVisible = uiState.isSafetyCamerasLayerVisible,
                 destinationPoint = uiState.selectedDestination?.point,
                 cameraMode = uiState.cameraMode,
                 mapTrackingMode = uiState.mapTrackingMode,
@@ -208,15 +264,37 @@ fun HaritalarNavigationApp(
                 )
             }
 
+            // Radar Warning Card
+            RadarWarningCard(
+                camera = uiState.approachingCamera,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 140.dp else 100.dp)
+                    .statusBarsPadding()
+            )
+
+            // Weather Warning Card
+            com.example.haritalar.ui.WeatherWarningCard(
+                weather = uiState.approachingWeather,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 220.dp else 180.dp)
+                    .statusBarsPadding()
+            )
+
             // 4. Floating Map Controls (2D/3D, Layers, Mute, Recenter)
             FloatingMapControls(
                 cameraMode = uiState.cameraMode,
                 isMuted = uiState.isMuted,
                 isSimulationActive = uiState.isSimulationActive,
+                isLiveSharingActive = uiState.isLiveSharingActive,
                 onToggle2D3D = { viewModel.toggle2D3D() },
                 onOpenLayers = { showLayersSheet = true },
                 onToggleMute = { viewModel.toggleMute() },
                 onRecenter = { viewModel.recenterMap() },
+                onToggleLiveSharing = {
+                    viewModel.toggleLiveSharing()
+                },
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
                     .padding(
@@ -324,9 +402,12 @@ fun HaritalarNavigationApp(
                     cameraMode = uiState.cameraMode,
                     isTrafficLayerVisible = uiState.isTrafficLayerVisible,
                     isTrafficSignalsLayerVisible = uiState.isTrafficSignalsLayerVisible,
+                    isSafetyCamerasLayerVisible = uiState.isSafetyCamerasLayerVisible,
                     isPoiLayerVisible = uiState.isPoiLayerVisible,
                     isSimulationActive = uiState.isSimulationActive,
                     hasActiveRoute = uiState.selectedRoute != null,
+                    offlineDownloadProgress = offlineDownloadProgress,
+                    offlineDownloadMessage = offlineDownloadMessage,
                     onSet2DMode = {
                         viewModel.set2DMode()
                         showLayersSheet = false
@@ -337,9 +418,11 @@ fun HaritalarNavigationApp(
                     },
                     onToggleTrafficLayer = { viewModel.toggleTrafficLayer() },
                     onToggleTrafficSignalsLayer = { viewModel.toggleTrafficSignalsLayer() },
+                    onToggleSafetyCamerasLayer = { viewModel.toggleSafetyCamerasLayer() },
                     onTogglePoiLayer = { viewModel.togglePoiLayer() },
                     onToggleSimulation = { viewModel.toggleSimulation() },
                     onOpenTrafficInspector = { viewModel.openTrafficInspector() },
+                    onDownloadOfflineMap = { viewModel.downloadOfflineMap() },
                     onDismiss = { showLayersSheet = false }
                 )
             }

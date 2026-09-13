@@ -81,12 +81,23 @@ data class MainUiState(
     val isTrafficInspectorOpen: Boolean = false,
     val trafficTestResult: TrafficTestResult? = null,
     val isTestingTraffic: Boolean = false,
-    val customTomTomKey: String = ""
+    val customTomTomKey: String = "",
+    val isLiveSharingActive: Boolean = false,
+    val liveShareUrl: String? = null,
+    val isSafetyCamerasLayerVisible: Boolean = true,
+    val approachingCamera: com.example.haritalar.model.SafetyCamera? = null,
+    val currentViewportBbox: com.example.haritalar.model.TrafficSignalBoundingBox? = null,
+    val currentZoomLevel: Float = 0f,
+    val isWeatherLayerVisible: Boolean = true,
+    val routeWeather: List<com.example.haritalar.model.WeatherCondition> = emptyList(),
+    val approachingWeather: com.example.haritalar.model.WeatherCondition? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
     val repository = NavigationRepository(application)
     val locationManager = AppLocationManager(application)
+    val offlineMapManager = com.example.haritalar.data.offline.OfflineMapManager(application)
+    val weatherRepository = com.example.haritalar.data.weather.WeatherRepository()
     val ttsManager = TurkishTtsManager(application)
     val compassSensor = CompassHeadingSensor(application)
     val vehicleHeadingManager = VehicleHeadingManager(compassSensor)
@@ -342,6 +353,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectRoute(route: RouteOption) {
         _uiState.value = _uiState.value.copy(selectedRoute = route)
+        fetchWeatherForRoute(route)
+    }
+
+    private fun fetchWeatherForRoute(route: RouteOption) {
+        viewModelScope.launch {
+            val weather = weatherRepository.getRouteWeather(route)
+            _uiState.value = _uiState.value.copy(routeWeather = weather)
+            checkWeatherProximity()
+        }
+    }
+
+    fun toggleWeatherLayer() {
+        _uiState.value = _uiState.value.copy(isWeatherLayerVisible = !_uiState.value.isWeatherLayerVisible)
+        checkWeatherProximity()
     }
 
     fun startNavigation() {
@@ -559,6 +584,60 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible)
     }
 
+    fun toggleSafetyCamerasLayer() {
+        _uiState.value = _uiState.value.copy(isSafetyCamerasLayerVisible = !_uiState.value.isSafetyCamerasLayerVisible)
+    }
+
+    private var lastAnnouncedWeatherId: String? = null
+
+    fun checkWeatherProximity() {
+        if (!_uiState.value.isWeatherLayerVisible || _uiState.value.navigationState != NavigationState.NAVIGATING) {
+            _uiState.value = _uiState.value.copy(approachingWeather = null)
+            return
+        }
+        val userLoc = _uiState.value.userLocation?.point ?: return
+        
+        val weatherList = _uiState.value.routeWeather
+        val nearestWeather = weatherList.minByOrNull { it.point.distanceTo(userLoc) }
+        val distance = nearestWeather?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
+        
+        // Announce weather if within 1km
+        if (nearestWeather != null && distance <= 1000.0) {
+            _uiState.value = _uiState.value.copy(approachingWeather = nearestWeather)
+            if (lastAnnouncedWeatherId != nearestWeather.id) {
+                lastAnnouncedWeatherId = nearestWeather.id
+                ttsManager.speak("Dikkat. İleride ${nearestWeather.description.lowercase()} koşulları var.")
+            }
+        } else {
+            _uiState.value = _uiState.value.copy(approachingWeather = null)
+        }
+    }
+
+    private var lastAnnouncedCameraId: Long? = null
+
+    fun checkSafetyCameraProximity(cameras: List<com.example.haritalar.model.SafetyCamera>) {
+        if (!_uiState.value.isSafetyCamerasLayerVisible) {
+            _uiState.value = _uiState.value.copy(approachingCamera = null)
+            return
+        }
+        val userLoc = _uiState.value.userLocation?.point ?: return
+        
+        // Find the nearest camera within 500 meters
+        val nearestCamera = cameras.minByOrNull { it.point.distanceTo(userLoc) }
+        val distance = nearestCamera?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
+        
+        if (nearestCamera != null && distance <= 500.0) {
+            _uiState.value = _uiState.value.copy(approachingCamera = nearestCamera)
+            if (lastAnnouncedCameraId != nearestCamera.id) {
+                lastAnnouncedCameraId = nearestCamera.id
+                val speedMsg = nearestCamera.maxSpeed?.takeIf { it.isNotBlank() }?.let { " $it kilometre hız sınırı," } ?: ""
+                ttsManager.speak("Dikkat. İleride$speedMsg radar noktası var.")
+            }
+        } else {
+            _uiState.value = _uiState.value.copy(approachingCamera = null)
+        }
+    }
+
     fun togglePoiLayer() {
         val newVis = !_uiState.value.isPoiLayerVisible
         _uiState.value = _uiState.value.copy(isPoiLayerVisible = newVis)
@@ -622,6 +701,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun toggleLiveSharing() {
+        val isSharing = _uiState.value.isLiveSharingActive
+        if (isSharing) {
+            _uiState.value = _uiState.value.copy(
+                isLiveSharingActive = false,
+                liveShareUrl = null
+            )
+        } else {
+            val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
+            _uiState.value = _uiState.value.copy(
+                isLiveSharingActive = true,
+                liveShareUrl = "https://haritalar.example.com/share/$uniqueId"
+            )
+        }
+    }
+
     fun addFavorite(title: String, category: String) {
         val dest = _uiState.value.selectedDestination ?: return
         viewModelScope.launch {
@@ -644,7 +739,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      * Called when the map camera moves/stops and viewport changes.
      * Throttles/debounces and retrieves real traffic signals from OSM.
      */
+    fun downloadOfflineMap() {
+        val bbox = _uiState.value.currentViewportBbox ?: return
+        val currentZoom = _uiState.value.currentZoomLevel.toDouble()
+        val bounds = org.maplibre.android.geometry.LatLngBounds.Builder()
+            .include(org.maplibre.android.geometry.LatLng(bbox.south, bbox.west))
+            .include(org.maplibre.android.geometry.LatLng(bbox.north, bbox.east))
+            .build()
+        
+        // We fetch from current zoom up to zoom 15 to keep size reasonable
+        val maxZoom = kotlin.math.max(currentZoom, 15.0)
+        
+        offlineMapManager.downloadRegion(
+            styleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
+            bounds = bounds,
+            minZoom = currentZoom,
+            maxZoom = maxZoom,
+            pixelRatio = 1.0f
+        )
+    }
+
     fun onViewportChanged(bbox: TrafficSignalBoundingBox, zoomLevel: Float) {
+        _uiState.value = _uiState.value.copy(
+            currentViewportBbox = bbox,
+            currentZoomLevel = zoomLevel
+        )
         if (!_uiState.value.isTrafficSignalsLayerVisible) return
         if (zoomLevel < TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS) {
             return

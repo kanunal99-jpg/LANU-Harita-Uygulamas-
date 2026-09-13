@@ -72,6 +72,8 @@ class TrafficSignalRepository(
                 lastRequestedBbox = bbox
                 service.fetchTrafficSignalsInBoundingBox(bbox)
             }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
         } catch (e: Exception) {
             Log.e(TAG, "Network fetch exception: ${e.message}", e)
             TrafficSignalFetchResult.Error(

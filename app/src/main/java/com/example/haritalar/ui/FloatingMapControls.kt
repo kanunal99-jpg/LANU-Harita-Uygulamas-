@@ -1,5 +1,6 @@
 package com.example.haritalar.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,10 +25,12 @@ fun FloatingMapControls(
     cameraMode: CameraMode,
     isMuted: Boolean,
     isSimulationActive: Boolean,
+    isLiveSharingActive: Boolean = false,
     onToggle2D3D: () -> Unit,
     onOpenLayers: () -> Unit,
     onToggleMute: () -> Unit,
     onRecenter: () -> Unit,
+    onToggleLiveSharing: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -36,6 +39,35 @@ fun FloatingMapControls(
         horizontalAlignment = Alignment.End,
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
+        // Live Sharing Badge
+        if (isLiveSharingActive) {
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color(0xFF6366F1), // Indigo color for sharing
+                shadowElevation = 6.dp,
+                modifier = Modifier.clickable { onToggleLiveSharing() }
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.ShareLocation,
+                        contentDescription = "Canlı Takip Durdur",
+                        tint = Color.White,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Paylaşılıyor",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
         // Simulation badge if active
         if (isSimulationActive) {
             Surface(
@@ -72,6 +104,16 @@ fun FloatingMapControls(
             onClick = onToggle2D3D,
             testTag = "toggle_2d_3d_button"
         )
+
+        if (!isLiveSharingActive) {
+            FloatingControlButton(
+                icon = Icons.Default.ShareLocation,
+                contentDescription = "Canlı Takibimi Paylaş",
+                tint = Color(0xFF6366F1), // Indigo
+                onClick = onToggleLiveSharing,
+                testTag = "toggle_live_sharing_button"
+            )
+        }
 
         // Layers Button
         FloatingControlButton(
