@@ -16,6 +16,7 @@ class NavigationEngineTest {
     private lateinit var voice: FakeNavigationVoice
     private var offRouteCount = 0
     private var arrivalCount = 0
+    private var now = 1_000_000L
     private lateinit var engine: NavigationEngine
 
     private val start = GeoPoint(41.0000, 29.0000)
@@ -27,10 +28,12 @@ class NavigationEngineTest {
         voice = FakeNavigationVoice()
         offRouteCount = 0
         arrivalCount = 0
+        now = 1_000_000L
         engine = NavigationEngine(
             voice = voice,
             onOffRouteDetected = { offRouteCount++ },
-            onArrivalDetected = { arrivalCount++ }
+            onArrivalDetected = { arrivalCount++ },
+            nowMs = { now }
         )
     }
 
@@ -74,6 +77,23 @@ class NavigationEngineTest {
         val second = engine.processLocationUpdate(location(farAway))
         assertTrue(second.isOffRoute)
         assertEquals(0, offRouteCount)
+    }
+
+    @Test
+    fun offRoute_afterCooldown_triggersRerouteCallbackAndVoice() {
+        engine.startNavigation(route())
+        val farAway = GeoPoint(41.0020, 29.0000)
+
+        engine.processLocationUpdate(location(farAway))
+        engine.processLocationUpdate(location(farAway))
+        assertEquals(0, offRouteCount)
+        assertFalse(voice.rerouteAnnounced)
+
+        now += 12_001L
+        engine.processLocationUpdate(location(farAway))
+
+        assertEquals(1, offRouteCount)
+        assertTrue(voice.rerouteAnnounced)
     }
 
     @Test
@@ -150,12 +170,13 @@ class NavigationEngineTest {
     private class FakeNavigationVoice : NavigationVoice {
         var startSequenceCount = 0
         var arrivalCount = 0
+        var rerouteAnnounced = false
         val spoken = mutableListOf<String>()
 
         override fun speak(text: String, isPriority: Boolean) { spoken += text }
         override fun playNavigationStartSequence() { startSequenceCount++ }
         override fun announceArrival() { arrivalCount++ }
-        override fun announceReroute() { spoken += "reroute" }
+        override fun announceReroute() { rerouteAnnounced = true }
         override fun stop() = Unit
     }
 }
