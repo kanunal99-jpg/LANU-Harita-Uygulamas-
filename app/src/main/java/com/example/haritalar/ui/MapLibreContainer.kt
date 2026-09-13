@@ -142,7 +142,7 @@ fun MapLibreContainer(
                         }
                     }
                 }
-                mapView.addOnDidFailLoadingMapListener(styleFailureListener)
+                addOnDidFailLoadingMapListener(styleFailureListener)
                 loadStyleCandidate()
                 map.addOnCameraIdleListener {
                     try {
