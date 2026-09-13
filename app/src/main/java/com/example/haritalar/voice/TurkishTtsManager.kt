@@ -87,11 +87,14 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
 
     fun speakDistanceInstruction(distanceMeters: Double, instruction: String) {
         val formatted = when {
-            distanceMeters > 1000 -> "$${String.format(Locale.US, "%.1f", distanceMeters / 1000.0)} kilometre sonra $instruction"
+            distanceMeters > 1000 -> {
+                val km = String.format(Locale.US, "%.1f", distanceMeters / 1000.0)
+                "$km kilometre sonra $instruction"
+            }
             distanceMeters > 80 -> "${(Math.round(distanceMeters / 50.0) * 50).toInt()} metre sonra $instruction"
             distanceMeters > 20 -> "Şimdi $instruction"
             else -> instruction
-        }.replace("$", "")
+        }
         speak(formatted)
     }
 
