@@ -16,6 +16,14 @@ class MapStyleFallbackPolicyTest {
             MapStyleFallbackPolicy.BACKUP_STYLE_URL,
             MapStyleFallbackPolicy.candidates[1]
         )
-        assertTrue(MapStyleFallbackPolicy.candidates.size >= 2)
+    }
+
+    @Test
+    fun candidates_end_with_bundled_safe_default() {
+        assertEquals(
+            MapStyleFallbackPolicy.SAFE_DEFAULT_STYLE_URI,
+            MapStyleFallbackPolicy.candidates.last()
+        )
+        assertTrue(MapStyleFallbackPolicy.candidates.size >= 3)
     }
 }
