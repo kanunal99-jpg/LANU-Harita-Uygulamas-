@@ -47,10 +47,29 @@ jobs:
         if: always()
         run: |
           set +e
-          timeout 20s adb devices -l > adb-devices.txt 2>&1 || true
-          timeout 30s adb logcat -d > android-logcat.txt 2>&1 || true
-          timeout 20s adb shell dumpsys activity exit-info com.aistudio.haritalar.navtr > android-exit-info.txt 2>&1 || true
-          echo 'Diagnostics collection completed.'
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          commands = [
+              ("adb-devices.txt", ["adb", "devices", "-l"], 20),
+              ("android-logcat.txt", ["adb", "logcat", "-d"], 30),
+              ("android-exit-info.txt", ["adb", "shell", "dumpsys", "activity", "exit-info", "com.aistudio.haritalar.navtr"], 20),
+          ]
+          for filename, command, timeout_seconds in commands:
+              try:
+                  result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds)
+                  output = (result.stdout or "") + (result.stderr or "")
+                  Path(filename).write_text(output, encoding="utf-8")
+              except subprocess.TimeoutExpired as exc:
+                  output = (exc.stdout or b"").decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+                  output += (exc.stderr or b"").decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+                  output += f"\nCOMMAND_TIMEOUT after {timeout_seconds}s: {' '.join(command)}\n"
+                  Path(filename).write_text(output, encoding="utf-8")
+              except Exception as exc:
+                  Path(filename).write_text(f"COMMAND_ERROR: {exc}\n", encoding="utf-8")
+          print("Diagnostics collection completed.")
+          PY
       - name: Upload Android diagnostics
         if: always()
         uses: actions/upload-artifact@v4
