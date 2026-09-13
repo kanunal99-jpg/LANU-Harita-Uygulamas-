@@ -7,6 +7,7 @@ import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.TripSummary
 import com.example.haritalar.model.TurnManeuver
 import com.example.haritalar.voice.NavigationVoice
+import com.example.haritalar.voice.TurkishTtsManager
 
 data class NavigationProgress(
     val currentManeuver: TurnManeuver?,
@@ -29,6 +30,16 @@ class NavigationEngine(
     private val onOffRouteDetected: (currentLocation: GeoPoint) -> Unit,
     private val onArrivalDetected: (tripSummary: TripSummary) -> Unit
 ) {
+    constructor(
+        ttsManager: TurkishTtsManager,
+        onOffRouteDetected: (currentLocation: GeoPoint) -> Unit,
+        onArrivalDetected: (tripSummary: TripSummary) -> Unit
+    ) : this(
+        voice = ttsManager,
+        onOffRouteDetected = onOffRouteDetected,
+        onArrivalDetected = onArrivalDetected
+    )
+
     private var activeRoute: RouteOption? = null
     private var currentManeuverIndex = 0
 
