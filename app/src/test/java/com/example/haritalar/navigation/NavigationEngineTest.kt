@@ -99,18 +99,19 @@ class NavigationEngineTest {
     @Test
     fun arrival_requiresAccurateConsecutiveLocationUpdates() {
         engine.startNavigation(route())
-        val accurateAtDestination = location(destination, accuracy = 5f)
+        val nearDestination = GeoPoint(41.0000, 29.0017)
+        val accurateNearDestination = location(nearDestination, accuracy = 5f)
 
-        val first = engine.processLocationUpdate(accurateAtDestination)
+        val first = engine.processLocationUpdate(accurateNearDestination)
         assertFalse(first.hasArrived)
         assertEquals(0, arrivalCount)
 
-        val second = engine.processLocationUpdate(accurateAtDestination)
+        val second = engine.processLocationUpdate(accurateNearDestination)
         assertTrue(second.hasArrived)
         assertEquals(1, arrivalCount)
         assertEquals(1, voice.arrivalCount)
 
-        val third = engine.processLocationUpdate(accurateAtDestination)
+        val third = engine.processLocationUpdate(accurateNearDestination)
         assertTrue(third.hasArrived)
         assertEquals(1, arrivalCount)
         assertEquals(1, voice.arrivalCount)
