@@ -64,6 +64,19 @@ jobs:
             git push
           fi
 
+      - name: Remove previous latest Release APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/latest" --jq '.assets[] | select(.name == "app-debug.apk") | .id' | head -n 1)"
+          if [ -n "${asset_id}" ]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            echo "Removed previous app-debug.apk release asset: ${asset_id}"
+          else
+            echo 'No previous app-debug.apk release asset found.'
+          fi
+
       - name: Publish APK to latest GitHub Release
         uses: softprops/action-gh-release@v2
         with:
