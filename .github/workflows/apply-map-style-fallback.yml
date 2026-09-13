@@ -1,0 +1,52 @@
+name: Apply MapLibre style fallback
+
+on:
+  push:
+    branches:
+      - feat/radar-poi-map-layers
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/radar-poi-map-layers
+          fetch-depth: 0
+      - name: Wire deterministic style fallback
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt')
+          s = p.read_text()
+          old = '''private const val STYLE_URL = "https://tiles.openfreemap.org/styles/liberty"'''
+          new = '''private const val STYLE_URL = MapStyleFallbackPolicy.PRIMARY_STYLE_URL\nprivate const val BACKUP_STYLE_URL = MapStyleFallbackPolicy.BACKUP_STYLE_URL\nprivate const val STYLE_FALLBACK_TAG = "MapLibreContainer"'''
+          if old not in s:
+              raise SystemExit('STYLE_URL anchor not found')
+          s = s.replace(old, new, 1)
+          old = '''                map.uiSettings.isCompassEnabled = true\n                map.setStyle(Style.Builder().fromUri(STYLE_URL)) { style ->\n                    mapStyle = style\n                    setupLayers(style, context)\n                }'''
+          new = '''                map.uiSettings.isCompassEnabled = true\n                var styleAttempt = 0\n                fun loadStyleCandidate() {\n                    val candidate = MapStyleFallbackPolicy.candidates.getOrNull(styleAttempt)\n                    if (candidate == null) {\n                        android.util.Log.e(STYLE_FALLBACK_TAG, "All map styles failed; keeping safe blank map state")\n                        return\n                    }\n                    android.util.Log.i(STYLE_FALLBACK_TAG, "Loading map style candidate #${styleAttempt + 1}: $candidate")\n                    map.setStyle(Style.Builder().fromUri(candidate)) { style ->\n                        mapStyle = style\n                        setupLayers(style, context)\n                        android.util.Log.i(STYLE_FALLBACK_TAG, "Map style loaded: $candidate")\n                    }\n                }\n                val styleFailureListener = object : MapView.OnDidFailLoadingMapListener {\n                    override fun onDidFailLoadingMap(errorMessage: String) {\n                        if (styleAttempt < MapStyleFallbackPolicy.candidates.lastIndex) {\n                            styleAttempt += 1\n                            android.util.Log.w(STYLE_FALLBACK_TAG, "Map style candidate failed; trying fallback #${styleAttempt + 1}: $errorMessage")\n                            loadStyleCandidate()\n                        } else {\n                            android.util.Log.e(STYLE_FALLBACK_TAG, "Map style fallback exhausted: $errorMessage")\n                        }\n                    }\n                }\n                mapView.addOnDidFailLoadingMapListener(styleFailureListener)\n                loadStyleCandidate()'''
+          if old not in s:
+              raise SystemExit('style loading anchor not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          a = Path('app/src/main/assets/map_style_safe_default.json')
+          a.parent.mkdir(parents=True, exist_ok=True)
+          a.write_text('''{\n  "version": 8,\n  "name": "LANU Safe Default",\n  "sources": {},\n  "layers": [\n    {\n      "id": "background",\n      "type": "background",\n      "paint": {\n        "background-color": "#F2F2F7"\n      }\n    }\n  ]\n}\n''')
+
+          w = Path('.github/workflows/apply-map-style-fallback.yml')
+          w.unlink()
+      - name: Commit fallback implementation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt app/src/main/assets/map_style_safe_default.json .github/workflows/apply-map-style-fallback.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "feat: wire MapLibre style fallback runtime"
+          git push origin HEAD:feat/radar-poi-map-layers
