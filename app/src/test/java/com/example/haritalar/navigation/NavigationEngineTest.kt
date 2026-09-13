@@ -1,0 +1,161 @@
+package com.example.haritalar.navigation
+
+import com.example.haritalar.model.GeoPoint
+import com.example.haritalar.model.ManeuverType
+import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.TurnManeuver
+import com.example.haritalar.voice.NavigationVoice
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+
+class NavigationEngineTest {
+    private lateinit var voice: FakeNavigationVoice
+    private var offRouteCount = 0
+    private var arrivalCount = 0
+    private lateinit var engine: NavigationEngine
+
+    private val start = GeoPoint(41.0000, 29.0000)
+    private val middle = GeoPoint(41.0000, 29.0010)
+    private val destination = GeoPoint(41.0000, 29.0020)
+
+    @Before
+    fun setUp() {
+        voice = FakeNavigationVoice()
+        offRouteCount = 0
+        arrivalCount = 0
+        engine = NavigationEngine(
+            voice = voice,
+            onOffRouteDetected = { offRouteCount++ },
+            onArrivalDetected = { arrivalCount++ }
+        )
+    }
+
+    @Test
+    fun noActiveRoute_returnsSafeIdleProgress() {
+        val progress = engine.processLocationUpdate(location(start))
+        assertNull(progress.currentManeuver)
+        assertFalse(progress.hasArrived)
+        assertEquals(0.0, progress.totalRemainingDistanceMeters, 0.001)
+    }
+
+    @Test
+    fun startNavigation_announcesStartOnlyOnceUntilStop() {
+        engine.startNavigation(route())
+        engine.startNavigation(route())
+        assertEquals(1, voice.startSequenceCount)
+
+        engine.stop()
+        engine.startNavigation(route())
+        assertEquals(2, voice.startSequenceCount)
+    }
+
+    @Test
+    fun maneuverAdvancesWhenVehicleReachesManeuverPoint() {
+        val first = TurnManeuver("Sağa dön", 0.0, ManeuverType.RIGHT, middle, "Atatürk Caddesi")
+        val second = TurnManeuver("Hedefe doğru ilerle", 0.0, ManeuverType.STRAIGHT, destination, "İnönü Caddesi")
+        engine.startNavigation(route(maneuvers = listOf(first, second)))
+
+        val progress = engine.processLocationUpdate(location(middle))
+        assertEquals(second, progress.currentManeuver)
+    }
+
+    @Test
+    fun offRoute_requiresTwoConsecutiveUpdates() {
+        engine.startNavigation(route())
+        val farAway = GeoPoint(41.0020, 29.0000)
+
+        val first = engine.processLocationUpdate(location(farAway))
+        assertFalse(first.isOffRoute)
+
+        val second = engine.processLocationUpdate(location(farAway))
+        assertTrue(second.isOffRoute)
+        assertEquals(0, offRouteCount)
+    }
+
+    @Test
+    fun arrival_requiresAccurateConsecutiveLocationUpdates() {
+        engine.startNavigation(route())
+        val accurateAtDestination = location(destination, accuracy = 5f)
+
+        val first = engine.processLocationUpdate(accurateAtDestination)
+        assertFalse(first.hasArrived)
+        assertEquals(0, arrivalCount)
+
+        val second = engine.processLocationUpdate(accurateAtDestination)
+        assertTrue(second.hasArrived)
+        assertEquals(1, arrivalCount)
+        assertEquals(1, voice.arrivalCount)
+
+        val third = engine.processLocationUpdate(accurateAtDestination)
+        assertTrue(third.hasArrived)
+        assertEquals(1, arrivalCount)
+        assertEquals(1, voice.arrivalCount)
+    }
+
+    @Test
+    fun inaccurateGpsAtDestination_doesNotConfirmArrival() {
+        engine.startNavigation(route())
+        val inaccurateAtDestination = location(destination, accuracy = 80f)
+        repeat(3) { engine.processLocationUpdate(inaccurateAtDestination) }
+
+        assertEquals(0, arrivalCount)
+        assertFalse(engine.processLocationUpdate(location(start)).hasArrived)
+    }
+
+    @Test
+    fun snapToRoute_exposesSnappedLocationAndBearing() {
+        engine.startNavigation(route())
+        val slightlyOffRoute = GeoPoint(41.0001, 29.0010)
+
+        val progress = engine.processLocationUpdate(location(slightlyOffRoute))
+        assertTrue(progress.snappedLocation != null)
+        assertTrue(progress.snappedBearing != null)
+        assertTrue(progress.snappedLocation!!.distanceTo(middle) < 20.0)
+    }
+
+    @Test
+    fun voiceDistanceGate_doesNotRepeatSameBand() {
+        val maneuver = TurnManeuver("sağa dön", 0.0, ManeuverType.RIGHT, start)
+        engine.startNavigation(route(maneuvers = listOf(maneuver)))
+
+        engine.processLocationUpdate(location(GeoPoint(41.0000, 29.0050)))
+        val firstAnnouncementCount = voice.spoken.size
+        engine.processLocationUpdate(location(GeoPoint(41.0000, 29.0050)))
+
+        assertEquals(firstAnnouncementCount, voice.spoken.size)
+    }
+
+    private fun route(maneuvers: List<TurnManeuver> = emptyList()) = RouteOption(
+        routeId = "test-route",
+        title = "Test Hedef",
+        summary = "Test Başlangıç",
+        durationSeconds = 600,
+        distanceMeters = start.distanceTo(destination),
+        geometry = listOf(start, middle, destination),
+        maneuvers = maneuvers
+    )
+
+    private fun location(point: GeoPoint, accuracy: Float = 5f) = UserLocationData(
+        point = point,
+        accuracyMeters = accuracy,
+        speedKmh = 30f,
+        bearing = 90f,
+        isGpsWeak = false
+    )
+
+    private class FakeNavigationVoice : NavigationVoice {
+        var startSequenceCount = 0
+        var arrivalCount = 0
+        val spoken = mutableListOf<String>()
+
+        override fun speak(text: String, isPriority: Boolean) { spoken += text }
+        override fun playNavigationStartSequence() { startSequenceCount++ }
+        override fun announceArrival() { arrivalCount++ }
+        override fun announceReroute() { spoken += "reroute" }
+        override fun stop() = Unit
+    }
+}
