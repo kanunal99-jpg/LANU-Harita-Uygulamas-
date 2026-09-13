@@ -12,7 +12,7 @@ permissions:
 jobs:
   build-apk:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,14 +32,35 @@ jobs:
       - name: Run Android cold-start instrumentation test
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
+          api-level: 34
           arch: x86_64
           target: google_apis
-          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data
           disable-animations: true
-          script: gradle :app:connectedDebugAndroidTest --stacktrace
+          script: |
+            adb devices
+            gradle :app:connectedDebugAndroidTest --stacktrace
         env:
           CI: true
+      - name: Collect Android diagnostics
+        if: always()
+        run: |
+          set +e
+          adb devices -l > adb-devices.txt 2>&1
+          adb logcat -d > android-logcat.txt 2>&1
+          adb shell dumpsys activity exit-info com.aistudio.haritalar.navtr > android-exit-info.txt 2>&1
+      - name: Upload Android diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lanu-harita-android-diagnostics
+          path: |
+            adb-devices.txt
+            android-logcat.txt
+            android-exit-info.txt
+          if-no-files-found: warn
+          retention-days: 14
       - name: Create Android debug keystore
         run: |
           keytool -genkeypair -v \
@@ -55,6 +76,19 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
         env:
           CI: true
+      - name: Verify APK SHA-256
+        run: |
+          set -euo pipefail
+          sha256sum app/build/outputs/apk/debug/*.apk | tee apk-sha256.txt
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lanu-harita-debug-apk
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            apk-sha256.txt
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish latest APK into repository
         run: |
           mkdir -p downloads
@@ -93,10 +127,3 @@ jobs:
           make_latest: true
           prerelease: false
           draft: false
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lanu-harita-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
-          retention-days: 14
