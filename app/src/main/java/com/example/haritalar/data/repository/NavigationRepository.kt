@@ -8,7 +8,6 @@ import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.haritalar.data.network.OsrmRoutingProvider
 import com.example.haritalar.data.network.PoiNetworkService
-import com.example.haritalar.data.network.RoutingProvider
 import com.example.haritalar.data.network.ValhallaRoutingProvider
 import com.example.haritalar.data.traffic.TomTomTrafficProvider
 import com.example.haritalar.data.traffic.TrafficProviderChain
@@ -49,7 +48,6 @@ class NavigationRepository(context: Context) {
     private val valhallaProvider = ValhallaRoutingProvider()
     private val osrmProvider = OsrmRoutingProvider()
 
-    // Traffic Provider Chain: Stored User Key or BuildConfig TomTom Key
     val tomtomProvider = TomTomTrafficProvider(getEffectiveTomTomKey())
     val trafficProviderChain = TrafficProviderChain(primaryProvider = tomtomProvider)
     val trafficRankingService = TrafficRouteRankingService(trafficProviderChain)
@@ -113,34 +111,18 @@ class NavigationRepository(context: Context) {
     ): Pair<List<RouteOption>, Map<String, Pair<TrafficStatus, List<TrafficSegment>>>> {
         trafficCoordinator.resetGeneration(generationId)
 
-        // 1. Try Valhalla
-        var rawRoutes = valhallaProvider.calculateRoutes(start, end, generationId)
-
-        // 2. Fallback to OSRM if Valhalla returned empty
-        if (rawRoutes.isEmpty()) {
-            rawRoutes = osrmProvider.calculateRoutes(start, end, generationId)
+        val valhallaRoutes = valhallaProvider.calculateRoutes(start, end, generationId)
+        val rawRoutes = if (valhallaRoutes.isNotEmpty()) {
+            valhallaRoutes
+        } else {
+            osrmProvider.calculateRoutes(start, end, generationId)
         }
 
-        // 3. Fallback direct route if both network routing failed
         if (rawRoutes.isEmpty()) {
-            val dist = start.distanceTo(end)
-            val durationSec = Math.round(dist / 13.8).toLong() // avg 50 km/h
-            val directRoute = RouteOption(
-                routeId = "fallback_direct_${generationId}",
-                title = "Temel Rota (Çevrimdışı/Doğrudan)",
-                summary = "Doğrudan kılavuz hat",
-                durationSeconds = durationSec,
-                distanceMeters = dist,
-                geometry = listOf(start, end),
-                maneuvers = emptyList(),
-                generationId = generationId
-            )
-            rawRoutes = listOf(directRoute)
+            return emptyList<RouteOption>() to emptyMap()
         }
 
-        // 4. Apply Traffic Ranking & Status
-        val rankedPair = trafficRankingService.rankAndApplyTraffic(rawRoutes, generationId)
-        return rankedPair
+        return trafficRankingService.rankAndApplyTraffic(rawRoutes, generationId)
     }
 
     suspend fun addFavorite(title: String, address: String, point: GeoPoint, category: String) {
