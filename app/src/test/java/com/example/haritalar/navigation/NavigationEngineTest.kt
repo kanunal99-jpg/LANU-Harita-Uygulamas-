@@ -152,8 +152,8 @@ class NavigationEngineTest {
         )
         engine.startNavigation(detourRoute)
 
-        val progress = engine.processLocationUpdate(location(middle))
-        val directDistance = middle.distanceTo(destination)
+        val progress = engine.processLocationUpdate(location(start))
+        val directDistance = start.distanceTo(destination)
 
         assertTrue(progress.totalRemainingDistanceMeters > directDistance + 50.0)
         assertTrue(progress.totalRemainingSeconds > 0L)
