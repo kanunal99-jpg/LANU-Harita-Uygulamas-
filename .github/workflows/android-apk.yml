@@ -46,8 +46,10 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -dname 'CN=Android Debug,O=Android,C=US'
-      - name: Run unit tests
-        run: gradle :app:testDebugUnitTest --stacktrace
+      - name: Run unit tests and lint
+        run: |
+          set -euo pipefail
+          gradle :app:testDebugUnitTest :app:lintDebug --stacktrace
         env:
           CI: true
       - name: Run Android cold-start instrumentation test

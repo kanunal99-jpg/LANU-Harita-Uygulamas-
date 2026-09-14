@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Primary Geocoding Provider using OpenStreetMap Nominatim.
- * Strictly free, open, and policy compliant with custom User-Agent and TR bias.
+ * Strictly free, open, and policy compliant with a stable app User-Agent and TR bias.
  */
 class NominatimSearchProvider(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -41,7 +41,6 @@ class NominatimSearchProvider(
             .append("&countrycodes=tr")
 
         if (focusPoint != null) {
-            // Bias viewbox around user location (+/- 0.8 degrees ~ 90km), non-bounded
             val minLon = focusPoint.longitude - 0.8
             val maxLon = focusPoint.longitude + 0.8
             val minLat = focusPoint.latitude - 0.8
@@ -52,58 +51,58 @@ class NominatimSearchProvider(
 
         val request = Request.Builder()
             .url(urlBuilder.toString())
-            .header("User-Agent", "LANUHaritaAndroidNav/1.0 (lanu-nav@example.com)")
+            .header("User-Agent", "LANUHaritaAndroidNav/1.0")
             .build()
 
-        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            throw IOException("Nominatim HTTP Error: ${response.code} ${response.message}")
-        }
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw IOException("Nominatim HTTP Error: ${response.code} ${response.message}")
+            }
 
-        val bodyString = response.body?.string() ?: return@withContext emptyList()
-        val jsonArray = JSONArray(bodyString)
-        val results = mutableListOf<SearchResult>()
+            val bodyString = response.body?.string() ?: return@withContext emptyList()
+            val jsonArray = JSONArray(bodyString)
+            val results = mutableListOf<SearchResult>()
 
-        for (i in 0 until jsonArray.length()) {
-            val item = jsonArray.getJSONObject(i)
-            val lat = item.optDouble("lat", Double.NaN)
-            val lon = item.optDouble("lon", Double.NaN)
-            if (lat.isNaN() || lon.isNaN()) continue
+            for (i in 0 until jsonArray.length()) {
+                val item = jsonArray.getJSONObject(i)
+                val lat = item.optDouble("lat", Double.NaN)
+                val lon = item.optDouble("lon", Double.NaN)
+                if (lat.isNaN() || lon.isNaN()) continue
 
-            val displayName = item.optString("display_name", "")
-            val rawName = item.optString("name", "")
-            val rawType = item.optString("type", "place")
-            val rawClass = item.optString("class", "")
-            val osmId = item.optString("osm_id", "osm_$i")
-            val importance = item.optDouble("importance", 0.5).toFloat()
+                val displayName = item.optString("display_name", "")
+                val rawName = item.optString("name", "")
+                val rawType = item.optString("type", "place")
+                val rawClass = item.optString("class", "")
+                val osmId = item.optString("osm_id", "osm_$i")
+                val importance = item.optDouble("importance", 0.5).toFloat()
 
-            val addrObj = item.optJSONObject("address")
-            val addressDetails = parseAddressDetails(addrObj, rawName, displayName)
-            val resultType = determineResultType(rawClass, rawType, addressDetails)
+                val addrObj = item.optJSONObject("address")
+                val addressDetails = parseAddressDetails(addrObj, rawName, displayName)
+                val resultType = determineResultType(rawClass, rawType, addressDetails)
 
-            val (formattedTitle, formattedSubtitle) = TurkishAddressHelper.formatAddressParts(
-                fallbackName = rawName,
-                fallbackDisplayName = displayName,
-                details = addressDetails
-            )
-
-            results.add(
-                SearchResult(
-                    id = osmId,
-                    name = formattedTitle,
-                    displayName = displayName,
-                    shortAddress = formattedSubtitle,
-                    point = GeoPoint(lat, lon),
-                    type = rawType,
-                    resultType = resultType,
-                    provider = name,
-                    confidence = importance.coerceIn(0.1f, 1.0f),
-                    addressDetails = addressDetails
+                val (formattedTitle, formattedSubtitle) = TurkishAddressHelper.formatAddressParts(
+                    fallbackName = rawName,
+                    fallbackDisplayName = displayName,
+                    details = addressDetails
                 )
-            )
-        }
 
-        results
+                results.add(
+                    SearchResult(
+                        id = osmId,
+                        name = formattedTitle,
+                        displayName = displayName,
+                        shortAddress = formattedSubtitle,
+                        point = GeoPoint(lat, lon),
+                        type = rawType,
+                        resultType = resultType,
+                        provider = name,
+                        confidence = importance.coerceIn(0.1f, 1.0f),
+                        addressDetails = addressDetails
+                    )
+                )
+            }
+            results
+        }
     }
 
     override suspend fun reverseGeocode(point: GeoPoint): String? = withContext(Dispatchers.IO) {
@@ -111,23 +110,24 @@ class NominatimSearchProvider(
             val url = "https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.latitude}&lon=${point.longitude}&addressdetails=1&accept-language=tr"
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "LANUHaritaAndroidNav/1.0 (lanu-nav@example.com)")
+                .header("User-Agent", "LANUHaritaAndroidNav/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext null
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
 
-            val bodyString = response.body?.string() ?: return@withContext null
-            val obj = JSONObject(bodyString)
-            val displayName = obj.optString("display_name", "")
-            val addrObj = obj.optJSONObject("address")
-            val details = parseAddressDetails(addrObj, "", displayName)
+                val bodyString = response.body?.string() ?: return@withContext null
+                val obj = JSONObject(bodyString)
+                val displayName = obj.optString("display_name", "")
+                val addrObj = obj.optJSONObject("address")
+                val details = parseAddressDetails(addrObj, "", displayName)
 
-            val (title, subtitle) = TurkishAddressHelper.formatAddressParts("", displayName, details)
-            if (subtitle.isNotBlank() && title != subtitle) {
-                "$title, $subtitle"
-            } else {
-                displayName.ifBlank { null }
+                val (title, subtitle) = TurkishAddressHelper.formatAddressParts("", displayName, details)
+                if (subtitle.isNotBlank() && title != subtitle) {
+                    "$title, $subtitle"
+                } else {
+                    displayName.ifBlank { null }
+                }
             }
         } catch (e: Exception) {
             null
@@ -136,60 +136,38 @@ class NominatimSearchProvider(
 
     private fun parseAddressDetails(addrObj: JSONObject?, rawName: String, displayName: String): TurkishAddressDetails {
         if (addrObj == null) {
-            return TurkishAddressDetails(
-                country = "Türkiye",
-                poiName = rawName.ifBlank { null }
-            )
+            return TurkishAddressDetails(country = "Türkiye", poiName = rawName.ifBlank { null })
         }
-
         val country = addrObj.optString("country", "Türkiye")
         val province = addrObj.optString("province").ifBlank {
-            addrObj.optString("state").ifBlank {
-                addrObj.optString("city").ifBlank { null }
-            }
+            addrObj.optString("state").ifBlank { addrObj.optString("city").ifBlank { null } }
         }
-
         val district = addrObj.optString("town").ifBlank {
             addrObj.optString("county").ifBlank {
-                addrObj.optString("district").ifBlank {
-                    addrObj.optString("city_district").ifBlank { null }
-                }
+                addrObj.optString("district").ifBlank { addrObj.optString("city_district").ifBlank { null } }
             }
         }
-
         val neighborhood = addrObj.optString("suburb").ifBlank {
-            addrObj.optString("neighbourhood").ifBlank {
-                addrObj.optString("quarter").ifBlank { null }
-            }
+            addrObj.optString("neighbourhood").ifBlank { addrObj.optString("quarter").ifBlank { null } }
         }
-
         val street = addrObj.optString("road").ifBlank {
             addrObj.optString("street").ifBlank {
-                addrObj.optString("pedestrian").ifBlank {
-                    addrObj.optString("footway").ifBlank { null }
-                }
+                addrObj.optString("pedestrian").ifBlank { addrObj.optString("footway").ifBlank { null } }
             }
         }
-
         val houseNumber = addrObj.optString("house_number").ifBlank {
             addrObj.optString("housenumber").ifBlank {
-                addrObj.optString("street_number").ifBlank {
-                    addrObj.optString("conscriptionnumber").ifBlank { null }
-                }
+                addrObj.optString("street_number").ifBlank { addrObj.optString("conscriptionnumber").ifBlank { null } }
             }
         }
         val postalCode = addrObj.optString("postcode").ifBlank { null }
-
         val poiName = rawName.ifBlank {
             addrObj.optString("amenity").ifBlank {
                 addrObj.optString("shop").ifBlank {
-                    addrObj.optString("tourism").ifBlank {
-                        addrObj.optString("building").ifBlank { null }
-                    }
+                    addrObj.optString("tourism").ifBlank { addrObj.optString("building").ifBlank { null } }
                 }
             }
         }
-
         return TurkishAddressDetails(
             country = country,
             province = province,

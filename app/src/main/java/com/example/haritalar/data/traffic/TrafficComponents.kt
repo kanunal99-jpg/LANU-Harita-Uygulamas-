@@ -214,13 +214,12 @@ class TomTomTrafficProvider(
 }
 
 class TrafficCache(
-    private val ttlMillis: Long = 5 * 60 * 1000L // 5 minutes TTL
+    private val ttlMillis: Long = 5 * 60 * 1000L
 ) {
     private data class CacheEntry(val segment: TrafficSegment, val timestamp: Long)
     private val cache = ConcurrentHashMap<String, CacheEntry>()
 
     private fun makeKey(point: GeoPoint): String {
-        // Round to ~100m grid to avoid redundant queries for nearby points
         val latKey = Math.round(point.latitude * 1000.0)
         val lonKey = Math.round(point.longitude * 1000.0)
         return "$latKey,$lonKey"
@@ -252,25 +251,31 @@ class TrafficProviderChain(
     fun clearCache() {
         cache.clear()
     }
+
     suspend fun getTrafficSegment(point: GeoPoint): TrafficSegment? {
-        // 1. Check verified cache
         cache.get(point)?.let { return it }
 
-        // 2. Query primary provider
         if (primaryProvider.isAvailable) {
-            val result = primaryProvider.fetchSegmentData(point)
-            if (result != null) {
-                cache.put(point, result)
-                return result
+            try {
+                val result = primaryProvider.fetchSegmentData(point)
+                if (result != null) {
+                    cache.put(point, result)
+                    return result
+                }
+            } catch (e: Exception) {
+                Log.d("TrafficProviderChain", "Primary provider failed: ${e.message}")
             }
         }
 
-        // 3. Alternative provider fallback
         if (alternativeProvider?.isAvailable == true) {
-            val altResult = alternativeProvider.fetchSegmentData(point)
-            if (altResult != null) {
-                cache.put(point, altResult)
-                return altResult
+            try {
+                val altResult = alternativeProvider.fetchSegmentData(point)
+                if (altResult != null) {
+                    cache.put(point, altResult)
+                    return altResult
+                }
+            } catch (e: Exception) {
+                Log.d("TrafficProviderChain", "Alternative provider failed: ${e.message}")
             }
         }
 
@@ -283,10 +288,6 @@ class TrafficProviderChain(
 }
 
 object TrafficRouteMatcher {
-    /**
-     * Geometry-aware matching: verifies distance from segment coordinate to route polyline
-     * within threshold (e.g. 35 meters) to prevent projecting cross-street traffic.
-     */
     fun matchSegmentsToRoute(
         routePoints: List<GeoPoint>,
         segments: List<TrafficSegment>,
@@ -315,7 +316,6 @@ object TrafficRouteMatcher {
         val abDist = a.distanceTo(b)
         if (abDist == 0.0) return p.distanceTo(a)
 
-        // Equirectangular projection local flat coordinates
         val latRef = Math.toRadians((a.latitude + b.latitude + p.latitude) / 3.0)
         val mPerLat = 111132.92 - 559.82 * Math.cos(2 * latRef)
         val mPerLon = 111412.84 * Math.cos(latRef)
@@ -343,14 +343,12 @@ object TrafficRouteCostModel {
         lastCheckTimestamp: Long = System.currentTimeMillis()
     ): TrafficStatus {
         if (!hasProvider || segments.isEmpty()) {
-            val isNoKey = !hasProvider
             return TrafficStatus(
                 verified = false,
-                message = if (isNoKey) "Canlı trafik doğrulanamadı • temel ETA korunuyor"
-                          else "Canlı trafik doğrulanamadı • temel ETA korunuyor",
+                message = "Canlı trafik doğrulanamadı • temel ETA korunuyor",
                 delaySeconds = 0,
                 trafficLevel = TrafficLevel.UNKNOWN,
-                sourceName = if (isNoKey) "OSRM / Valhalla Statik Yol Profili" else providerName,
+                sourceName = if (!hasProvider) "OSRM / Valhalla Statik Yol Profili" else providerName,
                 isLiveApi = false,
                 httpStatusCode = httpStatusCode,
                 segmentCount = segments.size,
@@ -372,8 +370,22 @@ object TrafficRouteCostModel {
             }
         }
 
-        val avgRatio = if (count > 0) totalSpeedRatio / count else 1.0
-        val avgSpeed = if (count > 0) totalSpeed / count else null
+        if (count == 0) {
+            return TrafficStatus(
+                verified = false,
+                message = "Canlı trafik doğrulanamadı • temel ETA korunuyor",
+                delaySeconds = 0,
+                trafficLevel = TrafficLevel.UNKNOWN,
+                sourceName = providerName,
+                isLiveApi = false,
+                httpStatusCode = httpStatusCode,
+                segmentCount = segments.size,
+                lastCheckTimestamp = lastCheckTimestamp
+            )
+        }
+
+        val avgRatio = totalSpeedRatio / count
+        val avgSpeed = totalSpeed / count
         val level = when {
             avgRatio < 0.35 -> TrafficLevel.SEVERE
             avgRatio < 0.65 -> TrafficLevel.HEAVY
@@ -395,11 +407,11 @@ object TrafficRouteCostModel {
             trafficLevel = level,
             sourceName = providerName,
             isLiveApi = true,
-            httpStatusCode = 200,
+            httpStatusCode = httpStatusCode ?: 200,
             segmentCount = segments.size,
             lastCheckTimestamp = lastCheckTimestamp,
             averageSpeedKmh = avgSpeed,
-            rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed?.toInt() ?: 0} km/h"
+            rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed.toInt()} km/h"
         )
     }
 }
