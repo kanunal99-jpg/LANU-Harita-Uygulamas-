@@ -29,9 +29,10 @@ object LaneGuidanceHelper {
         if (activeIndices.isEmpty() || activeIndices.size == lanes.size) return null
 
         val total = lanes.size
+        val midpoint = total / 2.0
         return when {
-            activeIndices.all { it >= total / 2 } -> "Sağ şeritleri kullanın"
-            activeIndices.all { it < total / 2 } -> "Sol şeritleri kullanın"
+            activeIndices.all { it >= midpoint } -> "Sağ şeritleri kullanın"
+            activeIndices.all { it < midpoint } -> "Sol şeritleri kullanın"
             activeIndices.size == 1 && activeIndices.first() == total - 1 -> "En sağ şeritte kalın"
             activeIndices.size == 1 && activeIndices.first() == 0 -> "En sol şeritte kalın"
             else -> "Uygun şeritte ilerleyin"
