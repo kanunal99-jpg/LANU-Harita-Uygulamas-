@@ -12,114 +12,79 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply truthfulness hardening
+      - name: Apply remaining routing hardening
         shell: python3 {0}
         run: |
           from pathlib import Path
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              if old not in text:
-                  raise SystemExit(f"pattern not found: {path}")
-              p.write_text(text.replace(old, new, 1))
-
-          replace_once(
-              "app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt",
-              '''            layer?.setProperties(visibility(Property.VISIBLE))\n            val segmentsToDraw = if (trafficSegments.isEmpty()) {\n                generateContinuousTrafficSegments(activeRoute.geometry, trafficStatus)\n            } else {\n                trafficSegments\n            }\n            src.setGeoJson(createTrafficGeoJson(segmentsToDraw))''',
-              '''            if (trafficSegments.isEmpty()) {\n                src.setGeoJson(createEmptyFeatureCollection())\n                layer?.setProperties(visibility(Property.NONE))\n            } else {\n                layer?.setProperties(visibility(Property.VISIBLE))\n                src.setGeoJson(createTrafficGeoJson(trafficSegments))\n            }'''
-          )
-
-          map_path = Path("app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt")
-          map_text = map_path.read_text()
-          start = map_text.index("\nprivate fun generateContinuousTrafficSegments(")
-          end = map_text.index("\nprivate fun createTrafficGeoJson", start)
-          map_path.write_text(map_text[:start] + map_text[end:])
-
           routing = Path("app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt")
           text = routing.read_text()
+
+          old_valhalla = '''                val decodedGeometry = if (encodedShape.isNotEmpty()) {
+                    PolylineDecoder.decodePolyline6(encodedShape)
+                } else {
+                    listOf(start, end)
+                }
+'''
+          new_valhalla = '''                val decodedGeometry = if (encodedShape.isNotEmpty()) {
+                    PolylineDecoder.decodePolyline6(encodedShape)
+                } else {
+                    emptyList()
+                }
+                if (decodedGeometry.size < 2) return null
+'''
+          if old_valhalla in text:
+              text = text.replace(old_valhalla, new_valhalla, 1)
+          elif "if (decodedGeometry.size < 2) return null" not in text:
+              raise SystemExit("Valhalla geometry fallback state is unexpected")
+
+          old_osrm = '''                    if (coords != null) {
+                        for (c in 0 until coords.length()) {
+                            val pt = coords.getJSONArray(c)
+                            geometryPoints.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
+                        }
+                    }
+
+                    val legs = r.optJSONArray("legs")
+'''
+          new_osrm = '''                    if (coords != null) {
+                        for (c in 0 until coords.length()) {
+                            val pt = coords.getJSONArray(c)
+                            geometryPoints.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
+                        }
+                    }
+                    if (geometryPoints.size < 2) continue
+
+                    val legs = r.optJSONArray("legs")
+'''
+          if old_osrm in text:
+              text = text.replace(old_osrm, new_osrm, 1)
+          elif "if (geometryPoints.size < 2) continue" not in text:
+              raise SystemExit("OSRM geometry validation state is unexpected")
+
           text = text.replace(
-              """            val response = client.newCall(request).execute()\n            if (!response.isSuccessful) return null\n\n            val body = response.body?.string() ?: return null\n""",
-              """            client.newCall(request).execute().use { response ->\n                if (!response.isSuccessful) return null\n\n                val body = response.body?.string() ?: return null\n""",
-              1
-          )
-          text = text.replace(
-              """            val root = JSONObject(body)\n            val trip = root.optJSONObject(\"trip\") ?: return null\n""",
-              """                val root = JSONObject(body)\n                val trip = root.optJSONObject(\"trip\") ?: return null\n""",
-              1
-          )
-          marker = "\n        } catch (e: Exception) {\n            return null\n        }\n    }\n\n    private fun mapValhallaManeuverType"
-          if marker not in text:
-              raise SystemExit("Valhalla catch marker not found")
-          prefix, suffix = text.split(marker, 1)
-          lines = prefix.splitlines()
-          open_idx = next(i for i,l in enumerate(lines) if "client.newCall(request).execute().use { response ->" in l)
-          for i in range(open_idx + 1, len(lines)):
-              lines[i] = "    " + lines[i]
-          text = "\n".join(lines) + marker + suffix
-          text = text.replace(
-              """                    listOf(start, end)\n                }\n\n                val maneuvers""",
-              """                    emptyList()\n                }\n                if (decodedGeometry.size < 2) return null\n\n                val maneuvers""",
-              1
-          )
-          text = text.replace(
-              """            24 -> ManeuverType.FERRY\n            4, 5, 6, 7, 8, 9 -> ManeuverType.STRAIGHT\n""",
-              """            24 -> ManeuverType.FERRY\n""",
-              1
-          )
-          text = text.replace(
-              """            val response = client.newCall(request).execute()\n            if (!response.isSuccessful) return@withContext emptyList()\n\n            val body = response.body?.string() ?: return@withContext emptyList()\n""",
-              """            client.newCall(request).execute().use { response ->\n                if (!response.isSuccessful) return@withContext emptyList()\n\n                val body = response.body?.string() ?: return@withContext emptyList()\n""",
-              1
-          )
-          text = text.replace(
-              """            val root = JSONObject(body)\n            val routesArray = root.optJSONArray(\"routes\") ?: return@withContext emptyList()\n""",
-              """                val root = JSONObject(body)\n                val routesArray = root.optJSONArray(\"routes\") ?: return@withContext emptyList()\n""",
-              1
-          )
-          marker2 = "\n        } catch (e: Exception) {\n            emptyList()\n        }\n    }\n\n    private fun mapOsrmManeuverType"
-          if marker2 not in text:
-              raise SystemExit("OSRM catch marker not found")
-          prefix, suffix = text.split(marker2, 1)
-          lines = prefix.splitlines()
-          open_idx = max(i for i,l in enumerate(lines) if "client.newCall(request).execute().use { response ->" in l)
-          for i in range(open_idx + 1, len(lines)):
-              lines[i] = "    " + lines[i]
-          text = "\n".join(lines) + marker2 + suffix
-          text = text.replace(
-              """                        GeoPoint(pt.getDouble(1), pt.getDouble(0))\n                    }\n                }\n\n                val legs""",
-              """                        GeoPoint(pt.getDouble(1), pt.getDouble(0))\n                    }\n                }\n                if (geometryPoints.size < 2) continue\n\n                val legs""",
-              1
-          )
-          text = text.replace(
-              """                        geometry = if (geometryPoints.isNotEmpty()) geometryPoints else listOf(start, end),\n""",
-              """                        geometry = geometryPoints,\n""",
+              "geometry = if (geometryPoints.isNotEmpty()) geometryPoints else listOf(start, end),",
+              "geometry = geometryPoints,",
               1
           )
           routing.write_text(text)
 
+          # Keep the temporary workflow itself clean and remove it after this run.
           manifest = Path("app/src/main/AndroidManifest.xml")
-          text = manifest.read_text()
-          old = 'android:usesCleartextTraffic="true"'
-          if old in text:
-              manifest.write_text(text.replace(old, 'android:usesCleartextTraffic="false"', 1))
+          m = manifest.read_text()
+          if 'android:usesCleartextTraffic="true"' in m:
+              manifest.write_text(m.replace('android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"', 1))
 
       - name: Commit changes
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python3 - <<'PY'
-          from pathlib import Path
-          for name in [
-            "app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt",
-            "app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt",
-            "app/src/main/AndroidManifest.xml",
-          ]:
-            p = Path(name)
-            p.write_text("\n".join(line.rstrip() for line in p.read_text().splitlines()) + "\n")
-          PY
-          git add app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt app/src/main/AndroidManifest.xml
+          git add app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt app/src/main/AndroidManifest.xml
           git diff --cached --check
-          git commit -m "fix: remove fabricated map traffic and route geometry fallbacks"
+          if git diff --cached --quiet; then
+            echo "No source changes required"
+            exit 0
+          fi
+          git commit -m "fix: reject invalid routing geometry"
           git push
