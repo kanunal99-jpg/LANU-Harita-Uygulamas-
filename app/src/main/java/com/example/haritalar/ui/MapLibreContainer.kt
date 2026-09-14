@@ -252,13 +252,13 @@ fun MapLibreContainer(
             src.setGeoJson(createEmptyFeatureCollection())
             layer?.setProperties(visibility(Property.NONE))
         } else {
-            layer?.setProperties(visibility(Property.VISIBLE))
-            val segmentsToDraw = if (trafficSegments.isEmpty()) {
-                generateContinuousTrafficSegments(activeRoute.geometry, trafficStatus)
+            if (trafficSegments.isEmpty()) {
+                src.setGeoJson(createEmptyFeatureCollection())
+                layer?.setProperties(visibility(Property.NONE))
             } else {
-                trafficSegments
+                layer?.setProperties(visibility(Property.VISIBLE))
+                src.setGeoJson(createTrafficGeoJson(trafficSegments))
             }
-            src.setGeoJson(createTrafficGeoJson(segmentsToDraw))
         }
     }
 
@@ -368,43 +368,6 @@ private fun createMultiLineStringGeoJson(lines: List<List<GeoPoint>>): String {
         features.put(feature(JSONObject().apply { put("geometry", JSONObject().apply { put("type", "LineString"); put("coordinates", coords) }) }))
     }
     return featureCollection(features)
-}
-
-private fun generateContinuousTrafficSegments(routePoints: List<GeoPoint>, status: TrafficStatus?): List<TrafficSegment> {
-    if (routePoints.size < 2) return emptyList()
-    val segments = mutableListOf<TrafficSegment>()
-    val chunkSize = 6 // coordinates per segment for fine-grained flow
-    val delayFactor = status?.delaySeconds ?: 0L
-    
-    for (i in 0 until routePoints.size - 1 step (chunkSize - 1)) {
-        val endIdx = (i + chunkSize).coerceAtMost(routePoints.size)
-        val subList = routePoints.subList(i, endIdx)
-        if (subList.size < 2) break
-        
-        val progress = i.toDouble() / routePoints.size
-        // Natural distribution: peak traffic in the middle section of the route, with sine-wave variation
-        val baseCongestion = Math.sin(progress * Math.PI)
-        val variation = Math.sin(i.toDouble() * 0.5) * 0.15
-        val congestionScore = baseCongestion * (0.4 + (delayFactor.toDouble() / 400.0).coerceAtMost(1.6)) + variation
-        
-        val freeFlow = 80.0
-        val currentSpeed = when {
-            congestionScore > 1.1 -> 12.0  // Heavy Red
-            congestionScore > 0.6 -> 32.0  // Moderate Yellow
-            else -> 80.0                  // Free Flow Green
-        }
-        
-        segments.add(
-            TrafficSegment(
-                coordinates = subList.toList(),
-                currentSpeed = currentSpeed,
-                freeFlowSpeed = freeFlow,
-                delaySeconds = if (currentSpeed < freeFlow) 20L else 0L,
-                roadClosure = false
-            )
-        )
-    }
-    return segments
 }
 
 private fun createTrafficGeoJson(segments: List<TrafficSegment>): String {
