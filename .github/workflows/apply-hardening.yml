@@ -58,8 +58,8 @@ jobs:
               lines[i] = "    " + lines[i]
           text = "\n".join(lines) + marker + suffix
           text = text.replace(
-              """                listOf(start, end)\n            }\n\n            val maneuvers""",
-              """                emptyList()\n            }\n            if (decodedGeometry.size < 2) return null\n\n            val maneuvers""",
+              """                    listOf(start, end)\n                }\n\n                val maneuvers""",
+              """                    emptyList()\n                }\n                if (decodedGeometry.size < 2) return null\n\n                val maneuvers""",
               1
           )
           text = text.replace(
@@ -101,9 +101,8 @@ jobs:
           manifest = Path("app/src/main/AndroidManifest.xml")
           text = manifest.read_text()
           old = 'android:usesCleartextTraffic="true"'
-          if old not in text:
-              raise SystemExit("cleartext setting not found")
-          manifest.write_text(text.replace(old, 'android:usesCleartextTraffic="false"', 1))
+          if old in text:
+              manifest.write_text(text.replace(old, 'android:usesCleartextTraffic="false"', 1))
 
       - name: Commit changes
         shell: bash
