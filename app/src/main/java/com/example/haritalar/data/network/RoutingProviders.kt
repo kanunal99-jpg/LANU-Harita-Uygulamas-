@@ -162,8 +162,9 @@ class ValhallaRoutingProvider(
                 val decodedGeometry = if (encodedShape.isNotEmpty()) {
                     PolylineDecoder.decodePolyline6(encodedShape)
                 } else {
-                    listOf(start, end)
+                    emptyList()
                 }
+                if (decodedGeometry.size < 2) return null
 
                 val maneuvers = mutableListOf<TurnManeuver>()
                 val maneuversArray = leg0.optJSONArray("maneuvers")
@@ -289,6 +290,7 @@ class OsrmRoutingProvider(
                             geometryPoints.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
                         }
                     }
+                    if (geometryPoints.size < 2) continue
 
                     val legs = r.optJSONArray("legs")
                     val maneuvers = mutableListOf<TurnManeuver>()
