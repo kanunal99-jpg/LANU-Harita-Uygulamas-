@@ -2,13 +2,20 @@ package com.example.haritalar.data.repository
 
 import android.content.Context
 import com.example.BuildConfig
+import com.example.haritalar.data.cache.TrafficSignalCache
 import com.example.haritalar.data.db.AppDatabase
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.haritalar.data.network.OsrmRoutingProvider
 import com.example.haritalar.data.network.PoiNetworkService
+import com.example.haritalar.data.network.TrafficSignalService
 import com.example.haritalar.data.network.ValhallaRoutingProvider
+import com.example.haritalar.data.offline.OfflineRouteCache
+import com.example.haritalar.data.search.CacheSearchProvider
+import com.example.haritalar.data.search.NominatimSearchProvider
+import com.example.haritalar.data.search.PhotonSearchProvider
+import com.example.haritalar.data.search.SearchProviderChain
 import com.example.haritalar.data.traffic.TomTomTrafficProvider
 import com.example.haritalar.data.traffic.TrafficProviderChain
 import com.example.haritalar.data.traffic.TrafficRefreshCoordinator
@@ -21,8 +28,6 @@ import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
-import com.example.haritalar.data.cache.TrafficSignalCache
-import com.example.haritalar.data.network.TrafficSignalService
 import kotlinx.coroutines.flow.Flow
 
 class NavigationRepository(context: Context) {
@@ -31,15 +36,16 @@ class NavigationRepository(context: Context) {
     private val searchHistoryDao = db.searchHistoryDao()
     val trafficSignalDao = db.trafficSignalDao()
     private val prefs = context.getSharedPreferences("lanu_navigation_prefs", Context.MODE_PRIVATE)
+    private val offlineRouteCache = OfflineRouteCache(context)
 
     val trafficSignalService = TrafficSignalService()
     val trafficSignalCache = TrafficSignalCache(trafficSignalDao = trafficSignalDao)
     val trafficSignalRepository = TrafficSignalRepository(trafficSignalService, trafficSignalCache)
 
-    val cacheSearchProvider = com.example.haritalar.data.search.CacheSearchProvider(searchHistoryDao)
-    val searchProviderChain = com.example.haritalar.data.search.SearchProviderChain(
-        primaryProvider = com.example.haritalar.data.search.NominatimSearchProvider(),
-        alternativeProvider = com.example.haritalar.data.search.PhotonSearchProvider(),
+    val cacheSearchProvider = CacheSearchProvider(searchHistoryDao)
+    val searchProviderChain = SearchProviderChain(
+        primaryProvider = NominatimSearchProvider(),
+        alternativeProvider = PhotonSearchProvider(),
         cacheProvider = cacheSearchProvider
     )
 
@@ -68,9 +74,7 @@ class NavigationRepository(context: Context) {
         trafficProviderChain.clearCache()
     }
 
-    suspend fun testTomTomTraffic(point: GeoPoint): TrafficTestResult {
-        return tomtomProvider.testLiveConnection(point)
-    }
+    suspend fun testTomTomTraffic(point: GeoPoint): TrafficTestResult = tomtomProvider.testLiveConnection(point)
 
     val favorites: Flow<List<FavoritePlace>> = favoriteDao.getAllFavorites()
     val recentSearches: Flow<List<SearchHistoryItem>> = searchHistoryDao.getRecentSearches()
@@ -96,13 +100,11 @@ class NavigationRepository(context: Context) {
         return if (response is com.example.haritalar.model.SearchResponse.Success) response.results else emptyList()
     }
 
-    suspend fun reverseGeocode(point: GeoPoint): String? {
-        return searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
-    }
+    suspend fun reverseGeocode(point: GeoPoint): String? =
+        searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
 
-    suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> {
-        return poiService.fetchPoisAround(center, radiusMeters = 3000, selectedCategory = category)
-    }
+    suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> =
+        poiService.fetchPoisAround(center, radiusMeters = 3000, selectedCategory = category)
 
     suspend fun calculateRouteAlternatives(
         start: GeoPoint,
@@ -111,18 +113,36 @@ class NavigationRepository(context: Context) {
     ): Pair<List<RouteOption>, Map<String, Pair<TrafficStatus, List<TrafficSegment>>>> {
         trafficCoordinator.resetGeneration(generationId)
 
-        val valhallaRoutes = valhallaProvider.calculateRoutes(start, end, generationId)
-        val rawRoutes = if (valhallaRoutes.isNotEmpty()) {
-            valhallaRoutes
-        } else {
-            osrmProvider.calculateRoutes(start, end, generationId)
-        }
+        var rawRoutes = valhallaProvider.calculateRoutes(start, end, generationId)
+            .filter(::isUsableRoute)
 
         if (rawRoutes.isEmpty()) {
+            rawRoutes = osrmProvider.calculateRoutes(start, end, generationId)
+                .filter(::isUsableRoute)
+        }
+
+        val sourceRoutes = if (rawRoutes.isNotEmpty()) {
+            offlineRouteCache.save(start, end, rawRoutes)
+            rawRoutes
+        } else {
+            offlineRouteCache.load(start, end, generationId)
+        }
+
+        if (sourceRoutes.isEmpty()) {
             return emptyList<RouteOption>() to emptyMap()
         }
 
-        return trafficRankingService.rankAndApplyTraffic(rawRoutes, generationId)
+        val normalizedRoutes = sourceRoutes.map { it.copy(generationId = generationId) }
+        return trafficRankingService.rankAndApplyTraffic(normalizedRoutes, generationId)
+    }
+
+    private fun isUsableRoute(route: RouteOption): Boolean {
+        if (route.geometry.size < 2) return false
+        if (route.distanceMeters <= 0.0 || route.durationSeconds <= 0L) return false
+        val geometryLength = route.geometry.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
+        if (geometryLength <= 0.0) return false
+        val endToEnd = route.geometry.first().distanceTo(route.geometry.last())
+        return geometryLength >= endToEnd && geometryLength / route.distanceMeters in 0.85..1.15
     }
 
     suspend fun addFavorite(title: String, address: String, point: GeoPoint, category: String) {
@@ -137,11 +157,7 @@ class NavigationRepository(context: Context) {
         )
     }
 
-    suspend fun deleteFavorite(favorite: FavoritePlace) {
-        favoriteDao.deleteFavorite(favorite)
-    }
+    suspend fun deleteFavorite(favorite: FavoritePlace) = favoriteDao.deleteFavorite(favorite)
 
-    suspend fun clearHistory() {
-        searchHistoryDao.clearHistory()
-    }
+    suspend fun clearHistory() = searchHistoryDao.clearHistory()
 }
