@@ -2,15 +2,9 @@ package com.example.haritalar.data.offline
 
 import android.content.Context
 import android.util.Log
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.cancel
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
@@ -23,7 +17,8 @@ class OfflineMapManager(private val context: Context) : AutoCloseable {
         OfflineManager.getInstance(context)
     }
 
-    private val callbackScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    @Volatile
+    private var closed = false
 
     private val _downloadProgress = MutableStateFlow<Float?>(null)
     val downloadProgress: StateFlow<Float?> = _downloadProgress.asStateFlow()
@@ -38,6 +33,8 @@ class OfflineMapManager(private val context: Context) : AutoCloseable {
         maxZoom: Double,
         pixelRatio: Float
     ) {
+        if (closed) return
+
         val definition = OfflineTilePyramidRegionDefinition(
             styleUrl,
             bounds,
@@ -53,11 +50,13 @@ class OfflineMapManager(private val context: Context) : AutoCloseable {
             metadata,
             object : OfflineManager.CreateOfflineRegionCallback {
                 override fun onCreate(offlineRegion: OfflineRegion) {
+                    if (closed) return
                     _downloadMessage.value = "İndirme başlatıldı..."
                     offlineRegion.setDownloadState(OfflineRegion.STATE_ACTIVE)
 
                     offlineRegion.setObserver(object : OfflineRegion.OfflineRegionObserver {
                         override fun onStatusChanged(status: OfflineRegionStatus) {
+                            if (closed) return
                             val percentage = if (status.requiredResourceCount > 0) {
                                 (100.0 * status.completedResourceCount / status.requiredResourceCount).toFloat()
                             } else {
@@ -67,24 +66,20 @@ class OfflineMapManager(private val context: Context) : AutoCloseable {
                             if (status.isComplete) {
                                 _downloadMessage.value = "İndirme tamamlandı!"
                                 _downloadProgress.value = 100f
-
-                                callbackScope.launch {
-                                    delay(3000)
-                                    _downloadProgress.value = null
-                                    _downloadMessage.value = null
-                                }
                             } else {
                                 _downloadProgress.value = percentage
                             }
                         }
 
                         override fun onError(error: OfflineRegionError) {
+                            if (closed) return
                             Log.e("OfflineMapManager", "Offline Error: ${error.reason} - ${error.message}")
                             _downloadMessage.value = "İndirme hatası: ${error.reason}"
                             _downloadProgress.value = null
                         }
 
                         override fun mapboxTileCountLimitExceeded(limit: Long) {
+                            if (closed) return
                             Log.e("OfflineMapManager", "Tile count limit exceeded: $limit")
                             _downloadMessage.value = "Karolaj limiti aşıldı."
                         }
@@ -92,6 +87,7 @@ class OfflineMapManager(private val context: Context) : AutoCloseable {
                 }
 
                 override fun onError(error: String) {
+                    if (closed) return
                     Log.e("OfflineMapManager", "Error creating region: $error")
                     _downloadMessage.value = "Oluşturma hatası: $error"
                 }
@@ -100,6 +96,6 @@ class OfflineMapManager(private val context: Context) : AutoCloseable {
     }
 
     override fun close() {
-        callbackScope.cancel()
+        closed = true
     }
 }
