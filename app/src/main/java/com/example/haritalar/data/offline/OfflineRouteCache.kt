@@ -28,7 +28,9 @@ class OfflineRouteCache(context: Context) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
     fun save(start: GeoPoint, end: GeoPoint, routes: List<RouteOption>) {
-        if (routes.isEmpty() || routes.any { it.geometry.size < 2 }) return
+        if (!isValidPoint(start) || !isValidPoint(end) || routes.isEmpty()) return
+        val validRoutes = routes.filter { isValidRoute(it) }
+        if (validRoutes.isEmpty()) return
         try {
             val root = JSONObject()
                 .put("timestamp", System.currentTimeMillis())
@@ -36,7 +38,7 @@ class OfflineRouteCache(context: Context) {
                 .put("startLon", start.longitude)
                 .put("endLat", end.latitude)
                 .put("endLon", end.longitude)
-                .put("routes", JSONArray().also { array -> routes.forEach { array.put(serializeRoute(it)) } })
+                .put("routes", JSONArray().also { array -> validRoutes.forEach { array.put(serializeRoute(it)) } })
             prefs.edit().putString(KEY, root.toString()).apply()
         } catch (e: Exception) {
             Log.w(TAG, "Unable to persist offline route cache: ${e.message}")
@@ -44,13 +46,16 @@ class OfflineRouteCache(context: Context) {
     }
 
     fun load(start: GeoPoint, end: GeoPoint, generationId: Long): List<RouteOption> {
+        if (!isValidPoint(start) || !isValidPoint(end)) return emptyList()
         val raw = prefs.getString(KEY, null) ?: return emptyList()
         return try {
             val root = JSONObject(raw)
-            if (System.currentTimeMillis() - root.optLong("timestamp", 0L) > MAX_AGE_MS) return emptyList()
+            val timestamp = root.optLong("timestamp", 0L)
+            if (timestamp <= 0L || System.currentTimeMillis() - timestamp > MAX_AGE_MS) return emptyList()
 
             val cachedStart = GeoPoint(root.optDouble("startLat"), root.optDouble("startLon"))
             val cachedEnd = GeoPoint(root.optDouble("endLat"), root.optDouble("endLon"))
+            if (!isValidPoint(cachedStart) || !isValidPoint(cachedEnd)) return emptyList()
             if (cachedStart.distanceTo(start) > MAX_ENDPOINT_DISTANCE_METERS || cachedEnd.distanceTo(end) > MAX_ENDPOINT_DISTANCE_METERS) {
                 return emptyList()
             }
@@ -58,7 +63,10 @@ class OfflineRouteCache(context: Context) {
             val routes = mutableListOf<RouteOption>()
             val array = root.optJSONArray("routes") ?: return emptyList()
             for (i in 0 until array.length()) {
-                deserializeRoute(array.getJSONObject(i), generationId)?.let(routes::add)
+                runCatching { deserializeRoute(array.getJSONObject(i), generationId) }
+                    .getOrNull()
+                    ?.takeIf(::isValidRoute)
+                    ?.let(routes::add)
             }
             routes
         } catch (e: Exception) {
@@ -66,6 +74,15 @@ class OfflineRouteCache(context: Context) {
             emptyList()
         }
     }
+
+    private fun isValidPoint(point: GeoPoint): Boolean =
+        point.latitude.isFinite() && point.longitude.isFinite() &&
+            point.latitude in -90.0..90.0 && point.longitude in -180.0..180.0
+
+    private fun isValidRoute(route: RouteOption): Boolean =
+        route.geometry.size >= 2 && route.geometry.all(::isValidPoint) &&
+            route.distanceMeters.isFinite() && route.distanceMeters >= 0.0 &&
+            route.durationSeconds >= 0L
 
     private fun serializeRoute(route: RouteOption): JSONObject = JSONObject()
         .put("routeId", route.routeId)
@@ -82,7 +99,13 @@ class OfflineRouteCache(context: Context) {
 
     private fun deserializeRoute(json: JSONObject, generationId: Long): RouteOption? {
         val geometry = json.optJSONArray("geometry") ?: return null
-        val points = List(geometry.length()) { i -> pointFromJson(geometry.getJSONObject(i)) }
+        val points = mutableListOf<GeoPoint>()
+        for (i in 0 until geometry.length()) {
+            val pointJson = geometry.optJSONObject(i) ?: return null
+            val point = runCatching { pointFromJson(pointJson) }.getOrNull() ?: return null
+            if (!isValidPoint(point)) return null
+            points += point
+        }
         if (points.size < 2) return null
 
         val maneuversJson = json.optJSONArray("maneuvers")
@@ -106,12 +129,14 @@ class OfflineRouteCache(context: Context) {
                     }
                 }
                 val maneuverPoint = m.optJSONObject("point") ?: return null
+                val maneuverGeoPoint = runCatching { pointFromJson(maneuverPoint) }.getOrNull() ?: return null
+                if (!isValidPoint(maneuverGeoPoint)) return null
                 val type = runCatching { ManeuverType.valueOf(m.optString("type")) }.getOrNull() ?: return null
                 maneuvers += TurnManeuver(
                     instruction = m.optString("instruction"),
                     distanceMeters = m.optDouble("distanceMeters", 0.0),
                     type = type,
-                    point = pointFromJson(maneuverPoint),
+                    point = maneuverGeoPoint,
                     roadName = m.optString("roadName"),
                     lanes = lanes,
                     speedLimitKmh = if (m.has("speedLimitKmh") && !m.isNull("speedLimitKmh")) m.optInt("speedLimitKmh") else null
