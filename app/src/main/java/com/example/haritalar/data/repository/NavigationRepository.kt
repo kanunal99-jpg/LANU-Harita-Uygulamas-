@@ -113,13 +113,13 @@ class NavigationRepository(context: Context) {
     ): Pair<List<RouteOption>, Map<String, Pair<TrafficStatus, List<TrafficSegment>>>> {
         trafficCoordinator.resetGeneration(generationId)
 
-        var rawRoutes = valhallaProvider.calculateRoutes(start, end, generationId)
-            .filter(::isUsableRoute)
-
-        if (rawRoutes.isEmpty()) {
-            rawRoutes = osrmProvider.calculateRoutes(start, end, generationId)
-                .filter(::isUsableRoute)
-        }
+        val valhallaRoutes = runCatching {
+            valhallaProvider.calculateRoutes(start, end, generationId)
+        }.getOrDefault(emptyList())
+        val osrmRoutes = runCatching {
+            osrmProvider.calculateRoutes(start, end, generationId)
+        }.getOrDefault(emptyList())
+        val rawRoutes = RouteSelectionPolicy.select(valhallaRoutes, osrmRoutes)
 
         val sourceRoutes = if (rawRoutes.isNotEmpty()) {
             offlineRouteCache.save(start, end, rawRoutes)
@@ -134,15 +134,6 @@ class NavigationRepository(context: Context) {
 
         val normalizedRoutes = sourceRoutes.map { it.copy(generationId = generationId) }
         return trafficRankingService.rankAndApplyTraffic(normalizedRoutes, generationId)
-    }
-
-    private fun isUsableRoute(route: RouteOption): Boolean {
-        if (route.geometry.size < 2) return false
-        if (route.distanceMeters <= 0.0 || route.durationSeconds <= 0L) return false
-        val geometryLength = route.geometry.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
-        if (geometryLength <= 0.0) return false
-        val endToEnd = route.geometry.first().distanceTo(route.geometry.last())
-        return geometryLength >= endToEnd && geometryLength / route.distanceMeters in 0.85..1.15
     }
 
     suspend fun addFavorite(title: String, address: String, point: GeoPoint, category: String) {

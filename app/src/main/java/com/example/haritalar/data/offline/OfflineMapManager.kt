@@ -10,6 +10,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancel
 import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.offline.OfflineManager
 import org.maplibre.android.offline.OfflineRegion
@@ -17,9 +18,7 @@ import org.maplibre.android.offline.OfflineRegionError
 import org.maplibre.android.offline.OfflineRegionStatus
 import org.maplibre.android.offline.OfflineTilePyramidRegionDefinition
 
-class OfflineMapManager(private val context: Context) {
-    // Do not touch MapLibre OfflineManager during ViewModel construction.
-    // It is initialized only when an offline operation is actually requested.
+class OfflineMapManager(private val context: Context) : AutoCloseable {
     private val offlineManager: OfflineManager by lazy(LazyThreadSafetyMode.NONE) {
         OfflineManager.getInstance(context)
     }
@@ -98,5 +97,9 @@ class OfflineMapManager(private val context: Context) {
                 }
             }
         )
+    }
+
+    override fun close() {
+        callbackScope.cancel()
     }
 }
