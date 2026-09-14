@@ -1,5 +1,6 @@
 package com.example.haritalar.navigation
 
+import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import kotlin.math.ceil
 
@@ -16,19 +17,13 @@ object SafetyCameraWarningPolicy {
         val overspeed: Boolean
     )
 
-    fun nearest(cameras: List<SafetyCamera>, point: com.example.haritalar.model.GeoPoint): ProximityWarning? {
+    fun nearest(
+        cameras: List<SafetyCamera>,
+        point: GeoPoint,
+        speedKmh: Float
+    ): ProximityWarning? {
         val camera = cameras.minByOrNull { it.point.distanceTo(point) } ?: return null
-        val distance = camera.point.distanceTo(point)
-        if (distance > MAX_WARNING_DISTANCE_METERS) return null
-        val limit = parseSpeedLimitKmh(camera.maxSpeed)
-        val speed = 0f
-        return ProximityWarning(
-            camera = camera,
-            distanceMeters = distance,
-            distanceBucketMeters = warningBucket(distance),
-            speedLimitKmh = limit,
-            overspeed = limit != null && speed > limit
-        )
+        return evaluate(camera, camera.point.distanceTo(point), speedKmh)
     }
 
     fun evaluate(
@@ -55,8 +50,7 @@ object SafetyCameraWarningPolicy {
 
     fun parseSpeedLimitKmh(raw: String?): Int? {
         if (raw.isNullOrBlank()) return null
-        val normalized = raw.trim().lowercase()
-        val match = Regex("\\d+(?:[.,]\\d+)?").find(normalized) ?: return null
+        val match = Regex("\\d+(?:[.,]\\d+)?").find(raw.trim()) ?: return null
         return match.value.replace(',', '.').toDoubleOrNull()?.takeIf { it in 5.0..250.0 }?.toInt()
     }
 }
