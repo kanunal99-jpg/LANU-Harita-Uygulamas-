@@ -13,7 +13,7 @@ class RouteProviderFallbackTest {
         title = id,
         summary = id,
         durationSeconds = 120,
-        distanceMeters = 332.0,
+        distanceMeters = 398.0,
         geometry = listOf(
             GeoPoint(41.0082, 28.9784),
             GeoPoint(41.0092, 28.9804),
