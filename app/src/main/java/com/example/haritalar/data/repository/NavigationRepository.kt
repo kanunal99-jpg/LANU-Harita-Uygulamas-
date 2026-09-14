@@ -113,13 +113,10 @@ class NavigationRepository(context: Context) {
     ): Pair<List<RouteOption>, Map<String, Pair<TrafficStatus, List<TrafficSegment>>>> {
         trafficCoordinator.resetGeneration(generationId)
 
-        val valhallaRoutes = runCatching {
-            valhallaProvider.calculateRoutes(start, end, generationId)
-        }.getOrDefault(emptyList())
-        val osrmRoutes = runCatching {
-            osrmProvider.calculateRoutes(start, end, generationId)
-        }.getOrDefault(emptyList())
-        val rawRoutes = RouteSelectionPolicy.select(valhallaRoutes, osrmRoutes)
+        val rawRoutes = RouteProviderFallback.resolve(
+            primary = { valhallaProvider.calculateRoutes(start, end, generationId) },
+            alternative = { osrmProvider.calculateRoutes(start, end, generationId) }
+        )
 
         val sourceRoutes = if (rawRoutes.isNotEmpty()) {
             offlineRouteCache.save(start, end, rawRoutes)
