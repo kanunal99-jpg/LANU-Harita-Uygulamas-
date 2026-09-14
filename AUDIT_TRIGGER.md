@@ -1,0 +1,1 @@
+Full-project audit consolidation trigger. This file is intentionally removed by the audit workflow after the consolidated hardening pass.
