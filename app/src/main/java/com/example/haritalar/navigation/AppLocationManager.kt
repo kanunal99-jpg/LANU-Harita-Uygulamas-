@@ -19,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,10 +39,8 @@ data class UserLocationData(
 class AppLocationManager(private val context: Context) : AutoCloseable {
     private val fusedClient: FusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(context)
     private val systemLocationManager = context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager
-
     private val _userLocation = MutableStateFlow<UserLocationData?>(null)
     val userLocation: StateFlow<UserLocationData?> = _userLocation.asStateFlow()
-
     private var fusedCallback: LocationCallback? = null
     private var sysListener: LocationListener? = null
     private var simulationJob: Job? = null
@@ -57,27 +56,22 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             Log.w("AppLocationManager", "Location permission unavailable; waiting for a real fix.")
             return
         }
-
         try {
             fusedClient.lastLocation.addOnSuccessListener { loc: Location? ->
                 if (closed) return@addOnSuccessListener
-                if (loc != null) onNewAndroidLocation(loc)
-                else {
+                if (loc != null) onNewAndroidLocation(loc) else {
                     val lastGps = systemLocationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                     val lastNet = systemLocationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
                     (lastGps ?: lastNet)?.let(::onNewAndroidLocation)
                 }
             }
-
             val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500L)
                 .setMinUpdateIntervalMillis(1000L)
                 .setMinUpdateDistanceMeters(2.0f)
                 .build()
-
             fusedCallback = object : LocationCallback() {
                 override fun onLocationResult(result: LocationResult) {
-                    if (closed) return
-                    result.lastLocation?.let(::onNewAndroidLocation)
+                    if (!closed) result.lastLocation?.let(::onNewAndroidLocation)
                 }
             }
             fusedClient.requestLocationUpdates(request, fusedCallback!!, Looper.getMainLooper())
@@ -94,16 +88,12 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
         if (closed) return
         try {
             sysListener = object : LocationListener {
-                override fun onLocationChanged(loc: Location) {
-                    if (!closed) onNewAndroidLocation(loc)
-                }
+                override fun onLocationChanged(loc: Location) { if (!closed) onNewAndroidLocation(loc) }
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
                 override fun onProviderDisabled(provider: String) {}
             }
-            systemLocationManager?.requestLocationUpdates(
-                LocationManager.GPS_PROVIDER, 1500L, 2.0f, sysListener!!, Looper.getMainLooper()
-            )
+            systemLocationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1500L, 2.0f, sysListener!!, Looper.getMainLooper())
         } catch (e: Exception) {
             Log.e("AppLocationManager", "System location fallback error: ${e.message}")
         }
@@ -125,11 +115,7 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
 
     fun updateLocationManual(point: GeoPoint, bearing: Float, speedKmh: Float) {
         if (closed) return
-        _userLocation.value = UserLocationData(
-            point = point, bearing = bearing, speedKmh = speedKmh,
-            accuracyMeters = 5f, timestamp = System.currentTimeMillis(),
-            isGpsWeak = false, isSimulated = true
-        )
+        _userLocation.value = UserLocationData(point, bearing, speedKmh, 5f, System.currentTimeMillis(), false, true)
     }
 
     fun startRouteSimulation(routePoints: List<GeoPoint>, onProgress: (index: Int, point: GeoPoint) -> Unit) {
@@ -139,9 +125,7 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             for (i in routePoints.indices) {
                 val pt = routePoints[i]
                 val nextPt = routePoints.getOrElse(i + 1) { pt }
-                val bearing = calculateBearing(pt, nextPt)
-                val speed = if (i == routePoints.lastIndex) 0f else 45f + (i % 15)
-                updateLocationManual(pt, bearing, speed)
+                updateLocationManual(pt, calculateBearing(pt, nextPt), if (i == routePoints.lastIndex) 0f else 45f + (i % 15))
                 onProgress(i, pt)
                 delay(1200L)
             }
@@ -175,6 +159,6 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
         if (closed) return
         closed = true
         stopLocationUpdates()
-        scope.coroutineContext.cancel()
+        scope.cancel()
     }
 }
