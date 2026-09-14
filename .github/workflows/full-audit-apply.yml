@@ -1,0 +1,146 @@
+name: Full Project Audit Apply
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply consolidated hardening
+        env:
+          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          set -euo pipefail
+          if [[ "$HEAD_MESSAGE" == *"[full-audit-consolidated]"* ]]; then
+            echo "Consolidated audit commit; nothing else to apply."
+            exit 0
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def must_replace(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              if old not in s:
+                  raise SystemExit(f"PATCH TARGET MISSING: {path}")
+              p.write_text(s.replace(old, new, 1))
+
+          # Traffic map: never synthesize traffic geometry.
+          p='app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt'
+          must_replace(p, '''            val segmentsToDraw = if (trafficSegments.isEmpty()) {
+                generateContinuousTrafficSegments(activeRoute.geometry, trafficStatus)
+            } else {
+                trafficSegments
+            }
+            src.setGeoJson(createTrafficGeoJson(segmentsToDraw))''', '''            if (trafficSegments.isEmpty()) {
+                src.setGeoJson(createEmptyFeatureCollection())
+                layer?.setProperties(visibility(Property.NONE))
+            } else {
+                src.setGeoJson(createTrafficGeoJson(trafficSegments))
+            }''')
+          s=Path(p).read_text()
+          s,n=re.subn(r'\nprivate fun generateContinuousTrafficSegments\(.*?\nprivate fun createTrafficGeoJson', '\nprivate fun createTrafficGeoJson', s, count=1, flags=re.S)
+          if n!=1: raise SystemExit('synthetic traffic helper missing')
+          Path(p).write_text(s)
+
+          # Routing: close responses and reject missing geometry instead of straight-line fabrication.
+          p='app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt'
+          must_replace(p, '''            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return null
+
+            val body = response.body?.string() ?: return null''', '''            val response = client.newCall(request).execute()
+            val successful = response.isSuccessful
+            val body = response.body?.string()
+            response.close()
+            if (!successful) return null
+            val body = body ?: return null''')
+          must_replace(p, '''            val decodedGeometry = if (encodedShape.isNotEmpty()) {
+                PolylineDecoder.decodePolyline6(encodedShape)
+            } else {
+                listOf(start, end)
+            }''', '''            if (encodedShape.isEmpty()) return null
+            val decodedGeometry = PolylineDecoder.decodePolyline6(encodedShape)
+            if (decodedGeometry.size < 2) return null''')
+          must_replace(p, '''            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val body = response.body?.string() ?: return@withContext emptyList()''', '''            val response = client.newCall(request).execute()
+            val successful = response.isSuccessful
+            val body = response.body?.string()
+            response.close()
+            if (!successful) return@withContext emptyList()
+
+            val body = body ?: return@withContext emptyList()''')
+          must_replace(p, '''                        geometry = if (geometryPoints.isNotEmpty()) geometryPoints else listOf(start, end),''', '''                        geometry = geometryPoints,''')
+          must_replace(p, '''                results.add(
+                    RouteOption(''', '''                if (geometryPoints.size < 2) continue
+
+                results.add(
+                    RouteOption(''')
+
+          # Search provider responses: no placeholder contact identity and no leaked responses.
+          for p in ['app/src/main/java/com/example/haritalar/data/search/NominatimSearchProvider.kt','app/src/main/java/com/example/haritalar/data/search/PhotonSearchProvider.kt']:
+              x=Path(p).read_text().replace('LANUHaritaAndroidNav/1.0 (lanu-nav@example.com)','LANUHaritaAndroidNav/1.0')
+              Path(p).write_text(x)
+          p='app/src/main/java/com/example/haritalar/data/search/NominatimSearchProvider.kt'
+          must_replace(p, '''        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw IOException("Nominatim HTTP Error: ${response.code} ${response.message}")
+        }
+
+        val bodyString = response.body?.string() ?: return@withContext emptyList()''', '''        val response = client.newCall(request).execute()
+        val successful = response.isSuccessful
+        val code = response.code
+        val message = response.message
+        val bodyString = response.body?.string()
+        response.close()
+        if (!successful) {
+            throw IOException("Nominatim HTTP Error: $code $message")
+        }
+        val bodyString = bodyString ?: return@withContext emptyList()''')
+          p='app/src/main/java/com/example/haritalar/data/search/PhotonSearchProvider.kt'
+          must_replace(p, '''        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw IOException("Photon HTTP Error: ${response.code} ${response.message}")
+        }
+
+        val bodyString = response.body?.string() ?: return@withContext emptyList()''', '''        val response = client.newCall(request).execute()
+        val successful = response.isSuccessful
+        val code = response.code
+        val message = response.message
+        val bodyString = response.body?.string()
+        response.close()
+        if (!successful) {
+            throw IOException("Photon HTTP Error: $code $message")
+        }
+        val bodyString = bodyString ?: return@withContext emptyList()''')
+
+          # Security: disable cleartext traffic.
+          p='app/src/main/AndroidManifest.xml'
+          must_replace(p, 'android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"')
+
+          # CI: add lint before unit tests where absent.
+          for p in ['.github/workflows/android-apk.yml','.github/workflows/pr-android-test.yml']:
+              s=Path(p).read_text()
+              if 'Run Android lint' not in s:
+                  marker='      - name: Run unit tests\n'
+                  if marker not in s: raise SystemExit(f'lint insertion target missing: {p}')
+                  s=s.replace(marker, '      - name: Run Android lint\n        run: gradle :app:lintDebug --stacktrace\n        env:\n          CI: true\n\n'+marker, 1)
+                  Path(p).write_text(s)
+
+          # Remove stale trigger-only workflow and file if present.
+          for p in ['.github/workflows/full-audit-apply.yml','AUDIT_TRIGGER.md']:
+              Path(p).unlink(missing_ok=True)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'audit: consolidate full-project hardening [full-audit-consolidated]'
+          git push
