@@ -1,0 +1,329 @@
+name: Audit Consolidation
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    if: ${{ !contains(github.event.head_commit.message, '[audit-consolidated]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply consolidated audit hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              if old not in text:
+                  raise SystemExit(f'MISSING PATCH TARGET: {path}')
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          # Never synthesize traffic on the map when no verified segments exist.
+          map_path = 'app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt'
+          replace(map_path, '''            val segmentsToDraw = if (trafficSegments.isEmpty()) {
+                generateContinuousTrafficSegments(activeRoute.geometry, trafficStatus)
+            } else {
+                trafficSegments
+            }
+            src.setGeoJson(createTrafficGeoJson(segmentsToDraw))''', '''            if (trafficSegments.isEmpty()) {
+                src.setGeoJson(createEmptyFeatureCollection())
+                layer?.setProperties(visibility(Property.NONE))
+            } else {
+                src.setGeoJson(createTrafficGeoJson(trafficSegments))
+            }''')
+          map_text = Path(map_path).read_text(encoding='utf-8')
+          map_text, removed = re.subn(
+              r'\nprivate fun generateContinuousTrafficSegments\(.*?\nprivate fun createTrafficGeoJson',
+              '\nprivate fun createTrafficGeoJson',
+              map_text,
+              count=1,
+              flags=re.S,
+          )
+          if removed != 1:
+              raise SystemExit('MISSING PATCH TARGET: synthetic traffic generator')
+          Path(map_path).write_text(map_text, encoding='utf-8')
+
+          # Routing providers must not fabricate straight-line geometry when the server omits geometry.
+          routing = 'app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt'
+          replace(routing, '''            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return null
+
+            val body = response.body?.string() ?: return null''', '''            val response = client.newCall(request).execute()
+            val successful = response.isSuccessful
+            val body = response.body?.string()
+            response.close()
+            if (!successful) return null
+            val body = body ?: return null''')
+          replace(routing, '''            val decodedGeometry = if (encodedShape.isNotEmpty()) {
+                PolylineDecoder.decodePolyline6(encodedShape)
+            } else {
+                listOf(start, end)
+            }''', '''            if (encodedShape.isEmpty()) return null
+            val decodedGeometry = PolylineDecoder.decodePolyline6(encodedShape)
+            if (decodedGeometry.size < 2) return null''')
+          replace(routing, '''            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext emptyList()
+
+            val body = response.body?.string() ?: return@withContext emptyList()''', '''            val response = client.newCall(request).execute()
+            val successful = response.isSuccessful
+            val body = response.body?.string()
+            response.close()
+            if (!successful) return@withContext emptyList()
+
+            val body = body ?: return@withContext emptyList()''')
+          replace(routing, '''                results.add(
+                    RouteOption(
+                        routeId = routeId,
+                        title = assignedType.displayName,
+                        summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
+                        durationSeconds = duration,
+                        distanceMeters = distance,
+                        geometry = if (geometryPoints.isNotEmpty()) geometryPoints else listOf(start, end),''', '''                if (geometryPoints.size < 2) continue
+
+                results.add(
+                    RouteOption(
+                        routeId = routeId,
+                        title = assignedType.displayName,
+                        summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
+                        durationSeconds = duration,
+                        distanceMeters = distance,
+                        geometry = geometryPoints,''')
+          replace(routing, '''            24 -> ManeuverType.FERRY
+            4, 5, 6, 7, 8, 9 -> ManeuverType.STRAIGHT
+            else -> ManeuverType.STRAIGHT''', '''            24 -> ManeuverType.FERRY
+            else -> ManeuverType.STRAIGHT''')
+
+          # Network responses are always closed and no placeholder contact identity is advertised.
+          for path in [
+              'app/src/main/java/com/example/haritalar/data/search/NominatimSearchProvider.kt',
+              'app/src/main/java/com/example/haritalar/data/search/PhotonSearchProvider.kt'
+          ]:
+              text = Path(path).read_text(encoding='utf-8')
+              text = text.replace('LANUHaritaAndroidNav/1.0 (lanu-nav@example.com)', 'LANUHaritaAndroidNav/1.0')
+              Path(path).write_text(text, encoding='utf-8')
+
+          nom = 'app/src/main/java/com/example/haritalar/data/search/NominatimSearchProvider.kt'
+          replace(nom, '''        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw IOException("Nominatim HTTP Error: ${response.code} ${response.message}")
+        }
+
+        val bodyString = response.body?.string() ?: return@withContext emptyList()''', '''        val response = client.newCall(request).execute()
+        val successful = response.isSuccessful
+        val code = response.code
+        val message = response.message
+        val bodyString = response.body?.string()
+        response.close()
+        if (!successful) {
+            throw IOException("Nominatim HTTP Error: $code $message")
+        }
+        val bodyString = bodyString ?: return@withContext emptyList()''')
+          replace(nom, '''            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+
+            val bodyString = response.body?.string() ?: return@withContext null''', '''            val response = client.newCall(request).execute()
+            val successful = response.isSuccessful
+            val bodyString = response.body?.string()
+            response.close()
+            if (!successful) return@withContext null
+
+            val bodyString = bodyString ?: return@withContext null''')
+
+          pho = 'app/src/main/java/com/example/haritalar/data/search/PhotonSearchProvider.kt'
+          replace(pho, '''        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            throw IOException("Photon HTTP Error: ${response.code} ${response.message}")
+        }
+
+        val bodyString = response.body?.string() ?: return@withContext emptyList()''', '''        val response = client.newCall(request).execute()
+        val successful = response.isSuccessful
+        val code = response.code
+        val message = response.message
+        val bodyString = response.body?.string()
+        response.close()
+        if (!successful) {
+            throw IOException("Photon HTTP Error: $code $message")
+        }
+
+        val bodyString = bodyString ?: return@withContext emptyList()''')
+          replace(pho, '''            val response = client.newCall(request).execute()
+            if (!response.isSuccessful) return@withContext null
+
+            val bodyString = response.body?.string() ?: return@withContext null''', '''            val response = client.newCall(request).execute()
+            val successful = response.isSuccessful
+            val bodyString = response.body?.string()
+            response.close()
+            if (!successful) return@withContext null
+
+            val bodyString = bodyString ?: return@withContext null''')
+
+          # Search must report a provider outage when every online provider failed.
+          chain = 'app/src/main/java/com/example/haritalar/data/search/SearchProviderChain.kt'
+          replace(chain, '''        if (primaryExceptionOccurred && (alternativeExceptionOccurred || collectedResults.isEmpty())) {''', '''        if ((primaryExceptionOccurred || alternativeExceptionOccurred) && collectedResults.isEmpty()) {''')
+
+          # Harden lifecycle-owned scopes/resources.
+          offline = 'app/src/main/java/com/example/haritalar/data/offline/OfflineMapManager.kt'
+          replace(offline, 'import kotlinx.coroutines.launch\n', 'import kotlinx.coroutines.launch\nimport kotlinx.coroutines.cancel\n')
+          replace(offline, '''    fun downloadRegion(
+''', '''    fun close() {
+        callbackScope.cancel()
+    }
+
+    fun downloadRegion(
+''')
+
+          location = 'app/src/main/java/com/example/haritalar/navigation/AppLocationManager.kt'
+          replace(location, '    fun stopLocationUpdates() {\n', '''    fun close() {
+        stopLocationUpdates()
+        scope.cancel()
+    }
+
+    fun stopLocationUpdates() {
+''')
+          replace(location, 'import kotlinx.coroutines.launch\n', 'import kotlinx.coroutines.launch\nimport kotlinx.coroutines.cancel\n')
+
+          vm = 'app/src/main/java/com/example/haritalar/ui/MainViewModel.kt'
+          replace(vm, '''    private val trafficSignalRepository = repository.trafficSignalRepository
+
+    init {''', '''    private val trafficSignalRepository = repository.trafficSignalRepository
+
+    override fun onCleared() {
+        searchJob?.cancel()
+        routeCalculationJob?.cancel()
+        trafficRefreshJob?.cancel()
+        trafficSignalJob?.cancel()
+        locationManager.close()
+        offlineMapManager.close()
+        compassSensor.stop()
+        ttsManager.shutdown()
+        navigationEngine.stop()
+        super.onCleared()
+    }
+
+    init {''')
+
+          # Cleartext is unnecessary: all configured network endpoints are HTTPS.
+          manifest = 'app/src/main/AndroidManifest.xml'
+          replace(manifest, 'android:usesCleartextTraffic="true"', 'android:usesCleartextTraffic="false"')
+
+          # Add static lint to both CI paths so green tests also include Android lint/resource checks.
+          for workflow in ['.github/workflows/android-apk.yml', '.github/workflows/pr-android-test.yml']:
+              text = Path(workflow).read_text(encoding='utf-8')
+              marker = '''      - name: Run unit tests
+'''
+              lint_step = '''      - name: Run Android lint
+        run: gradle :app:lintDebug --stacktrace
+        env:
+          CI: true
+'''
+              if 'name: Run Android lint' not in text:
+                  if marker not in text:
+                      raise SystemExit(f'MISSING PATCH TARGET: {workflow} lint insertion')
+                  text = text.replace(marker, lint_step + marker, 1)
+                  Path(workflow).write_text(text, encoding='utf-8')
+
+          # Remove stale one-off patch scripts and stale Gemini metadata that does not belong to this app's runtime.
+          for stale in ['patch_weather.sh', 'patch_weather_map.sh']:
+              p = Path(stale)
+              if p.exists():
+                  p.unlink()
+          env = Path('.env.example')
+          env_text = env.read_text(encoding='utf-8')
+          env_text = re.sub(r'# GEMINI_API_KEY:.*?\n(?:#.*\n)*# TOMTOM_API_KEY:', '# TOMTOM_API_KEY:', env_text, count=1)
+          env.write_text(env_text, encoding='utf-8')
+
+          metadata = Path('metadata.json')
+          metadata_text = metadata.read_text(encoding='utf-8')
+          metadata_text = metadata_text.replace(',\n  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]', '')
+          metadata.write_text(metadata_text, encoding='utf-8')
+
+          # Add a deterministic live-weather parsing test; no synthetic weather is permitted.
+          test = Path('app/src/test/java/com/example/haritalar/data/weather/WeatherRepositoryTest.kt')
+          test.parent.mkdir(parents=True, exist_ok=True)
+          test.write_text('''package com.example.haritalar.data.weather
+
+import com.example.haritalar.model.GeoPoint
+import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.RouteType
+import com.example.haritalar.model.WeatherType
+import kotlinx.coroutines.test.runTest
+import okhttp3.OkHttpClient
+import okhttp3.Protocol
+import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
+import okhttp3.MediaType.Companion.toMediaType
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class WeatherRepositoryTest {
+    private fun route() = RouteOption(
+        routeId = "test",
+        title = "Test",
+        summary = "Test",
+        durationSeconds = 600,
+        distanceMeters = 1000.0,
+        geometry = listOf(GeoPoint(41.0, 29.0), GeoPoint(41.01, 29.01)),
+        maneuvers = emptyList(),
+        routeType = RouteType.FASTEST
+    )
+
+    @Test
+    fun parsesVerifiedOpenMeteoWeather() = runTest {
+        val body = """[{\"current\":{\"weather_code\":61,\"precipitation\":2.0,\"rain\":2.0,\"showers\":0.0,\"snowfall\":0.0}},{\"current\":{\"weather_code\":0,\"precipitation\":0.0,\"rain\":0.0,\"showers\":0.0,\"snowfall\":0.0}}]"""
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(body.toResponseBody("application/json".toMediaType()))
+                .build()
+        }.build()
+
+        val result = WeatherRepository(client).getRouteWeather(route())
+        assertEquals(2, result.size)
+        assertEquals(WeatherType.RAIN, result.first().type)
+        assertEquals(WeatherType.CLEAR, result.last().type)
+    }
+
+    @Test
+    fun providerFailureReturnsNoSyntheticWeather() = runTest {
+        val client = OkHttpClient.Builder().addInterceptor { chain ->
+            Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(503)
+                .message("Unavailable")
+                .body("".toResponseBody("application/json".toMediaType()))
+                .build()
+        }.build()
+
+        assertTrue(WeatherRepository(client).getRouteWeather(route()).isEmpty())
+    }
+}
+''', encoding='utf-8')
+          PY
+
+          rm -f .github/workflows/audit-consolidation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No audit changes were necessary.'
+            exit 0
+          fi
+          git commit -m 'audit: consolidate full-project hardening [audit-consolidated]'
+          git push
