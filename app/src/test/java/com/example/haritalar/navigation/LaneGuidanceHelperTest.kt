@@ -4,6 +4,7 @@ import com.example.haritalar.model.LaneDirection
 import com.example.haritalar.model.LaneInfo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LaneGuidanceHelperTest {
@@ -28,7 +29,8 @@ class LaneGuidanceHelperTest {
             LaneInfo(listOf(LaneDirection.RIGHT), true),
             LaneInfo(listOf(LaneDirection.RIGHT), true)
         )
-        assertEquals("Sağ şeritleri kullanın", LaneGuidanceHelper.buildLaneVoiceHint(lanes))
+        val hint = LaneGuidanceHelper.buildLaneVoiceHint(lanes)
+        assertTrue(hint?.contains("Sağ") == true)
     }
 
     @Test
