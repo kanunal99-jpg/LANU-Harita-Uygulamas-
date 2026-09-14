@@ -278,9 +278,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun retrySearch() {
         val q = _uiState.value.searchQuery
-        if (q.isNotBlank()) {
-            onSearchQueryChanged(q)
-        }
+        if (q.isNotBlank()) onSearchQueryChanged(q)
     }
 
     fun dismissDestinationCard() {
@@ -380,18 +378,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Destination-card shortcut: calculate the route and start only after a real
-     * route result has arrived. This removes the previous calculate/start race.
-     */
     fun startNavigationTo(destination: GeoPoint) {
         routeCalculationJob?.cancel()
         val initialLocation = currentRoutingLocation()
         if (initialLocation == null) {
             _uiState.value = _uiState.value.copy(
-                routeOptions = emptyList(),
-                selectedRoute = null,
-                isLoadingRoutes = false,
+                routeOptions = emptyList(), selectedRoute = null, isLoadingRoutes = false,
                 statusMessage = "Gerçek GPS konumu bekleniyor. Navigasyon başlatılamaz."
             )
             return
@@ -400,48 +392,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val genId = ++generationCounter
         routeCalculationJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
-                isLoadingRoutes = true,
-                activeGenerationId = genId,
-                routeOptions = emptyList(),
-                selectedRoute = null,
-                statusMessage = "Rota hesaplanıyor..."
+                isLoadingRoutes = true, activeGenerationId = genId,
+                routeOptions = emptyList(), selectedRoute = null, statusMessage = "Rota hesaplanıyor..."
             )
-
             try {
                 val (routes, trafficMap) = repository.calculateRouteAlternatives(initialLocation.point, destination, genId)
                 if (genId != _uiState.value.activeGenerationId) return@launch
-
                 val route = routes.firstOrNull()
                 if (route == null) {
                     _uiState.value = _uiState.value.copy(
-                        isLoadingRoutes = false,
-                        routeOptions = emptyList(),
-                        selectedRoute = null,
-                        navigationState = NavigationState.IDLE,
-                        statusMessage = "Rota bulunamadı."
+                        isLoadingRoutes = false, routeOptions = emptyList(), selectedRoute = null,
+                        navigationState = NavigationState.IDLE, statusMessage = "Rota bulunamadı."
                     )
                     return@launch
                 }
-
                 val latestLocation = currentRoutingLocation()
                 if (latestLocation == null) {
                     _uiState.value = _uiState.value.copy(
-                        isLoadingRoutes = false,
-                        routeOptions = routes,
-                        selectedRoute = route,
+                        isLoadingRoutes = false, routeOptions = routes, selectedRoute = route,
                         navigationState = NavigationState.ROUTE_SELECTION,
                         statusMessage = "GPS konumu güncelliğini kaybetti. Navigasyon başlatılmadı."
                     )
                     return@launch
                 }
-
                 _uiState.value = _uiState.value.copy(
-                    routeOptions = routes,
-                    selectedRoute = route,
-                    trafficStatusMap = trafficMap,
-                    isLoadingRoutes = false,
-                    navigationState = NavigationState.ROUTE_SELECTION,
-                    statusMessage = null
+                    routeOptions = routes, selectedRoute = route, trafficStatusMap = trafficMap,
+                    isLoadingRoutes = false, navigationState = NavigationState.ROUTE_SELECTION, statusMessage = null
                 )
                 startNavigationInternal(route, latestLocation)
             } catch (e: CancellationException) {
@@ -449,8 +425,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
-                        isLoadingRoutes = false,
-                        navigationState = NavigationState.IDLE,
+                        isLoadingRoutes = false, navigationState = NavigationState.IDLE,
                         statusMessage = "Rota hesaplama hatası: ${e.message}"
                     )
                 }
@@ -481,32 +456,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(statusMessage = "Rota hâlâ hesaplanıyor. Lütfen rota hazır olduğunda tekrar başlatın.")
             return
         }
-
         val route = _uiState.value.selectedRoute
         if (route == null) {
             _uiState.value = _uiState.value.copy(statusMessage = "Başlatılacak hazır rota bulunamadı.")
             return
         }
-
         val userLocation = currentRoutingLocation()
         if (userLocation == null) {
             _uiState.value = _uiState.value.copy(statusMessage = "Gerçek GPS konumu alınamıyor. Navigasyon başlatılamadı.")
             return
         }
-
         startNavigationInternal(route, userLocation)
     }
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
         val currentHeading = _uiState.value.vehicleHeadingState.heading
         val depGuidance = VehicleHeadingManager.buildDepartureGuidance(
-            vehicleHeading = currentHeading,
-            route = route,
-            userPoint = userLocation.point
+            vehicleHeading = currentHeading, route = route, userPoint = userLocation.point
         )
-
         vehicleHeadingManager.start()
-
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.NAVIGATING,
             cameraMode = CameraMode.THREE_D,
@@ -515,7 +483,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isWrongWay = depGuidance.isWrongWay,
             statusMessage = null
         )
-
         navigationEngine.startNavigation(route)
         startPeriodicTrafficRefresh()
     }
@@ -529,24 +496,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
         ttsManager.stop()
-
         _uiState.value = _uiState.value.copy(
-            navigationState = NavigationState.IDLE,
-            navigationProgress = null,
-            selectedRoute = null,
-            routeOptions = emptyList(),
-            selectedDestination = null,
-            searchQuery = "",
-            cameraMode = CameraMode.TWO_D,
-            mapTrackingMode = MapTrackingMode.FOLLOW_USER,
-            isSimulationActive = false,
-            statusMessage = null,
-            isSearchAlongRouteOpen = false,
-            alongRoutePois = emptyList(),
-            isLoadingAlongRoute = false,
-            departureGuidance = null,
-            isWrongWay = false,
-            isLoadingRoutes = false
+            navigationState = NavigationState.IDLE, navigationProgress = null, selectedRoute = null,
+            routeOptions = emptyList(), selectedDestination = null, searchQuery = "",
+            cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
+            isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
+            alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
+            isWrongWay = false, isLoadingRoutes = false
         )
     }
 
@@ -555,27 +511,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
         val genId = ++generationCounter
-
         routeCalculationJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 navigationState = NavigationState.OFF_ROUTE_REROUTING,
                 activeGenerationId = genId,
                 statusMessage = "Rotadan çıkıldı. Yeni rota hesaplanıyor..."
             )
-
             try {
                 val (routes, trafficMap) = repository.calculateRouteAlternatives(currentPoint, dest, genId)
                 if (genId == _uiState.value.activeGenerationId && routes.isNotEmpty()) {
                     val newRoute = routes.first()
                     _uiState.value = _uiState.value.copy(
-                        routeOptions = routes,
-                        selectedRoute = newRoute,
-                        trafficStatusMap = trafficMap,
-                        navigationState = NavigationState.NAVIGATING,
-                        statusMessage = null,
-                        isLoadingRoutes = false
+                        routeOptions = routes, selectedRoute = newRoute, trafficStatusMap = trafficMap,
+                        navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                } else if (genId == _uiState.value.activeGenerationId) {
+                    _uiState.value = _uiState.value.copy(
+                        navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
+                        statusMessage = "Yeniden rota oluşturulamadı, mevcut rotaya dönün."
+                    )
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -593,9 +548,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun handleArrival(summary: TripSummary) {
         _uiState.value = _uiState.value.copy(
-            navigationState = NavigationState.ARRIVED,
-            tripSummary = summary,
-            statusMessage = "Hedefinize ulaştınız!"
+            navigationState = NavigationState.ARRIVED, tripSummary = summary, statusMessage = "Hedefinize ulaştınız!"
         )
     }
 
@@ -604,16 +557,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(tripSummary = null)
     }
 
-    fun openSearchAlongRoute() {
-        _uiState.value = _uiState.value.copy(isSearchAlongRouteOpen = true)
-    }
+    fun openSearchAlongRoute() { _uiState.value = _uiState.value.copy(isSearchAlongRouteOpen = true) }
 
     fun closeSearchAlongRoute() {
-        _uiState.value = _uiState.value.copy(
-            isSearchAlongRouteOpen = false,
-            alongRoutePois = emptyList(),
-            isLoadingAlongRoute = false
-        )
+        _uiState.value = _uiState.value.copy(isSearchAlongRouteOpen = false, alongRoutePois = emptyList(), isLoadingAlongRoute = false)
     }
 
     fun searchAlongRouteCategory(category: PoiCategory) {
@@ -624,63 +571,40 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingAlongRoute = true)
             val pois = repository.fetchPois(focus, category)
-            _uiState.value = _uiState.value.copy(
-                alongRoutePois = pois,
-                isLoadingAlongRoute = false
-            )
+            _uiState.value = _uiState.value.copy(alongRoutePois = pois, isLoadingAlongRoute = false)
         }
     }
 
     fun selectAlongRoutePoi(poi: PoiItem) {
         closeSearchAlongRoute()
-        val dest = SearchResult(
-            id = poi.id,
-            name = poi.name,
-            displayName = poi.address ?: poi.name,
-            point = poi.point,
-            type = "poi"
-        )
-        selectSearchResult(dest)
+        selectSearchResult(SearchResult(
+            id = poi.id, name = poi.name, displayName = poi.address ?: poi.name, point = poi.point, type = "poi"
+        ))
     }
 
     fun openTrafficInspector() {
-        _uiState.value = _uiState.value.copy(
-            isTrafficInspectorOpen = true,
-            customTomTomKey = repository.getEffectiveTomTomKey()
-        )
+        _uiState.value = _uiState.value.copy(isTrafficInspectorOpen = true, customTomTomKey = repository.getEffectiveTomTomKey())
     }
 
-    fun closeTrafficInspector() {
-        _uiState.value = _uiState.value.copy(isTrafficInspectorOpen = false)
-    }
+    fun closeTrafficInspector() { _uiState.value = _uiState.value.copy(isTrafficInspectorOpen = false) }
 
     fun saveCustomTomTomKey(key: String) {
         repository.setCustomTomTomKey(key)
-        _uiState.value = _uiState.value.copy(
-            customTomTomKey = key.trim(),
-            statusMessage = "TomTom API anahtarı güncellendi."
-        )
+        _uiState.value = _uiState.value.copy(customTomTomKey = key.trim(), statusMessage = "TomTom API anahtarı güncellendi.")
     }
 
     fun testTrafficConnection() {
-        val testPoint = currentRoutingLocation()?.point
-            ?: _uiState.value.selectedDestination?.point
-            ?: run {
-                _uiState.value = _uiState.value.copy(
-                    isTestingTraffic = false,
-                    trafficTestResult = null,
-                    statusMessage = "Trafik bağlantı testi için gerçek konum veya hedef gerekli."
-                )
-                return
-            }
-
+        val testPoint = currentRoutingLocation()?.point ?: _uiState.value.selectedDestination?.point ?: run {
+            _uiState.value = _uiState.value.copy(
+                isTestingTraffic = false, trafficTestResult = null,
+                statusMessage = "Trafik bağlantı testi için gerçek konum veya hedef gerekli."
+            )
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isTestingTraffic = true, trafficTestResult = null)
             val result = repository.testTomTomTraffic(testPoint)
-            _uiState.value = _uiState.value.copy(
-                isTestingTraffic = false,
-                trafficTestResult = result
-            )
+            _uiState.value = _uiState.value.copy(isTestingTraffic = false, trafficTestResult = result)
         }
     }
 
@@ -691,12 +615,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 delay(60_000L)
                 val currentRoute = _uiState.value.selectedRoute ?: break
                 val genId = _uiState.value.activeGenerationId
-
-                val result = repository.trafficCoordinator.requestRefresh(
-                    routes = listOf(currentRoute),
-                    generationId = genId
-                )
-
+                val result = repository.trafficCoordinator.requestRefresh(routes = listOf(currentRoute), generationId = genId)
                 if (result != null && genId == _uiState.value.activeGenerationId) {
                     val (updatedRoutes, updatedMap) = result
                     val updated = updatedRoutes.firstOrNull()
@@ -715,22 +634,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val newMode = if (_uiState.value.cameraMode == CameraMode.TWO_D) CameraMode.THREE_D else CameraMode.TWO_D
         _uiState.value = _uiState.value.copy(cameraMode = newMode)
     }
-
-    fun set2DMode() {
-        _uiState.value = _uiState.value.copy(cameraMode = CameraMode.TWO_D)
-    }
-
-    fun set3DMode() {
-        _uiState.value = _uiState.value.copy(cameraMode = CameraMode.THREE_D)
-    }
-
-    fun toggleTrafficLayer() {
-        _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible)
-    }
-
-    fun toggleSafetyCamerasLayer() {
-        _uiState.value = _uiState.value.copy(isSafetyCamerasLayerVisible = !_uiState.value.isSafetyCamerasLayerVisible)
-    }
+    fun set2DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.TWO_D) }
+    fun set3DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.THREE_D) }
+    fun toggleTrafficLayer() { _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible) }
+    fun toggleSafetyCamerasLayer() { _uiState.value = _uiState.value.copy(isSafetyCamerasLayerVisible = !_uiState.value.isSafetyCamerasLayerVisible) }
 
     private var lastAnnouncedWeatherId: String? = null
 
@@ -740,20 +647,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val userLoc = currentRoutingLocation()?.point ?: return
-
         val weatherList = _uiState.value.routeWeather
         val nearestWeather = weatherList.minByOrNull { it.point.distanceTo(userLoc) }
         val distance = nearestWeather?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
-
         if (nearestWeather != null && distance <= 1000.0) {
             _uiState.value = _uiState.value.copy(approachingWeather = nearestWeather)
             if (lastAnnouncedWeatherId != nearestWeather.id) {
                 lastAnnouncedWeatherId = nearestWeather.id
                 ttsManager.speak("Dikkat. İleride ${nearestWeather.description.lowercase()} koşulları var.")
             }
-        } else {
-            _uiState.value = _uiState.value.copy(approachingWeather = null)
-        }
+        } else _uiState.value = _uiState.value.copy(approachingWeather = null)
     }
 
     private var lastAnnouncedCameraId: Long? = null
@@ -764,10 +667,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         val userLoc = currentRoutingLocation()?.point ?: return
-
         val nearestCamera = cameras.minByOrNull { it.point.distanceTo(userLoc) }
         val distance = nearestCamera?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
-
         if (nearestCamera != null && distance <= 500.0) {
             _uiState.value = _uiState.value.copy(approachingCamera = nearestCamera)
             if (lastAnnouncedCameraId != nearestCamera.id) {
@@ -775,41 +676,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val speedMsg = nearestCamera.maxSpeed?.takeIf { it.isNotBlank() }?.let { " $it kilometre hız sınırı," } ?: ""
                 ttsManager.speak("Dikkat. İleride$speedMsg radar noktası var.")
             }
-        } else {
-            _uiState.value = _uiState.value.copy(approachingCamera = null)
-        }
+        } else _uiState.value = _uiState.value.copy(approachingCamera = null)
     }
 
     fun togglePoiLayer() {
         val newVis = !_uiState.value.isPoiLayerVisible
         _uiState.value = _uiState.value.copy(isPoiLayerVisible = newVis)
-        if (newVis && _uiState.value.poiList.isEmpty()) {
-            loadPois(_uiState.value.selectedPoiCategory)
-        }
+        if (newVis && _uiState.value.poiList.isEmpty()) loadPois(_uiState.value.selectedPoiCategory)
     }
 
     fun selectPoiCategory(category: PoiCategory?) {
-        _uiState.value = _uiState.value.copy(
-            selectedPoiCategory = category,
-            isPoiLayerVisible = true
-        )
+        _uiState.value = _uiState.value.copy(selectedPoiCategory = category, isPoiLayerVisible = true)
         loadPois(category)
     }
 
     fun loadPois(category: PoiCategory?) {
         val center = currentRoutingLocation()?.point ?: run {
-            _uiState.value = _uiState.value.copy(
-                statusMessage = "İlgi noktalarını yüklemek için gerçek konum gerekli."
-            )
+            _uiState.value = _uiState.value.copy(statusMessage = "İlgi noktalarını yüklemek için gerçek konum gerekli.")
             return
         }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(statusMessage = "İlgi noktaları yükleniyor...")
             val pois = repository.fetchPois(center, category)
-            _uiState.value = _uiState.value.copy(
-                poiList = pois,
-                statusMessage = if (pois.isEmpty()) "Bu bölgede ilgi noktası bulunamadı." else null
-            )
+            _uiState.value = _uiState.value.copy(poiList = pois, statusMessage = if (pois.isEmpty()) "Bu bölgede ilgi noktası bulunamadı." else null)
         }
     }
 
@@ -822,46 +711,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun recenterMap() {
         _uiState.value = _uiState.value.copy(
-            mapTrackingMode = if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
-                MapTrackingMode.FOLLOW_BEARING
-            } else {
-                MapTrackingMode.FOLLOW_USER
-            }
+            mapTrackingMode = if (_uiState.value.navigationState == NavigationState.NAVIGATING) MapTrackingMode.FOLLOW_BEARING else MapTrackingMode.FOLLOW_USER
         )
     }
-
-    fun setFreeTrackingMode() {
-        _uiState.value = _uiState.value.copy(mapTrackingMode = MapTrackingMode.FREE)
-    }
+    fun setFreeTrackingMode() { _uiState.value = _uiState.value.copy(mapTrackingMode = MapTrackingMode.FREE) }
 
     fun toggleSimulation() {
         val currentRoute = _uiState.value.selectedRoute ?: return
         val isSim = !_uiState.value.isSimulationActive
         _uiState.value = _uiState.value.copy(isSimulationActive = isSim)
-
-        if (isSim) {
-            locationManager.startRouteSimulation(currentRoute.geometry) { _, _ ->
-                // Progress handled by userLocation observer
-            }
-        } else {
-            locationManager.stopSimulation()
-        }
+        if (isSim) locationManager.startRouteSimulation(currentRoute.geometry) { _, _ -> } else locationManager.stopSimulation()
     }
 
     fun toggleLiveSharing() {
-        val isSharing = _uiState.value.isLiveSharingActive
-        if (isSharing) {
-            _uiState.value = _uiState.value.copy(
-                isLiveSharingActive = false,
-                liveShareUrl = null
-            )
-        } else {
-            val uniqueId = java.util.UUID.randomUUID().toString().substring(0, 8)
-            _uiState.value = _uiState.value.copy(
-                isLiveSharingActive = true,
-                liveShareUrl = "https://haritalar.example.com/share/$uniqueId"
-            )
-        }
+        _uiState.value = _uiState.value.copy(
+            isLiveSharingActive = false,
+            liveShareUrl = null,
+            statusMessage = "Canlı paylaşım şu anda devre dışı: doğrulanmış paylaşım sunucusu bağlı değil."
+        )
     }
 
     fun addFavorite(title: String, category: String) {
@@ -872,15 +739,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun removeFavorite(fav: FavoritePlace) {
-        viewModelScope.launch {
-            repository.deleteFavorite(fav)
-        }
-    }
-
-    fun clearStatusMessage() {
-        _uiState.value = _uiState.value.copy(statusMessage = null)
-    }
+    fun removeFavorite(fav: FavoritePlace) { viewModelScope.launch { repository.deleteFavorite(fav) } }
+    fun clearStatusMessage() { _uiState.value = _uiState.value.copy(statusMessage = null) }
 
     fun downloadOfflineMap() {
         val bbox = _uiState.value.currentViewportBbox ?: return
@@ -889,28 +749,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .include(org.maplibre.android.geometry.LatLng(bbox.south, bbox.west))
             .include(org.maplibre.android.geometry.LatLng(bbox.north, bbox.east))
             .build()
-
         val maxZoom = kotlin.math.max(currentZoom, 15.0)
-
         offlineMapManager.downloadRegion(
             styleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
-            bounds = bounds,
-            minZoom = currentZoom,
-            maxZoom = maxZoom,
-            pixelRatio = 1.0f
+            bounds = bounds, minZoom = currentZoom, maxZoom = maxZoom, pixelRatio = 1.0f
         )
     }
 
     fun onViewportChanged(bbox: TrafficSignalBoundingBox, zoomLevel: Float) {
-        _uiState.value = _uiState.value.copy(
-            currentViewportBbox = bbox,
-            currentZoomLevel = zoomLevel
-        )
+        _uiState.value = _uiState.value.copy(currentViewportBbox = bbox, currentZoomLevel = zoomLevel)
         if (!_uiState.value.isTrafficSignalsLayerVisible) return
-        if (zoomLevel < TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS) {
-            return
-        }
-
+        if (zoomLevel < TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS) return
         trafficSignalJob?.cancel()
         trafficSignalJob = viewModelScope.launch {
             delay(500L)
@@ -918,48 +767,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val result = trafficSignalRepository.getTrafficSignalsForViewport(bbox, zoomLevel)
             when (result) {
                 is TrafficSignalFetchResult.Success -> {
-                    val merged = trafficSignalRepository.deduplicateSignals(
-                        _uiState.value.trafficSignals + result.signals
-                    )
-                    _uiState.value = _uiState.value.copy(
-                        trafficSignals = merged,
-                        isLoadingTrafficSignals = false
-                    )
+                    val merged = trafficSignalRepository.deduplicateSignals(_uiState.value.trafficSignals + result.signals)
+                    _uiState.value = _uiState.value.copy(trafficSignals = merged, isLoadingTrafficSignals = false)
                 }
                 is TrafficSignalFetchResult.Error -> {
-                    if (result.fallbackSignals.isNotEmpty()) {
-                        val merged = trafficSignalRepository.deduplicateSignals(
-                            _uiState.value.trafficSignals + result.fallbackSignals
-                        )
-                        _uiState.value = _uiState.value.copy(
-                            trafficSignals = merged,
-                            isLoadingTrafficSignals = false
-                        )
-                    } else {
-                        _uiState.value = _uiState.value.copy(isLoadingTrafficSignals = false)
-                    }
+                    val merged = trafficSignalRepository.deduplicateSignals(_uiState.value.trafficSignals + result.fallbackSignals)
+                    _uiState.value = _uiState.value.copy(trafficSignals = merged, isLoadingTrafficSignals = false)
                 }
             }
         }
     }
 
     fun toggleTrafficSignalsLayer() {
-        val next = !_uiState.value.isTrafficSignalsLayerVisible
-        _uiState.value = _uiState.value.copy(isTrafficSignalsLayerVisible = next)
+        _uiState.value = _uiState.value.copy(isTrafficSignalsLayerVisible = !_uiState.value.isTrafficSignalsLayerVisible)
     }
-
-    fun selectTrafficSignal(signal: TrafficSignal) {
-        _uiState.value = _uiState.value.copy(selectedTrafficSignal = signal)
-    }
-
-    fun dismissTrafficSignalDetail() {
-        _uiState.value = _uiState.value.copy(selectedTrafficSignal = null)
-    }
-
-    fun navigateToTrafficSignal(signal: TrafficSignal) {
-        dismissTrafficSignalDetail()
-        selectDestinationPoint(signal.point, signal.displayTitle)
-    }
+    fun selectTrafficSignal(signal: TrafficSignal) { _uiState.value = _uiState.value.copy(selectedTrafficSignal = signal) }
+    fun dismissTrafficSignalDetail() { _uiState.value = _uiState.value.copy(selectedTrafficSignal = null) }
+    fun navigateToTrafficSignal(signal: TrafficSignal) { dismissTrafficSignalDetail(); selectDestinationPoint(signal.point, signal.displayTitle) }
 
     override fun onCleared() {
         super.onCleared()
