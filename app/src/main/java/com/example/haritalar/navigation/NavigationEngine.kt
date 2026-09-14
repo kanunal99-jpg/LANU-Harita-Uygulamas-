@@ -45,6 +45,7 @@ class NavigationEngine(
     private val offRouteThresholdMeters = 55.0
     private val arrivalThresholdMeters = 35.0
     private val snapThresholdMeters = 35.0
+    private val maxAllowedBacktrackMeters = 75.0
     private var announced500m = false
     private var announced200m = false
     private var announced50m = false
@@ -58,6 +59,7 @@ class NavigationEngine(
     private var maxSpeedKmh: Float = 0f
     private var sumSpeedKmh: Double = 0.0
     private var speedSampleCount: Int = 0
+    private var lastRouteProgressMeters = 0.0
 
     fun startNavigation(route: RouteOption) {
         activeRoute = route
@@ -70,6 +72,7 @@ class NavigationEngine(
         maxSpeedKmh = 0f
         sumSpeedKmh = 0.0
         speedSampleCount = 0
+        lastRouteProgressMeters = 0.0
         hasAnnouncedArrival = false
         arrivalConsecutiveCount = 0
         resetVoiceGates()
@@ -84,6 +87,7 @@ class NavigationEngine(
         currentManeuverIndex = 0
         offRouteConsecutiveCount = 0
         lastProcessedPoint = null
+        lastRouteProgressMeters = 0.0
         resetVoiceGates()
     }
 
@@ -104,7 +108,13 @@ class NavigationEngine(
         val distToDest = location.point.distanceTo(destination)
         updateTripSamples(location)
 
-        val snapResult = snapPointToPolyline(location.point, route.geometry)
+        val snapResult = snapPointToPolyline(
+            point = location.point,
+            polyline = route.geometry,
+            bearingHint = location.bearing,
+            speedKmh = location.speedKmh,
+            previousProgressMeters = lastRouteProgressMeters
+        )
         val isNearRoute = snapResult != null && snapResult.distanceMeters <= offRouteThresholdMeters
         if (!isNearRoute) {
             offRouteConsecutiveCount++
@@ -122,7 +132,11 @@ class NavigationEngine(
         val snappedBearing = snapResult?.takeIf { it.distanceMeters <= snapThresholdMeters }?.segmentBearing
 
         val routeLengthMeters = routeGeometryLength(route.geometry)
-        val routeProgressMeters = snapResult?.distanceAlongRouteMeters?.coerceIn(0.0, routeLengthMeters) ?: 0.0
+        val rawProgressMeters = snapResult?.distanceAlongRouteMeters?.coerceIn(0.0, routeLengthMeters)
+        val minimumAllowedProgress = (lastRouteProgressMeters - maxAllowedBacktrackMeters).coerceAtLeast(0.0)
+        val routeProgressMeters = (rawProgressMeters ?: lastRouteProgressMeters)
+            .coerceIn(minimumAllowedProgress, routeLengthMeters)
+        if (snapResult != null) lastRouteProgressMeters = routeProgressMeters
         val remainingDist = (routeLengthMeters - routeProgressMeters).coerceAtLeast(0.0)
 
         val isGpsAccurate = location.accuracyMeters <= 45f
@@ -258,6 +272,7 @@ class NavigationEngine(
         currentManeuverIndex = 0
         offRouteConsecutiveCount = 0
         lastProcessedPoint = null
+        lastRouteProgressMeters = 0.0
         hasAnnouncedStartSequence = false
         hasAnnouncedArrival = false
         arrivalConsecutiveCount = 0
@@ -294,32 +309,55 @@ class NavigationEngine(
         return bestProgress
     }
 
-    private fun snapPointToPolyline(point: GeoPoint, polyline: List<GeoPoint>): SnapResult? {
+    private fun snapPointToPolyline(
+        point: GeoPoint,
+        polyline: List<GeoPoint>,
+        bearingHint: Float,
+        speedKmh: Float,
+        previousProgressMeters: Double
+    ): SnapResult? {
         if (polyline.size < 2) return null
         var cumulative = 0.0
         var best: SnapResult? = null
-        var bestDistance = Double.MAX_VALUE
+        var bestScore = Double.MAX_VALUE
         for (i in 0 until polyline.lastIndex) {
             val a = polyline[i]
             val b = polyline[i + 1]
+            val segmentLength = a.distanceTo(b)
             val projection = projectOnSegment(point, a, b)
-            if (projection.distanceMeters < bestDistance) {
-                bestDistance = projection.distanceMeters
-                val dLon = Math.toRadians(b.longitude - a.longitude)
-                val y = Math.sin(dLon) * Math.cos(Math.toRadians(b.latitude))
-                val x = Math.cos(Math.toRadians(a.latitude)) * Math.sin(Math.toRadians(b.latitude)) -
-                        Math.sin(Math.toRadians(a.latitude)) * Math.cos(Math.toRadians(b.latitude)) * Math.cos(dLon)
-                val bearing = ((Math.toDegrees(Math.atan2(y, x)).toFloat() + 360f) % 360f)
+            val dLon = Math.toRadians(b.longitude - a.longitude)
+            val y = Math.sin(dLon) * Math.cos(Math.toRadians(b.latitude))
+            val x = Math.cos(Math.toRadians(a.latitude)) * Math.sin(Math.toRadians(b.latitude)) -
+                    Math.sin(Math.toRadians(a.latitude)) * Math.cos(Math.toRadians(b.latitude)) * Math.cos(dLon)
+            val bearing = ((Math.toDegrees(Math.atan2(y, x)).toFloat() + 360f) % 360f)
+            val progress = cumulative + projection.segmentPosition * segmentLength
+            val headingDiff = circularHeadingDifference(bearingHint, bearing)
+            val headingRelevant = speedKmh >= 8f && bearingHint.isFinite()
+            val headingPenalty = if (headingRelevant) (headingDiff / 180.0) * 30.0 else 0.0
+            val backtrack = (previousProgressMeters - progress).coerceAtLeast(0.0)
+            val backtrackPenalty = if (backtrack > maxAllowedBacktrackMeters) {
+                120.0 + (backtrack - maxAllowedBacktrackMeters)
+            } else {
+                0.0
+            }
+            val score = projection.distanceMeters + headingPenalty + backtrackPenalty
+            if (score < bestScore) {
+                bestScore = score
                 best = SnapResult(
                     projectedPoint = projection.projectedPoint,
                     distanceMeters = projection.distanceMeters,
                     segmentBearing = bearing,
-                    distanceAlongRouteMeters = cumulative + projection.segmentPosition * a.distanceTo(b)
+                    distanceAlongRouteMeters = progress
                 )
             }
-            cumulative += a.distanceTo(b)
+            cumulative += segmentLength
         }
         return best
+    }
+
+    private fun circularHeadingDifference(first: Float, second: Float): Double {
+        val normalized = kotlin.math.abs(((first - second + 540f) % 360f) - 180f)
+        return normalized.toDouble()
     }
 
     private data class SegmentProjection(

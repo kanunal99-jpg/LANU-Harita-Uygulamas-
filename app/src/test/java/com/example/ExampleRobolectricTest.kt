@@ -22,46 +22,31 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class ExampleRobolectricTest {
-
-    @Test
-    fun `read string from context`() {
+    @Test fun `read string from context`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val appName = context.getString(R.string.app_name)
-        assertEquals("Lanu Harita", appName)
+        assertEquals("Lanu Harita", context.getString(R.string.app_name))
     }
 
-    @Test
-    fun `test polyline decoder`() {
-        // Valhalla polyline6 encoding test
+    @Test fun `test polyline decoder`() {
         val polyline = PolylineDecoder.decodePolyline5("_p~iF~ps|U_ulLnnqC_mqNvxq`@")
         assertTrue(polyline.isNotEmpty())
         assertEquals(3, polyline.size)
     }
 
-    @Test
-    fun `test geometry aware traffic route matching`() {
+    @Test fun `test geometry aware traffic route matching`() {
         val route = listOf(
             GeoPoint(41.0082, 28.9784),
             GeoPoint(41.0100, 28.9800),
             GeoPoint(41.0150, 28.9850)
         )
-
-        val nearPoint = GeoPoint(41.00825, 28.97845)
-        val isNear = TrafficRouteMatcher.isPointNearPolyline(nearPoint, route, 40.0)
-        assertTrue(isNear)
-
-        val farPoint = GeoPoint(41.0500, 29.0200)
-        val isFarNear = TrafficRouteMatcher.isPointNearPolyline(farPoint, route, 40.0)
-        assertFalse(isFarNear)
+        assertTrue(TrafficRouteMatcher.isPointNearPolyline(GeoPoint(41.00825, 28.97845), route, 40.0))
+        assertFalse(TrafficRouteMatcher.isPointNearPolyline(GeoPoint(41.0500, 29.0200), route, 40.0))
     }
 
-    @Test
-    fun `test traffic cost model with in-memory stub segments`() {
-        // [STUB/MOCK TEST NOTE]: Bu bir birim testidir ve izole mantığı test etmek için
-        // hafıza-içi Mock/Stub TrafficSegment verisi kullanmaktadır. Canlı ağ kanıtı DEĞİLDİR.
+    @Test fun `test traffic cost model with in-memory stub segments`() {
         val fallbackStatus = TrafficRouteCostModel.calculateTrafficStatus(emptyList(), hasProvider = false)
-        assertFalse("Sağlayıcı yokken verified false olmalı", fallbackStatus.verified)
-        assertFalse("Sağlayıcı yokken isLiveApi false olmalı", fallbackStatus.isLiveApi)
+        assertFalse(fallbackStatus.verified)
+        assertFalse(fallbackStatus.isLiveApi)
         assertEquals(0L, fallbackStatus.delaySeconds)
         assertEquals(TrafficLevel.UNKNOWN, fallbackStatus.trafficLevel)
         assertEquals("OSRM / Valhalla Statik Yol Profili", fallbackStatus.sourceName)
@@ -77,58 +62,47 @@ class ExampleRobolectricTest {
             hasProvider = true,
             providerName = "TomTom Traffic Flow API v4"
         )
-        assertTrue("Veri varken verified true olmalı", activeStatus.verified)
-        assertTrue("Veri varken isLiveApi true olmalı", activeStatus.isLiveApi)
+        assertTrue(activeStatus.verified)
+        assertTrue(activeStatus.isLiveApi)
         assertEquals(180L, activeStatus.delaySeconds)
         assertEquals(TrafficLevel.SEVERE, activeStatus.trafficLevel)
         assertEquals("TomTom Traffic Flow API v4", activeStatus.sourceName)
     }
 
-    @Test
-    fun `test room database favorites persistence`() = runBlocking {
+    @Test fun `test room database favorites persistence`() = runBlocking {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         val dao = db.favoriteDao()
-
-        val fav = FavoritePlace(
-            title = "Evim",
-            address = "Karaköy, Beyoğlu, İstanbul",
-            latitude = 41.025,
-            longitude = 28.974,
-            category = "HOME"
+        val id = dao.insertFavorite(
+            FavoritePlace(
+                id = 0L,
+                title = "Evim",
+                address = "Karaköy, Beyoğlu, İstanbul",
+                latitude = 41.025,
+                longitude = 28.974,
+                category = "HOME",
+                timestamp = 0L
+            )
         )
-        val id = dao.insertFavorite(fav)
         assertTrue(id > 0)
-
         val list = dao.getAllFavorites().first()
         assertEquals(1, list.size)
         assertEquals("Evim", list[0].title)
-
         db.close()
     }
 
-    @Test
-    fun `test lane guidance helper and speed limits`() {
-        val otoyolLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Kuzey Marmara Otoyolu")
-        assertEquals(130, otoyolLimit)
-
-        val bulvarLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Barbaros Bulvarı")
-        assertEquals(70, bulvarLimit)
-
-        val sokakLimit = com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Karanfil Sokak")
-        assertEquals(50, sokakLimit)
-
-        val lanesRight = com.example.haritalar.navigation.LaneGuidanceHelper.generateLanesForManeuver(
-            com.example.haritalar.model.ManeuverType.RIGHT,
-            "Barbaros Bulvarı"
+    @Test fun `lane guidance without provider metadata stays empty`() {
+        assertNull(com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Kuzey Marmara Otoyolu"))
+        assertNull(com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Barbaros Bulvarı"))
+        assertNull(com.example.haritalar.navigation.LaneGuidanceHelper.determineSpeedLimit("Karanfil Sokak"))
+        assertTrue(
+            com.example.haritalar.navigation.LaneGuidanceHelper.generateLanesForManeuver(
+                com.example.haritalar.model.ManeuverType.RIGHT,
+                "Barbaros Bulvarı"
+            ).isEmpty()
         )
-        assertTrue(lanesRight.isNotEmpty())
-        assertTrue(lanesRight.last().isActive)
-
-        val voiceHint = com.example.haritalar.navigation.LaneGuidanceHelper.buildLaneVoiceHint(lanesRight)
-        assertNotNull(voiceHint)
-        assertTrue(voiceHint!!.contains("şerit"))
+        assertNull(com.example.haritalar.navigation.LaneGuidanceHelper.buildLaneVoiceHint(emptyList()))
     }
 }
