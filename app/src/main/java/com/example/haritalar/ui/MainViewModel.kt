@@ -26,11 +26,13 @@ import com.example.haritalar.model.TripSummary
 import com.example.haritalar.navigation.AppLocationManager
 import com.example.haritalar.navigation.CompassHeadingSensor
 import com.example.haritalar.navigation.NavigationEngine
+import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
 import com.example.haritalar.navigation.VehicleHeadingState
 import com.example.haritalar.voice.TurkishTtsManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -118,6 +120,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     )
 
     private var searchJob: Job? = null
+    private var routeCalculationJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
     private var generationCounter = 1L
@@ -125,7 +128,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val trafficSignalRepository = repository.trafficSignalRepository
 
     init {
-        // Observe location updates
         viewModelScope.launch {
             locationManager.userLocation.collect { loc ->
                 if (loc != null) {
@@ -138,7 +140,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             speedKmh = loc.speedKmh
                         )
 
-                        // Clear departure banner once vehicle has proceeded beyond start (~65m)
                         val startDist = _uiState.value.selectedRoute?.geometry?.firstOrNull()?.distanceTo(loc.point) ?: 100.0
                         val currentDep = if (startDist > 65.0) null else _uiState.value.departureGuidance
 
@@ -167,7 +168,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Observe compass sensor updates when vehicle is stopped or at low speed (< 4.5 km/h)
         viewModelScope.launch {
             compassSensor.sensorHeading.collect { _ ->
                 val currentLoc = _uiState.value.userLocation
@@ -184,10 +184,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startLocationUpdates(hasFinePermission: Boolean) {
-        locationManager.startLocationUpdates(hasFinePermission)
+        if (!hasFinePermission) {
+            locationManager.stopLocationUpdates()
+            _uiState.value = _uiState.value.copy(
+                isLoadingRoutes = false,
+                statusMessage = "Konum izni gerekli. Gerçek GPS konumu alınmadan rota hesaplanamaz."
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(statusMessage = "Konum alınıyor...")
+        locationManager.startLocationUpdates(true)
     }
 
     private var searchGenerationId = 0L
+
+    private fun currentRoutingLocation(): UserLocationData? {
+        val location = _uiState.value.userLocation
+        return location?.takeIf { NavigationLocationPolicy.isUsableForRouting(it) }
+    }
 
     fun onSearchFocusChanged(focused: Boolean) {
         _uiState.value = _uiState.value.copy(isSearchFocused = focused)
@@ -225,11 +240,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 searchStatus = com.example.haritalar.model.SearchUiStatus.SEARCHING,
                 searchErrorMessage = null
             )
-            delay(300L) // 300ms debounce
+            delay(300L)
             val focus = _uiState.value.userLocation?.point
             val response = repository.searchPlacesResponse(query, focus)
 
-            // Stale response guard
             if (currentGen == searchGenerationId) {
                 when (response) {
                     is com.example.haritalar.model.SearchResponse.Success -> {
@@ -270,11 +284,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun dismissDestinationCard() {
+        routeCalculationJob?.cancel()
         _uiState.value = _uiState.value.copy(
             selectedDestination = null,
             isDestinationCardVisible = false,
             routeOptions = emptyList(),
             selectedRoute = null,
+            isLoadingRoutes = false,
             navigationState = NavigationState.IDLE
         )
     }
@@ -315,10 +331,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun calculateRoutes(destination: GeoPoint) {
-        val userLoc = _uiState.value.userLocation?.point ?: GeoPoint(41.0082, 28.9784)
-        val genId = ++generationCounter
+        routeCalculationJob?.cancel()
+        val userLocation = currentRoutingLocation()
+        if (userLocation == null) {
+            val genId = ++generationCounter
+            _uiState.value = _uiState.value.copy(
+                routeOptions = emptyList(),
+                selectedRoute = null,
+                isLoadingRoutes = false,
+                activeGenerationId = genId,
+                navigationState = NavigationState.IDLE,
+                statusMessage = "Gerçek GPS konumu bekleniyor. Konum alınmadan rota hesaplanamaz."
+            )
+            return
+        }
 
-        viewModelScope.launch {
+        val genId = ++generationCounter
+        routeCalculationJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoadingRoutes = true,
                 activeGenerationId = genId,
@@ -326,24 +355,102 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             )
 
             try {
-                val (routes, trafficMap) = repository.calculateRouteAlternatives(userLoc, destination, genId)
+                val (routes, trafficMap) = repository.calculateRouteAlternatives(userLocation.point, destination, genId)
+                if (genId != _uiState.value.activeGenerationId) return@launch
 
-                // Stale result guard
-                if (genId == _uiState.value.activeGenerationId) {
-                    val primaryRoute = routes.firstOrNull()
-                    _uiState.value = _uiState.value.copy(
-                        routeOptions = routes,
-                        selectedRoute = primaryRoute,
-                        trafficStatusMap = trafficMap,
-                        navigationState = if (routes.isNotEmpty()) NavigationState.ROUTE_SELECTION else NavigationState.IDLE,
-                        isLoadingRoutes = false,
-                        statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
-                    )
-                }
+                val primaryRoute = routes.firstOrNull()
+                _uiState.value = _uiState.value.copy(
+                    routeOptions = routes,
+                    selectedRoute = primaryRoute,
+                    trafficStatusMap = trafficMap,
+                    navigationState = if (routes.isNotEmpty()) NavigationState.ROUTE_SELECTION else NavigationState.IDLE,
+                    isLoadingRoutes = false,
+                    statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
+                )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         isLoadingRoutes = false,
+                        statusMessage = "Rota hesaplama hatası: ${e.message}"
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * Destination-card shortcut: calculate the route and start only after a real
+     * route result has arrived. This removes the previous calculate/start race.
+     */
+    fun startNavigationTo(destination: GeoPoint) {
+        routeCalculationJob?.cancel()
+        val initialLocation = currentRoutingLocation()
+        if (initialLocation == null) {
+            _uiState.value = _uiState.value.copy(
+                routeOptions = emptyList(),
+                selectedRoute = null,
+                isLoadingRoutes = false,
+                statusMessage = "Gerçek GPS konumu bekleniyor. Navigasyon başlatılamaz."
+            )
+            return
+        }
+
+        val genId = ++generationCounter
+        routeCalculationJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isLoadingRoutes = true,
+                activeGenerationId = genId,
+                routeOptions = emptyList(),
+                selectedRoute = null,
+                statusMessage = "Rota hesaplanıyor..."
+            )
+
+            try {
+                val (routes, trafficMap) = repository.calculateRouteAlternatives(initialLocation.point, destination, genId)
+                if (genId != _uiState.value.activeGenerationId) return@launch
+
+                val route = routes.firstOrNull()
+                if (route == null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingRoutes = false,
+                        routeOptions = emptyList(),
+                        selectedRoute = null,
+                        navigationState = NavigationState.IDLE,
+                        statusMessage = "Rota bulunamadı."
+                    )
+                    return@launch
+                }
+
+                val latestLocation = currentRoutingLocation()
+                if (latestLocation == null) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingRoutes = false,
+                        routeOptions = routes,
+                        selectedRoute = route,
+                        navigationState = NavigationState.ROUTE_SELECTION,
+                        statusMessage = "GPS konumu güncelliğini kaybetti. Navigasyon başlatılmadı."
+                    )
+                    return@launch
+                }
+
+                _uiState.value = _uiState.value.copy(
+                    routeOptions = routes,
+                    selectedRoute = route,
+                    trafficStatusMap = trafficMap,
+                    isLoadingRoutes = false,
+                    navigationState = NavigationState.ROUTE_SELECTION,
+                    statusMessage = null
+                )
+                startNavigationInternal(route, latestLocation)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (genId == _uiState.value.activeGenerationId) {
+                    _uiState.value = _uiState.value.copy(
+                        isLoadingRoutes = false,
+                        navigationState = NavigationState.IDLE,
                         statusMessage = "Rota hesaplama hatası: ${e.message}"
                     )
                 }
@@ -370,25 +477,43 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startNavigation() {
-        val route = _uiState.value.selectedRoute ?: return
-        val userLoc = _uiState.value.userLocation
-        val userPoint = userLoc?.point ?: route.geometry.firstOrNull() ?: GeoPoint(41.0082, 28.9784)
-        val currentHeading = _uiState.value.vehicleHeadingState.heading
+        if (_uiState.value.isLoadingRoutes) {
+            _uiState.value = _uiState.value.copy(statusMessage = "Rota hâlâ hesaplanıyor. Lütfen rota hazır olduğunda tekrar başlatın.")
+            return
+        }
 
+        val route = _uiState.value.selectedRoute
+        if (route == null) {
+            _uiState.value = _uiState.value.copy(statusMessage = "Başlatılacak hazır rota bulunamadı.")
+            return
+        }
+
+        val userLocation = currentRoutingLocation()
+        if (userLocation == null) {
+            _uiState.value = _uiState.value.copy(statusMessage = "Gerçek GPS konumu alınamıyor. Navigasyon başlatılamadı.")
+            return
+        }
+
+        startNavigationInternal(route, userLocation)
+    }
+
+    private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
+        val currentHeading = _uiState.value.vehicleHeadingState.heading
         val depGuidance = VehicleHeadingManager.buildDepartureGuidance(
             vehicleHeading = currentHeading,
             route = route,
-            userPoint = userPoint
+            userPoint = userLocation.point
         )
 
         vehicleHeadingManager.start()
 
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.NAVIGATING,
-            cameraMode = CameraMode.THREE_D, // 3D perspective during navigation as required!
+            cameraMode = CameraMode.THREE_D,
             mapTrackingMode = MapTrackingMode.FOLLOW_BEARING,
             departureGuidance = depGuidance,
-            isWrongWay = depGuidance.isWrongWay
+            isWrongWay = depGuidance.isWrongWay,
+            statusMessage = null
         )
 
         navigationEngine.startNavigation(route)
@@ -396,6 +521,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopNavigation() {
+        routeCalculationJob?.cancel()
+        routeCalculationJob = null
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
@@ -418,16 +545,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             alongRoutePois = emptyList(),
             isLoadingAlongRoute = false,
             departureGuidance = null,
-            isWrongWay = false
+            isWrongWay = false,
+            isLoadingRoutes = false
         )
     }
 
     private fun handleOffRoute(currentPoint: GeoPoint) {
+        routeCalculationJob?.cancel()
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
         val genId = ++generationCounter
 
-        viewModelScope.launch {
+        routeCalculationJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 navigationState = NavigationState.OFF_ROUTE_REROUTING,
                 activeGenerationId = genId,
@@ -443,16 +572,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         selectedRoute = newRoute,
                         trafficStatusMap = trafficMap,
                         navigationState = NavigationState.NAVIGATING,
-                        statusMessage = null
+                        statusMessage = null,
+                        isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                // Keep navigating on current route if reroute fails
-                _uiState.value = _uiState.value.copy(
-                    navigationState = NavigationState.NAVIGATING,
-                    statusMessage = "Yeniden rota oluşturulamadı, mevcut rotaya dönün."
-                )
+                if (genId == _uiState.value.activeGenerationId) {
+                    _uiState.value = _uiState.value.copy(
+                        navigationState = NavigationState.NAVIGATING,
+                        isLoadingRoutes = false,
+                        statusMessage = "Yeniden rota oluşturulamadı, mevcut rotaya dönün."
+                    )
+                }
             }
         }
     }
@@ -483,7 +617,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun searchAlongRouteCategory(category: PoiCategory) {
-        val focus = _uiState.value.userLocation?.point ?: return
+        val focus = currentRoutingLocation()?.point ?: run {
+            _uiState.value = _uiState.value.copy(statusMessage = "İlgi noktalarını aramak için gerçek konum gerekli.")
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isLoadingAlongRoute = true)
             val pois = repository.fetchPois(focus, category)
@@ -526,9 +663,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun testTrafficConnection() {
-        val testPoint = _uiState.value.userLocation?.point
+        val testPoint = currentRoutingLocation()?.point
             ?: _uiState.value.selectedDestination?.point
-            ?: GeoPoint(41.0082, 28.9784) // Istanbul default coordinate
+            ?: run {
+                _uiState.value = _uiState.value.copy(
+                    isTestingTraffic = false,
+                    trafficTestResult = null,
+                    statusMessage = "Trafik bağlantı testi için gerçek konum veya hedef gerekli."
+                )
+                return
+            }
 
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(isTestingTraffic = true, trafficTestResult = null)
@@ -544,7 +688,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         trafficRefreshJob?.cancel()
         trafficRefreshJob = viewModelScope.launch {
             while (_uiState.value.navigationState == NavigationState.NAVIGATING) {
-                delay(60_000L) // 60s minimum interval
+                delay(60_000L)
                 val currentRoute = _uiState.value.selectedRoute ?: break
                 val genId = _uiState.value.activeGenerationId
 
@@ -595,13 +739,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(approachingWeather = null)
             return
         }
-        val userLoc = _uiState.value.userLocation?.point ?: return
-        
+        val userLoc = currentRoutingLocation()?.point ?: return
+
         val weatherList = _uiState.value.routeWeather
         val nearestWeather = weatherList.minByOrNull { it.point.distanceTo(userLoc) }
         val distance = nearestWeather?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
-        
-        // Announce weather if within 1km
+
         if (nearestWeather != null && distance <= 1000.0) {
             _uiState.value = _uiState.value.copy(approachingWeather = nearestWeather)
             if (lastAnnouncedWeatherId != nearestWeather.id) {
@@ -620,12 +763,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(approachingCamera = null)
             return
         }
-        val userLoc = _uiState.value.userLocation?.point ?: return
-        
-        // Find the nearest camera within 500 meters
+        val userLoc = currentRoutingLocation()?.point ?: return
+
         val nearestCamera = cameras.minByOrNull { it.point.distanceTo(userLoc) }
         val distance = nearestCamera?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
-        
+
         if (nearestCamera != null && distance <= 500.0) {
             _uiState.value = _uiState.value.copy(approachingCamera = nearestCamera)
             if (lastAnnouncedCameraId != nearestCamera.id) {
@@ -655,7 +797,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadPois(category: PoiCategory?) {
-        val center = _uiState.value.userLocation?.point ?: GeoPoint(41.0082, 28.9784)
+        val center = currentRoutingLocation()?.point ?: run {
+            _uiState.value = _uiState.value.copy(
+                statusMessage = "İlgi noktalarını yüklemek için gerçek konum gerekli."
+            )
+            return
+        }
         viewModelScope.launch {
             _uiState.value = _uiState.value.copy(statusMessage = "İlgi noktaları yükleniyor...")
             val pois = repository.fetchPois(center, category)
@@ -735,10 +882,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(statusMessage = null)
     }
 
-    /**
-     * Called when the map camera moves/stops and viewport changes.
-     * Throttles/debounces and retrieves real traffic signals from OSM.
-     */
     fun downloadOfflineMap() {
         val bbox = _uiState.value.currentViewportBbox ?: return
         val currentZoom = _uiState.value.currentZoomLevel.toDouble()
@@ -746,10 +889,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             .include(org.maplibre.android.geometry.LatLng(bbox.south, bbox.west))
             .include(org.maplibre.android.geometry.LatLng(bbox.north, bbox.east))
             .build()
-        
-        // We fetch from current zoom up to zoom 15 to keep size reasonable
+
         val maxZoom = kotlin.math.max(currentZoom, 15.0)
-        
+
         offlineMapManager.downloadRegion(
             styleUrl = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json",
             bounds = bounds,
@@ -771,7 +913,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         trafficSignalJob?.cancel()
         trafficSignalJob = viewModelScope.launch {
-            delay(500L) // 500ms debounce when camera stops panning
+            delay(500L)
             _uiState.value = _uiState.value.copy(isLoadingTrafficSignals = true)
             val result = trafficSignalRepository.getTrafficSignalsForViewport(bbox, zoomLevel)
             when (result) {
@@ -821,6 +963,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     override fun onCleared() {
         super.onCleared()
+        routeCalculationJob?.cancel()
         vehicleHeadingManager.stop()
         locationManager.stopLocationUpdates()
         ttsManager.shutdown()

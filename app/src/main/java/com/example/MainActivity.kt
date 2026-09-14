@@ -171,7 +171,6 @@ fun HaritalarNavigationApp(
         }
     ) { _ ->
         Box(modifier = Modifier.fillMaxSize()) {
-            // 1. Base Map Layer (MapLibre Native with 2D/3D, Lines, Traffic, POIs, Safety Cameras)
             MapLibreContainer(
                 userLocation = uiState.userLocation,
                 activeRoute = uiState.selectedRoute,
@@ -216,7 +215,6 @@ fun HaritalarNavigationApp(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // 2. Search Bar and POI category chips (when not in turn-by-turn navigation)
             if (uiState.navigationState != NavigationState.NAVIGATING) {
                 SearchHeader(
                     searchQuery = uiState.searchQuery,
@@ -249,7 +247,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 3. Navigation HUD: Top Driving Instruction Banner
             if (uiState.navigationState == NavigationState.NAVIGATING || uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING) {
                 DrivingTopInstructionBanner(
                     progress = uiState.navigationProgress,
@@ -264,7 +261,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // Radar Warning Card
             RadarWarningCard(
                 camera = uiState.approachingCamera,
                 modifier = Modifier
@@ -273,7 +269,6 @@ fun HaritalarNavigationApp(
                     .statusBarsPadding()
             )
 
-            // Weather Warning Card
             com.example.haritalar.ui.WeatherWarningCard(
                 weather = uiState.approachingWeather,
                 modifier = Modifier
@@ -282,7 +277,6 @@ fun HaritalarNavigationApp(
                     .statusBarsPadding()
             )
 
-            // 4. Floating Map Controls (2D/3D, Layers, Mute, Recenter)
             FloatingMapControls(
                 cameraMode = uiState.cameraMode,
                 isMuted = uiState.isMuted,
@@ -306,7 +300,6 @@ fun HaritalarNavigationApp(
                     )
             )
 
-            // 5. Selected Destination Preview Card (shown upon selecting a result before or during route selection)
             AnimatedVisibility(
                 visible = uiState.isDestinationCardVisible && uiState.selectedDestination != null &&
                         uiState.navigationState != NavigationState.NAVIGATING && uiState.routeOptions.isEmpty(),
@@ -319,15 +312,13 @@ fun HaritalarNavigationApp(
                         destination = dest,
                         onCalculateRoutes = { viewModel.calculateRoutes(dest.point) },
                         onStartNavigation = {
-                            viewModel.calculateRoutes(dest.point)
-                            viewModel.startNavigation()
+                            viewModel.startNavigationTo(dest.point)
                         },
                         onDismiss = { viewModel.dismissDestinationCard() }
                     )
                 }
             }
 
-            // 6. Route Selection Carousel (Showing the calculated route alternatives)
             AnimatedVisibility(
                 visible = uiState.navigationState == NavigationState.ROUTE_SELECTION && uiState.routeOptions.isNotEmpty(),
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -344,7 +335,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 6. Navigation HUD: Bottom Driving Dashboard (Speed, ETA, Remaining distance/time, Finish button)
             AnimatedVisibility(
                 visible = uiState.navigationState == NavigationState.NAVIGATING,
                 enter = slideInVertically(initialOffsetY = { it }),
@@ -363,7 +353,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 7. Search Along Route Dialog
             if (uiState.isSearchAlongRouteOpen) {
                 SearchAlongRouteDialog(
                     alongRoutePois = uiState.alongRoutePois,
@@ -374,7 +363,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 8. Trip Summary Dialog on Arrival
             val tripSummary = uiState.tripSummary
             if (uiState.navigationState == NavigationState.ARRIVED && tripSummary != null) {
                 TripSummaryDialog(
@@ -383,7 +371,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 9. Traffic Inspector & Live Proof Dialog
             if (uiState.isTrafficInspectorOpen) {
                 TrafficInspectorDialog(
                     trafficStatus = currentTrafficStatus,
@@ -396,7 +383,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 10. Layers Modal Bottom Sheet
             if (showLayersSheet) {
                 LayersBottomSheet(
                     cameraMode = uiState.cameraMode,
@@ -427,7 +413,6 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            // 11. Real Traffic Signal Detail Sheet
             uiState.selectedTrafficSignal?.let { signal ->
                 TrafficSignalDetailSheet(
                     signal = signal,

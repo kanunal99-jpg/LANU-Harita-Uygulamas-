@@ -50,25 +50,18 @@ class AppLocationManager(private val context: Context) {
     @SuppressLint("MissingPermission")
     fun startLocationUpdates(hasFinePermission: Boolean) {
         if (!hasFinePermission) {
-            // Default center: Istanbul, Turkey (Taksim / Bosphorus)
-            if (_userLocation.value == null) {
-                _userLocation.value = UserLocationData(
-                    point = GeoPoint(41.0082, 28.9784),
-                    bearing = 0f,
-                    speedKmh = 0f,
-                    accuracyMeters = 20f
-                )
-            }
+            stopLocationUpdates()
+            Log.w("AppLocationManager", "Location permission unavailable; waiting for a real fix.")
             return
         }
 
         try {
-            // 1. Fetch last known location quickly
+            // Last-known location is only a candidate. NavigationLocationPolicy validates
+            // freshness and accuracy before it can be used for routing or navigation.
             fusedClient.lastLocation.addOnSuccessListener { loc: Location? ->
                 if (loc != null) {
                     onNewAndroidLocation(loc)
                 } else {
-                    // Try system location manager
                     val lastGps = systemLocationManager?.getLastKnownLocation(LocationManager.GPS_PROVIDER)
                     val lastNet = systemLocationManager?.getLastKnownLocation(LocationManager.NETWORK_PROVIDER)
                     val best = lastGps ?: lastNet
@@ -76,7 +69,6 @@ class AppLocationManager(private val context: Context) {
                 }
             }
 
-            // 2. High accuracy continuous requests
             val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500L)
                 .setMinUpdateIntervalMillis(1000L)
                 .setMinUpdateDistanceMeters(2.0f)
