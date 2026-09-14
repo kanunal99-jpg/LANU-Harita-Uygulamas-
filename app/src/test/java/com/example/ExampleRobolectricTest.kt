@@ -59,7 +59,15 @@ class ExampleRobolectricTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
         val dao = db.favoriteDao()
-        val id = dao.insertFavorite(FavoritePlace("Evim", "Karaköy, Beyoğlu, İstanbul", 41.025, 28.974, "HOME"))
+        val id = dao.insertFavorite(
+            FavoritePlace(
+                title = "Evim",
+                address = "Karaköy, Beyoğlu, İstanbul",
+                latitude = 41.025,
+                longitude = 28.974,
+                category = "HOME"
+            )
+        )
         assertTrue(id > 0)
         val list = dao.getAllFavorites().first()
         assertEquals(1, list.size)
