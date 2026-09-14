@@ -48,18 +48,15 @@ jobs:
               """                val root = JSONObject(body)\n                val trip = root.optJSONObject(\"trip\") ?: return null\n""",
               1
           )
-          # The Valhalla block is indented one level deeper after use(); reindent until its catch.
           marker = "\n        } catch (e: Exception) {\n            return null\n        }\n    }\n\n    private fun mapValhallaManeuverType"
           if marker not in text:
               raise SystemExit("Valhalla catch marker not found")
           prefix, suffix = text.split(marker, 1)
           lines = prefix.splitlines()
-          # Reindent only the body of queryValhalla after the new use opening.
           open_idx = next(i for i,l in enumerate(lines) if "client.newCall(request).execute().use { response ->" in l)
           for i in range(open_idx + 1, len(lines)):
               lines[i] = "    " + lines[i]
-          prefix = "\n".join(lines)
-          text = prefix + marker + suffix
+          text = "\n".join(lines) + marker + suffix
           text = text.replace(
               """                listOf(start, end)\n            }\n\n            val maneuvers""",
               """                emptyList()\n            }\n            if (decodedGeometry.size < 2) return null\n\n            val maneuvers""",
@@ -70,7 +67,6 @@ jobs:
               """            24 -> ManeuverType.FERRY\n""",
               1
           )
-          # OSRM response lifecycle and invalid geometry rejection.
           text = text.replace(
               """            val response = client.newCall(request).execute()\n            if (!response.isSuccessful) return@withContext emptyList()\n\n            val body = response.body?.string() ?: return@withContext emptyList()\n""",
               """            client.newCall(request).execute().use { response ->\n                if (!response.isSuccessful) return@withContext emptyList()\n\n                val body = response.body?.string() ?: return@withContext emptyList()\n""",
@@ -81,7 +77,6 @@ jobs:
               """                val root = JSONObject(body)\n                val routesArray = root.optJSONArray(\"routes\") ?: return@withContext emptyList()\n""",
               1
           )
-          # Reindent OSRM body after use(); keep the final catch outside the use block.
           marker2 = "\n        } catch (e: Exception) {\n            emptyList()\n        }\n    }\n\n    private fun mapOsrmManeuverType"
           if marker2 not in text:
               raise SystemExit("OSRM catch marker not found")
@@ -90,8 +85,7 @@ jobs:
           open_idx = max(i for i,l in enumerate(lines) if "client.newCall(request).execute().use { response ->" in l)
           for i in range(open_idx + 1, len(lines)):
               lines[i] = "    " + lines[i]
-          prefix = "\n".join(lines)
-          text = prefix + marker2 + suffix
+          text = "\n".join(lines) + marker2 + suffix
           text = text.replace(
               """                        GeoPoint(pt.getDouble(1), pt.getDouble(0))\n                    }\n                }\n\n                val legs""",
               """                        GeoPoint(pt.getDouble(1), pt.getDouble(0))\n                    }\n                }\n                if (geometryPoints.size < 2) continue\n\n                val legs""",
@@ -112,9 +106,20 @@ jobs:
           manifest.write_text(text.replace(old, 'android:usesCleartextTraffic="false"', 1))
 
       - name: Commit changes
+        shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 - <<'PY'
+          from pathlib import Path
+          for name in [
+            "app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt",
+            "app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt",
+            "app/src/main/AndroidManifest.xml",
+          ]:
+            p = Path(name)
+            p.write_text("\n".join(line.rstrip() for line in p.read_text().splitlines()) + "\n")
+          PY
           git add app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt app/src/main/AndroidManifest.xml
           git diff --cached --check
           git commit -m "fix: remove fabricated map traffic and route geometry fallbacks"
