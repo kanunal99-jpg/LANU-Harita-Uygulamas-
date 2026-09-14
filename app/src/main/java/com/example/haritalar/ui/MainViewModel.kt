@@ -470,6 +470,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
+        announcedCameraWarningBuckets.clear()
+        lastOverspeedCameraWarningKey = null
         val currentHeading = _uiState.value.vehicleHeadingState.heading
         val depGuidance = VehicleHeadingManager.buildDepartureGuidance(
             vehicleHeading = currentHeading, route = route, userPoint = userLocation.point
@@ -496,6 +498,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
         ttsManager.stop()
+        announcedCameraWarningBuckets.clear()
+        lastOverspeedCameraWarningKey = null
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.IDLE, navigationProgress = null, selectedRoute = null,
             routeOptions = emptyList(), selectedDestination = null, searchQuery = "",
@@ -637,7 +641,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun set2DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.TWO_D) }
     fun set3DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.THREE_D) }
     fun toggleTrafficLayer() { _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible) }
-    fun toggleSafetyCamerasLayer() { _uiState.value = _uiState.value.copy(isSafetyCamerasLayerVisible = !_uiState.value.isSafetyCamerasLayerVisible) }
+    fun toggleSafetyCamerasLayer() {
+        val newVisible = !_uiState.value.isSafetyCamerasLayerVisible
+        _uiState.value = _uiState.value.copy(
+            isSafetyCamerasLayerVisible = newVisible,
+            approachingCamera = if (newVisible) _uiState.value.approachingCamera else null
+        )
+        if (!newVisible) {
+            announcedCameraWarningBuckets.clear()
+            lastOverspeedCameraWarningKey = null
+        }
+    }
 
     private var lastAnnouncedWeatherId: String? = null
 
@@ -659,24 +673,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else _uiState.value = _uiState.value.copy(approachingWeather = null)
     }
 
-    private var lastAnnouncedCameraId: Long? = null
+    private val announcedCameraWarningBuckets = mutableSetOf<String>()
+    private var lastOverspeedCameraWarningKey: String? = null
+
+    private fun formatSafetyWarningDistance(distanceBucketMeters: Int): String = when {
+        distanceBucketMeters >= 1000 -> {
+            val km = distanceBucketMeters / 1000
+            if (distanceBucketMeters % 1000 == 0) "$km kilometre"
+            else "${distanceBucketMeters / 1000.0} kilometre".replace('.', ',')
+        }
+        else -> "$distanceBucketMeters metre"
+    }
 
     fun checkSafetyCameraProximity(cameras: List<com.example.haritalar.model.SafetyCamera>) {
-        if (!_uiState.value.isSafetyCamerasLayerVisible) {
+        if (!_uiState.value.isSafetyCamerasLayerVisible || _uiState.value.navigationState != NavigationState.NAVIGATING) {
             _uiState.value = _uiState.value.copy(approachingCamera = null)
             return
         }
-        val userLoc = currentRoutingLocation()?.point ?: return
-        val nearestCamera = cameras.minByOrNull { it.point.distanceTo(userLoc) }
-        val distance = nearestCamera?.point?.distanceTo(userLoc) ?: Double.MAX_VALUE
-        if (nearestCamera != null && distance <= 500.0) {
-            _uiState.value = _uiState.value.copy(approachingCamera = nearestCamera)
-            if (lastAnnouncedCameraId != nearestCamera.id) {
-                lastAnnouncedCameraId = nearestCamera.id
-                val speedMsg = nearestCamera.maxSpeed?.takeIf { it.isNotBlank() }?.let { " $it kilometre hız sınırı," } ?: ""
-                ttsManager.speak("Dikkat. İleride$speedMsg radar noktası var.")
+
+        val userLocation = currentRoutingLocation() ?: return
+        val warning = com.example.haritalar.navigation.SafetyCameraWarningPolicy.nearest(
+            cameras = cameras,
+            point = userLocation.point,
+            speedKmh = userLocation.speedKmh
+        )
+
+        if (warning == null) {
+            _uiState.value = _uiState.value.copy(approachingCamera = null)
+            return
+        }
+
+        val camera = warning.camera
+        _uiState.value = _uiState.value.copy(approachingCamera = camera)
+
+        if (warning.distanceBucketMeters > 0) {
+            val bucketKey = "${camera.id}:${warning.distanceBucketMeters}"
+            if (announcedCameraWarningBuckets.add(bucketKey)) {
+                ttsManager.speak(
+                    "Dikkat. ${formatSafetyWarningDistance(warning.distanceBucketMeters)} ileride radar noktası var."
+                )
             }
-        } else _uiState.value = _uiState.value.copy(approachingCamera = null)
+        }
+
+        val speedLimit = warning.speedLimitKmh
+        if (warning.overspeed && speedLimit != null) {
+            val overspeedKey = "${camera.id}:$speedLimit"
+            if (lastOverspeedCameraWarningKey != overspeedKey) {
+                lastOverspeedCameraWarningKey = overspeedKey
+                ttsManager.speak("Dikkat. Hız sınırını aştınız. Hız sınırı $speedLimit kilometre saat.")
+            }
+        } else if (!warning.overspeed) {
+            lastOverspeedCameraWarningKey = null
+        }
     }
 
     fun togglePoiLayer() {
