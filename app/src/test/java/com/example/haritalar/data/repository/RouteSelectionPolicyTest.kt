@@ -13,34 +13,33 @@ class RouteSelectionPolicyTest {
     private val end = GeoPoint(41.0000, 29.0020)
 
     private fun route(id: String, distance: Double = 167.0, duration: Long = 120, geometry: List<GeoPoint> = listOf(start, middle, end)) =
-        RouteOption(
-            routeId = id,
-            title = "Test",
-            summary = "Test",
-            durationSeconds = duration,
-            distanceMeters = distance,
-            geometry = geometry,
-            maneuvers = emptyList()
-        )
+        RouteOption(id, "Test", "Test", duration, distance, geometry, emptyList())
 
-    @Test
-    fun validPrimaryRoutesWin() {
+    @Test fun validPrimaryRoutesWin() {
         val primary = route("primary")
         val alternative = route("alternative")
         assertEquals(listOf("primary"), RouteSelectionPolicy.select(listOf(primary), listOf(alternative)).map { it.routeId })
     }
 
-    @Test
-    fun invalidPrimaryFallsBackToAlternative() {
+    @Test fun invalidPrimaryFallsBackToAlternative() {
         val invalid = route("invalid", distance = 0.0)
         val alternative = route("alternative")
         assertEquals(listOf("alternative"), RouteSelectionPolicy.select(listOf(invalid), listOf(alternative)).map { it.routeId })
     }
 
-    @Test
-    fun unusableGeometryIsRejected() {
+    @Test fun unusableGeometryIsRejected() {
         val invalid = route("invalid", geometry = listOf(start))
         assertFalse(RouteSelectionPolicy.isUsable(invalid))
         assertTrue(RouteSelectionPolicy.select(listOf(invalid), emptyList()).isEmpty())
+    }
+
+    @Test fun impossibleEtaIsRejected() {
+        val tooFast = route("too-fast", duration = 1)
+        assertFalse(RouteSelectionPolicy.isUsable(tooFast))
+    }
+
+    @Test fun verySlowButPlausibleUrbanRouteIsAccepted() {
+        val slow = route("slow", duration = 1_000)
+        assertTrue(RouteSelectionPolicy.isUsable(slow))
     }
 }

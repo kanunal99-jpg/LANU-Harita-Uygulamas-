@@ -1,6 +1,5 @@
 package com.example.haritalar.data.repository
 
-import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.RouteOption
 
 /** Selects only provider routes whose geometry and metrics are internally consistent. */
@@ -17,6 +16,12 @@ object RouteSelectionPolicy {
         val geometryLength = route.geometry.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
         if (geometryLength <= 0.0) return false
         val endToEnd = route.geometry.first().distanceTo(route.geometry.last())
-        return geometryLength >= endToEnd && geometryLength / route.distanceMeters in 0.85..1.15
+        if (geometryLength / route.distanceMeters !in 0.85..1.15) return false
+
+        // A provider must not be allowed to inject an impossible ETA into navigation.
+        // Keep this deliberately broad for slow urban/ferry traffic while rejecting
+        // zero-speed and implausibly fast driving profiles.
+        val averageSpeedKmh = route.distanceMeters / route.durationSeconds * 3.6
+        return geometryLength >= endToEnd && averageSpeedKmh in 0.5..180.0
     }
 }
