@@ -40,6 +40,10 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -dname 'CN=Android Debug,O=Android,C=US'
+      - name: Run lint
+        run: gradle :app:lintDebug --stacktrace
+        env:
+          CI: true
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
         env:

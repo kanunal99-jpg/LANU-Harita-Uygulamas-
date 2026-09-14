@@ -1,6 +1,5 @@
 name: Android APK
 
-# Build/publish trigger for the current navigation build.
 on:
   push:
     branches: [ main ]
@@ -12,9 +11,6 @@ permissions:
 jobs:
   build-apk:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
-    # Android emulator CI runs on Linux/KVM instead of macOS/HVF.
-    # The previous macOS ARM runner failed before the app test because
-    # QEMU could not initialize Apple's HVF virtualization layer.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -123,19 +119,6 @@ jobs:
             apk-sha256.txt
           if-no-files-found: error
           retention-days: 14
-      - name: Publish latest APK into repository
-        run: |
-          mkdir -p downloads
-          cp app/build/outputs/apk/debug/*.apk downloads/LANU-Harita-latest.apk
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add downloads/LANU-Harita-latest.apk
-          if git diff --cached --quiet; then
-            echo 'APK unchanged; no repository commit needed.'
-          else
-            git commit -m 'build: publish latest LANU Harita APK [skip ci]'
-            git push
-          fi
       - name: Remove previous latest Release APK
         env:
           GH_TOKEN: ${{ github.token }}
@@ -156,7 +139,7 @@ jobs:
           body: |
             Bu yayın her başarılı Android APK derlemesinde güncellenir.
 
-            **Güncel APK:** `LANU-Harita-latest.apk`
+            **Güncel APK:** `app-debug.apk`
           files: app/build/outputs/apk/debug/*.apk
           make_latest: true
           prerelease: false
