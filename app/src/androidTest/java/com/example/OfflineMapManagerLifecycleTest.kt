@@ -3,18 +3,32 @@ package com.example
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.example.haritalar.data.offline.OfflineMapManager
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
-import org.junit.Assert.assertFalse
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
+import org.junit.Assert.assertNull
 import org.junit.Test
+import org.maplibre.android.geometry.LatLngBounds
 
 class OfflineMapManagerLifecycleTest {
     @Test
-    fun closeCancelsCallbackScope() {
+    fun closePreventsNewDownloadRequestsAndStateMutation() = runBlocking {
         val manager = OfflineMapManager(ApplicationProvider.getApplicationContext<Context>())
-        val field = OfflineMapManager::class.java.getDeclaredField("callbackScope").apply { isAccessible = true }
-        val scope = field.get(manager) as CoroutineScope
         manager.close()
-        assertFalse((scope.coroutineContext[Job] ?: error("callback scope job missing")).isActive)
+
+        val bounds = LatLngBounds.Builder()
+            .include(org.maplibre.android.geometry.LatLng(41.0082, 28.9784))
+            .include(org.maplibre.android.geometry.LatLng(41.0102, 28.9824))
+            .build()
+
+        manager.downloadRegion(
+            styleUrl = "https://example.invalid/style.json",
+            bounds = bounds,
+            minZoom = 10.0,
+            maxZoom = 12.0,
+            pixelRatio = 1.0f
+        )
+
+        assertNull(manager.downloadProgress.first())
+        assertNull(manager.downloadMessage.first())
     }
 }
