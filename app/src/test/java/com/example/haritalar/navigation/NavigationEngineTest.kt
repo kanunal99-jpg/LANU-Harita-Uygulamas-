@@ -139,6 +139,48 @@ class NavigationEngineTest {
     }
 
     @Test
+    fun headingAwareSnap_prefersForwardAlignedRouteSegment() {
+        val loopPoint = GeoPoint(41.0005, 29.0010)
+        val candidateRoute = RouteOption(
+            routeId = "heading-route",
+            title = "Heading",
+            summary = "Road",
+            durationSeconds = 500,
+            distanceMeters = 250.0,
+            geometry = listOf(start, loopPoint, middle, destination),
+            maneuvers = emptyList()
+        )
+        engine.startNavigation(candidateRoute)
+
+        val progress = engine.processLocationUpdate(
+            UserLocationData(
+                point = GeoPoint(41.0005, 29.0008),
+                accuracyMeters = 5f,
+                speedKmh = 40f,
+                bearing = 90f,
+                isGpsWeak = false
+            )
+        )
+
+        assertTrue(progress.snappedLocation != null)
+        assertTrue(progress.snappedBearing != null)
+        assertTrue(progress.snappedBearing!! in 45f..135f)
+    }
+
+    @Test
+    fun backtrackingIsBoundedAfterForwardProgress() {
+        engine.startNavigation(route())
+        val forward = location(GeoPoint(41.0000, 29.0015))
+        val backward = location(GeoPoint(41.0000, 29.0005))
+
+        val first = engine.processLocationUpdate(forward)
+        val second = engine.processLocationUpdate(backward)
+
+        assertTrue(first.totalRemainingDistanceMeters < second.totalRemainingDistanceMeters + 600.0)
+        assertTrue(second.totalRemainingDistanceMeters <= first.totalRemainingDistanceMeters + 75.0)
+    }
+
+    @Test
     fun remainingDistanceUsesRouteGeometryInsteadOfDirectDestinationDistance() {
         val detourPoint = GeoPoint(41.0008, 29.0010)
         val detourRoute = RouteOption(
