@@ -83,6 +83,7 @@ class NavigationEngine(
         activeRoute = newRoute
         currentManeuverIndex = 0
         offRouteConsecutiveCount = 0
+        lastProcessedPoint = null
         resetVoiceGates()
     }
 
@@ -95,19 +96,34 @@ class NavigationEngine(
 
     fun processLocationUpdate(location: UserLocationData): NavigationProgress {
         val route = activeRoute ?: return NavigationProgress(null, null, 0.0, 0.0, 0, "")
-        val destination = route.geometry.lastOrNull() ?: route.maneuvers.lastOrNull()?.point ?: location.point
-        val distToDest = location.point.distanceTo(destination)
+        if (route.geometry.size < 2) {
+            return NavigationProgress(null, null, 0.0, 0.0, 0, "", isOffRoute = true)
+        }
 
-        if (lastProcessedPoint != null) {
-            val delta = lastProcessedPoint!!.distanceTo(location.point)
-            if (delta in 0.5..150.0) accumulatedDistanceMeters += delta
+        val destination = route.geometry.last()
+        val distToDest = location.point.distanceTo(destination)
+        updateTripSamples(location)
+
+        val snapResult = snapPointToPolyline(location.point, route.geometry)
+        val isNearRoute = snapResult != null && snapResult.distanceMeters <= offRouteThresholdMeters
+        if (!isNearRoute) {
+            offRouteConsecutiveCount++
+            val now = nowMs()
+            if (offRouteConsecutiveCount >= 2 && now - lastRerouteTimestamp > rerouteCooldownMs) {
+                lastRerouteTimestamp = now
+                voice.announceReroute()
+                onOffRouteDetected(location.point)
+            }
+        } else {
+            offRouteConsecutiveCount = 0
         }
-        lastProcessedPoint = location.point
-        if (location.speedKmh > 0) {
-            if (location.speedKmh > maxSpeedKmh) maxSpeedKmh = location.speedKmh
-            sumSpeedKmh += location.speedKmh
-            speedSampleCount++
-        }
+
+        val snappedLoc = snapResult?.takeIf { it.distanceMeters <= snapThresholdMeters }?.projectedPoint
+        val snappedBearing = snapResult?.takeIf { it.distanceMeters <= snapThresholdMeters }?.segmentBearing
+
+        val routeLengthMeters = routeGeometryLength(route.geometry)
+        val routeProgressMeters = snapResult?.distanceAlongRouteMeters?.coerceIn(0.0, routeLengthMeters) ?: 0.0
+        val remainingDist = (routeLengthMeters - routeProgressMeters).coerceAtLeast(0.0)
 
         val isGpsAccurate = location.accuracyMeters <= 45f
         val isNearDest = distToDest <= arrivalThresholdMeters
@@ -116,11 +132,11 @@ class NavigationEngine(
 
         val isArrivalConfirmed = (arrivalConsecutiveCount >= 2) || (distToDest <= 15.0 && isGpsAccurate)
         if (isArrivalConfirmed) {
-            val elapsedSec = Math.max(1L, (nowMs() - tripStartTime) / 1000L)
+            val elapsedSec = maxOf(1L, (nowMs() - tripStartTime) / 1000L)
             val avgSpeedKmh = if (speedSampleCount > 0) sumSpeedKmh / speedSampleCount
             else (accumulatedDistanceMeters / 1000.0) / (elapsedSec / 3600.0)
             val summary = TripSummary(
-                totalDistanceMeters = if (accumulatedDistanceMeters > 50.0) accumulatedDistanceMeters else route.distanceMeters,
+                totalDistanceMeters = route.distanceMeters,
                 totalDurationSeconds = elapsedSec,
                 averageSpeedKmh = avgSpeedKmh,
                 startAddress = route.summary.ifEmpty { "Başlangıç Noktası" },
@@ -139,39 +155,34 @@ class NavigationEngine(
                 totalRemainingSeconds = 0,
                 currentRoadName = "",
                 hasArrived = true,
+                snappedLocation = snappedLoc,
+                snappedBearing = snappedBearing,
                 tripSummary = summary
             )
         }
 
-        val snapResult = snapPointToPolyline(location.point, route.geometry)
-        val isNearRoute = snapResult != null && snapResult.distanceMeters <= offRouteThresholdMeters
-        if (!isNearRoute) {
-            offRouteConsecutiveCount++
-            val now = nowMs()
-            if (offRouteConsecutiveCount >= 2 && now - lastRerouteTimestamp > rerouteCooldownMs) {
-                lastRerouteTimestamp = now
-                voice.announceReroute()
-                onOffRouteDetected(location.point)
-            }
-        } else offRouteConsecutiveCount = 0
-
-        val snappedLoc = if (snapResult != null && snapResult.distanceMeters <= snapThresholdMeters) snapResult.projectedPoint else null
-        val snappedBearing = if (snapResult != null && snapResult.distanceMeters <= snapThresholdMeters) snapResult.segmentBearing else null
         val maneuvers = route.maneuvers
-        if (maneuvers.isNotEmpty() && currentManeuverIndex in maneuvers.indices) {
-            val currMan = maneuvers[currentManeuverIndex]
-            if (location.point.distanceTo(currMan.point) < 30.0 && currentManeuverIndex < maneuvers.size - 1) {
-                currentManeuverIndex++
-                resetVoiceGates()
-            }
+        while (currentManeuverIndex < maneuvers.lastIndex) {
+            val maneuverProgress = progressAtPoint(maneuvers[currentManeuverIndex].point, route.geometry)
+            if (maneuverProgress == null || routeProgressMeters + 8.0 < maneuverProgress) break
+            currentManeuverIndex++
+            resetVoiceGates()
         }
+
         val activeManeuver = maneuvers.getOrNull(currentManeuverIndex)
         val upcomingManeuver = maneuvers.getOrNull(currentManeuverIndex + 1)
-        val distToNextManeuver = activeManeuver?.point?.let { location.point.distanceTo(it) } ?: distToDest
+        val distToNextManeuver = activeManeuver?.let {
+            val maneuverProgress = progressAtPoint(it.point, route.geometry)
+            if (maneuverProgress != null) {
+                (maneuverProgress - routeProgressMeters).coerceAtLeast(0.0)
+            } else {
+                location.point.distanceTo(it.point)
+            }
+        } ?: remainingDist
+
         handleVoiceTriggers(distToNextManeuver, activeManeuver)
-        val remainingDist = Math.max(0.0, distToDest)
-        val avgSpeedMs = if (location.speedKmh > 12) location.speedKmh / 3.6 else 11.1
-        val remainingSec = Math.round(remainingDist / avgSpeedMs)
+        val remainingSec = estimateRemainingSeconds(route, remainingDist, location.speedKmh)
+
         return NavigationProgress(
             currentManeuver = activeManeuver,
             nextManeuver = upcomingManeuver,
@@ -187,18 +198,57 @@ class NavigationEngine(
         )
     }
 
+    private fun updateTripSamples(location: UserLocationData) {
+        if (lastProcessedPoint != null) {
+            val delta = lastProcessedPoint!!.distanceTo(location.point)
+            if (delta in 0.5..150.0) accumulatedDistanceMeters += delta
+        }
+        lastProcessedPoint = location.point
+        if (location.speedKmh > 0f && location.speedKmh <= 180f) {
+            maxSpeedKmh = maxOf(maxSpeedKmh, location.speedKmh)
+            sumSpeedKmh += location.speedKmh
+            speedSampleCount++
+        }
+    }
+
+    private fun estimateRemainingSeconds(route: RouteOption, remainingDistanceMeters: Double, speedKmh: Float): Long {
+        if (remainingDistanceMeters <= 0.0) return 0L
+        val geometryLength = routeGeometryLength(route.geometry)
+        val profileSeconds = if (geometryLength > 1.0) {
+            (route.totalDurationSeconds.toDouble() * (remainingDistanceMeters / geometryLength)).roundToLongSafe()
+        } else {
+            0L
+        }
+
+        val measuredSeconds = if (speedSampleCount >= 3 && speedKmh in 5f..180f) {
+            (remainingDistanceMeters / (speedKmh / 3.6f)).roundToLongSafe()
+        } else null
+
+        return (measuredSeconds ?: profileSeconds).coerceAtLeast(0L)
+    }
+
     private fun handleVoiceTriggers(distanceMeters: Double, activeManeuver: TurnManeuver?) {
         if (activeManeuver == null) return
         val instruction = activeManeuver.instruction
         when {
-            distanceMeters in 400.0..600.0 && !announced500m -> { announced500m = true; voice.speak("500 metre sonra $instruction") }
+            distanceMeters in 400.0..600.0 && !announced500m -> {
+                announced500m = true
+                voice.speak("500 metre sonra $instruction")
+            }
             distanceMeters in 150.0..280.0 && !announced200m -> {
                 announced200m = true
                 val laneHint = LaneGuidanceHelper.buildLaneVoiceHint(activeManeuver.lanes)
-                if (laneHint != null && !announcedLane) { announcedLane = true; voice.speak("200 metre sonra $instruction. $laneHint") }
-                else voice.speak("200 metre sonra $instruction")
+                if (laneHint != null && !announcedLane) {
+                    announcedLane = true
+                    voice.speak("200 metre sonra $instruction. $laneHint")
+                } else {
+                    voice.speak("200 metre sonra $instruction")
+                }
             }
-            distanceMeters in 15.0..60.0 && !announced50m -> { announced50m = true; voice.speak("Şimdi $instruction") }
+            distanceMeters in 15.0..60.0 && !announced50m -> {
+                announced50m = true
+                voice.speak("Şimdi $instruction")
+            }
         }
     }
 
@@ -213,36 +263,88 @@ class NavigationEngine(
         arrivalConsecutiveCount = 0
     }
 
-    private data class SnapResult(val projectedPoint: GeoPoint, val distanceMeters: Double, val segmentBearing: Float)
+    private data class SnapResult(
+        val projectedPoint: GeoPoint,
+        val distanceMeters: Double,
+        val segmentBearing: Float,
+        val distanceAlongRouteMeters: Double
+    )
+
+    private fun routeGeometryLength(polyline: List<GeoPoint>): Double {
+        var total = 0.0
+        for (i in 0 until polyline.lastIndex) total += polyline[i].distanceTo(polyline[i + 1])
+        return total
+    }
+
+    private fun progressAtPoint(point: GeoPoint, polyline: List<GeoPoint>): Double? {
+        if (polyline.size < 2) return null
+        var cumulative = 0.0
+        var bestDistance = Double.MAX_VALUE
+        var bestProgress = 0.0
+        for (i in 0 until polyline.lastIndex) {
+            val a = polyline[i]
+            val b = polyline[i + 1]
+            val projection = projectOnSegment(point, a, b)
+            if (projection.distanceMeters < bestDistance) {
+                bestDistance = projection.distanceMeters
+                bestProgress = cumulative + projection.segmentPosition * a.distanceTo(b)
+            }
+            cumulative += a.distanceTo(b)
+        }
+        return bestProgress
+    }
 
     private fun snapPointToPolyline(point: GeoPoint, polyline: List<GeoPoint>): SnapResult? {
         if (polyline.size < 2) return null
-        var bestProj: GeoPoint? = null
-        var bestDist = Double.MAX_VALUE
-        var bestBearing = 0f
-        for (i in 0 until polyline.size - 1) {
+        var cumulative = 0.0
+        var best: SnapResult? = null
+        var bestDistance = Double.MAX_VALUE
+        for (i in 0 until polyline.lastIndex) {
             val a = polyline[i]
             val b = polyline[i + 1]
-            val latMean = Math.toRadians((a.latitude + b.latitude) / 2.0)
-            val cosLat = Math.cos(latMean)
-            val dx = (b.longitude - a.longitude) * cosLat
-            val dy = b.latitude - a.latitude
-            val segLenSq = dx * dx + dy * dy
-            val t = if (segLenSq < 1e-12) 0.0 else {
-                val px = (point.longitude - a.longitude) * cosLat
-                val py = point.latitude - a.latitude
-                (px * dx + py * dy).div(segLenSq).coerceIn(0.0, 1.0)
+            val projection = projectOnSegment(point, a, b)
+            if (projection.distanceMeters < bestDistance) {
+                bestDistance = projection.distanceMeters
+                val dLon = Math.toRadians(b.longitude - a.longitude)
+                val y = Math.sin(dLon) * Math.cos(Math.toRadians(b.latitude))
+                val x = Math.cos(Math.toRadians(a.latitude)) * Math.sin(Math.toRadians(b.latitude)) -
+                        Math.sin(Math.toRadians(a.latitude)) * Math.cos(Math.toRadians(b.latitude)) * Math.cos(dLon)
+                val bearing = ((Math.toDegrees(Math.atan2(y, x)).toFloat() + 360f) % 360f)
+                best = SnapResult(
+                    projectedPoint = projection.projectedPoint,
+                    distanceMeters = projection.distanceMeters,
+                    segmentBearing = bearing,
+                    distanceAlongRouteMeters = cumulative + projection.segmentPosition * a.distanceTo(b)
+                )
             }
-            val projPoint = GeoPoint(a.latitude + t * (b.latitude - a.latitude), a.longitude + t * (b.longitude - a.longitude))
-            val dist = point.distanceTo(projPoint)
-            if (dist < bestDist) {
-                bestDist = dist
-                bestProj = projPoint
-                val y = Math.sin(Math.toRadians(b.longitude - a.longitude)) * Math.cos(Math.toRadians(b.latitude))
-                val x = Math.cos(Math.toRadians(a.latitude)) * Math.sin(Math.toRadians(b.latitude)) - Math.sin(Math.toRadians(a.latitude)) * Math.cos(Math.toRadians(b.latitude)) * Math.cos(Math.toRadians(b.longitude - a.longitude))
-                bestBearing = ((Math.toDegrees(Math.atan2(y, x)).toFloat() + 360f) % 360f)
-            }
+            cumulative += a.distanceTo(b)
         }
-        return if (bestProj != null) SnapResult(bestProj, bestDist, bestBearing) else null
+        return best
     }
+
+    private data class SegmentProjection(
+        val projectedPoint: GeoPoint,
+        val distanceMeters: Double,
+        val segmentPosition: Double
+    )
+
+    private fun projectOnSegment(point: GeoPoint, a: GeoPoint, b: GeoPoint): SegmentProjection {
+        val latMean = Math.toRadians((a.latitude + b.latitude) / 2.0)
+        val cosLat = Math.cos(latMean)
+        val dx = (b.longitude - a.longitude) * cosLat
+        val dy = b.latitude - a.latitude
+        val segLenSq = dx * dx + dy * dy
+        val t = if (segLenSq < 1e-12) 0.0 else {
+            val px = (point.longitude - a.longitude) * cosLat
+            val py = point.latitude - a.latitude
+            (px * dx + py * dy).div(segLenSq).coerceIn(0.0, 1.0)
+        }
+        val projected = GeoPoint(
+            a.latitude + t * (b.latitude - a.latitude),
+            a.longitude + t * (b.longitude - a.longitude)
+        )
+        return SegmentProjection(projected, point.distanceTo(projected), t)
+    }
+
+    private fun Double.roundToLongSafe(): Long = kotlin.math.round(this).toLong().coerceAtLeast(0L)
 }

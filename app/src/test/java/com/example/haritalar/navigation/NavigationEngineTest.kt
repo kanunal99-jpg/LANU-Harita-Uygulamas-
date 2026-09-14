@@ -139,6 +139,27 @@ class NavigationEngineTest {
     }
 
     @Test
+    fun remainingDistanceUsesRouteGeometryInsteadOfDirectDestinationDistance() {
+        val detourPoint = GeoPoint(41.0008, 29.0010)
+        val detourRoute = RouteOption(
+            routeId = "detour",
+            title = "Detour",
+            summary = "Road",
+            durationSeconds = 600,
+            distanceMeters = 450.0,
+            geometry = listOf(start, detourPoint, middle, destination),
+            maneuvers = emptyList()
+        )
+        engine.startNavigation(detourRoute)
+
+        val progress = engine.processLocationUpdate(location(start))
+        val directDistance = start.distanceTo(destination)
+
+        assertTrue(progress.totalRemainingDistanceMeters > directDistance + 50.0)
+        assertTrue(progress.totalRemainingSeconds > 0L)
+    }
+
+    @Test
     fun voiceDistanceGate_doesNotRepeatSameBand() {
         val maneuver = TurnManeuver("sağa dön", 0.0, ManeuverType.RIGHT, start)
         engine.startNavigation(route(maneuvers = listOf(maneuver)))
