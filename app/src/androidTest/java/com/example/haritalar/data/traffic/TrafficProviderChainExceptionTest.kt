@@ -5,10 +5,9 @@ import com.example.haritalar.model.TrafficSegment
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Test
 
-class TrafficProviderChainTest {
+class TrafficProviderChainExceptionTest {
     private val point = GeoPoint(41.0, 29.0)
 
     private class FakeProvider(
@@ -41,7 +40,6 @@ class TrafficProviderChainTest {
 
         val result = chain.getTrafficSegment(point)
 
-        assertSame(alternative, alternative)
         assertEquals(1, primary.calls)
         assertEquals(1, alternative.calls)
         assertEquals(30.0, result?.currentSpeed ?: 0.0, 0.001)

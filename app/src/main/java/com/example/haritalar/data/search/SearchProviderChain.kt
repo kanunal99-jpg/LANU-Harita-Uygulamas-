@@ -8,18 +8,32 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.abs
 
-/** Resilient multi-provider search chain with cache fallback and explicit error states. */
+/**
+ * Resilient multi-provider search chain:
+ * Primary Provider (Nominatim OSM)
+ * -> Alternative Provider (Komoot Photon)
+ * -> Cache / Recent Searches
+ * -> Safe Fallback / Error State
+ *
+ * Provides house-number verification, intelligent fallback to alternative
+ * providers if building level isn't found in primary, deduplication, and
+ * relevance ranking.
+ */
 class SearchProviderChain(
     val primaryProvider: SearchProvider = NominatimSearchProvider(),
     val alternativeProvider: SearchProvider = PhotonSearchProvider(),
     val cacheProvider: CacheSearchProvider = CacheSearchProvider()
 ) {
+
     suspend fun executeSearch(query: String, focusPoint: GeoPoint? = null): SearchResponse = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
-        if (trimmed.length < 2) return@withContext SearchResponse.Empty(query)
+        if (trimmed.length < 2) {
+            return@withContext SearchResponse.Empty(query)
+        }
 
         val parsedQuery = TurkishAddressHelper.parseAddressQuery(trimmed)
         val queryVariations = TurkishAddressHelper.generateSearchQueries(trimmed)
+
         val collectedResults = mutableListOf<SearchResult>()
         var activeProviderName = primaryProvider.name
         var primaryExceptionOccurred = false
@@ -34,7 +48,7 @@ class SearchProviderChain(
                     if (parsedQuery.isBuildingLevelRequested) {
                         hasVerifiedBuildingInPrimary = results.any { res ->
                             !res.addressDetails?.houseNumber.isNullOrBlank() &&
-                                TurkishAddressHelper.isHouseNumberMatch(parsedQuery.houseNumber, res.addressDetails?.houseNumber)
+                            TurkishAddressHelper.isHouseNumberMatch(parsedQuery.houseNumber, res.addressDetails?.houseNumber)
                         }
                     }
                     break
@@ -46,8 +60,8 @@ class SearchProviderChain(
         }
 
         val shouldQueryAlternative = primaryExceptionOccurred ||
-            collectedResults.isEmpty() ||
-            (parsedQuery.isBuildingLevelRequested && !hasVerifiedBuildingInPrimary)
+                collectedResults.isEmpty() ||
+                (parsedQuery.isBuildingLevelRequested && !hasVerifiedBuildingInPrimary)
 
         if (shouldQueryAlternative) {
             for (q in queryVariations) {
@@ -56,9 +70,11 @@ class SearchProviderChain(
                     if (altResults.isNotEmpty()) {
                         val hasVerifiedInAlt = parsedQuery.isBuildingLevelRequested && altResults.any { res ->
                             !res.addressDetails?.houseNumber.isNullOrBlank() &&
-                                TurkishAddressHelper.isHouseNumberMatch(parsedQuery.houseNumber, res.addressDetails?.houseNumber)
+                            TurkishAddressHelper.isHouseNumberMatch(parsedQuery.houseNumber, res.addressDetails?.houseNumber)
                         }
-                        if (hasVerifiedInAlt || collectedResults.isEmpty()) activeProviderName = alternativeProvider.name
+                        if (hasVerifiedInAlt || collectedResults.isEmpty()) {
+                            activeProviderName = alternativeProvider.name
+                        }
                         collectedResults.addAll(altResults)
                         break
                     }
@@ -82,38 +98,44 @@ class SearchProviderChain(
                 val ranked = SearchRankingEvaluator.rankAndEvaluateResults(cachedResults, parsedQuery, focusPoint)
                 return@withContext SearchResponse.Success(ranked, cacheProvider.name)
             }
-        } catch (_: Exception) {
-            // Cache is a safe fallback; a cache failure must not hide provider failures.
+        } catch (e: Exception) {
+            // Ignore cache read failures; provider failures still determine the final state.
         }
 
         if (primaryExceptionOccurred || alternativeExceptionOccurred) {
-            return@withContext SearchResponse.Error(
+            SearchResponse.Error(
                 message = "Arama servisine şu anda ulaşılamıyor. Lütfen internet bağlantınızı kontrol edip tekrar deneyin.",
                 canRetry = true
             )
+        } else {
+            SearchResponse.Empty(query = trimmed)
         }
-        SearchResponse.Empty(query = trimmed)
     }
 
     suspend fun reverseGeocode(point: GeoPoint): String? = withContext(Dispatchers.IO) {
         val cached = cacheProvider.reverseGeocode(point)
         if (!cached.isNullOrBlank()) return@withContext cached
+
         try {
             val primaryResult = primaryProvider.reverseGeocode(point)
             if (!primaryResult.isNullOrBlank()) {
                 cacheProvider.putReverse(point, primaryResult)
                 return@withContext primaryResult
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Fallback to alternative.
         }
+
         try {
             val altResult = alternativeProvider.reverseGeocode(point)
             if (!altResult.isNullOrBlank()) {
                 cacheProvider.putReverse(point, altResult)
                 return@withContext altResult
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            // Keep reverse geocoding unavailable rather than fabricating an address.
         }
+
         null
     }
 
@@ -122,11 +144,13 @@ class SearchProviderChain(
         for (item in results) {
             val isDuplicate = unique.any { existing ->
                 val closeCoordinates = abs(existing.point.latitude - item.point.latitude) < 0.0002 &&
-                    abs(existing.point.longitude - item.point.longitude) < 0.0002
+                        abs(existing.point.longitude - item.point.longitude) < 0.0002
                 val sameName = existing.name.equals(item.name, ignoreCase = true)
                 closeCoordinates || sameName
             }
-            if (!isDuplicate) unique.add(item)
+            if (!isDuplicate) {
+                unique.add(item)
+            }
         }
         return unique
     }

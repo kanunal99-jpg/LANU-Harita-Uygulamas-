@@ -12,7 +12,7 @@ class RouteSelectionPolicyTest {
     private val middle = GeoPoint(41.0000, 29.0010)
     private val end = GeoPoint(41.0000, 29.0020)
 
-    private fun route(id: String, distance: Double = 222.0, duration: Long = 120, geometry: List<GeoPoint> = listOf(start, middle, end)) =
+    private fun route(id: String, distance: Double = 167.0, duration: Long = 120, geometry: List<GeoPoint> = listOf(start, middle, end)) =
         RouteOption(
             routeId = id,
             title = "Test",
