@@ -139,78 +139,78 @@ class ValhallaRoutingProvider(
                 .header("User-Agent", "HaritalarAndroidNav/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return null
+            client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return null
 
-            val body = response.body?.string() ?: return null
-            val root = JSONObject(body)
-            val trip = root.optJSONObject("trip") ?: return null
-            val summary = trip.optJSONObject("summary") ?: return null
+                    val body = response.body?.string() ?: return null
+                    val root = JSONObject(body)
+                    val trip = root.optJSONObject("trip") ?: return null
+                val summary = trip.optJSONObject("summary") ?: return null
 
-            val totalTime = summary.optLong("time", 0)
-            val totalLengthKm = summary.optDouble("length", 0.0)
-            val distanceMeters = totalLengthKm * 1000.0
+                val totalTime = summary.optLong("time", 0)
+                val totalLengthKm = summary.optDouble("length", 0.0)
+                val distanceMeters = totalLengthKm * 1000.0
 
-            val hasToll = summary.optBoolean("has_toll", false)
-            val hasFerry = summary.optBoolean("has_ferry", false)
+                val hasToll = summary.optBoolean("has_toll", false)
+                val hasFerry = summary.optBoolean("has_ferry", false)
 
-            val legs = trip.optJSONArray("legs") ?: return null
-            if (legs.length() == 0) return null
+                val legs = trip.optJSONArray("legs") ?: return null
+                if (legs.length() == 0) return null
 
-            val leg0 = legs.getJSONObject(0)
-            val encodedShape = leg0.optString("shape", "")
-            val decodedGeometry = if (encodedShape.isNotEmpty()) {
-                PolylineDecoder.decodePolyline6(encodedShape)
-            } else {
-                listOf(start, end)
-            }
-
-            val maneuvers = mutableListOf<TurnManeuver>()
-            val maneuversArray = leg0.optJSONArray("maneuvers")
-            if (maneuversArray != null) {
-                for (i in 0 until maneuversArray.length()) {
-                    val m = maneuversArray.getJSONObject(i)
-                    val instruction = m.optString("instruction", "Yola devam edin")
-                    val lengthKm = m.optDouble("length", 0.0)
-                    val typeCode = m.optInt("type", 0)
-                    val streetNames = m.optJSONArray("street_names")
-                    val road = if (streetNames != null && streetNames.length() > 0) streetNames.getString(0) else ""
-                    val shapeIndex = m.optInt("begin_shape_index", 0)
-                    val point = if (shapeIndex in decodedGeometry.indices) decodedGeometry[shapeIndex] else start
-
-                    val mType = mapValhallaManeuverType(typeCode)
-                    val lanes = LaneGuidanceHelper.generateLanesForManeuver(mType, road)
-                    val speedLimit = LaneGuidanceHelper.determineSpeedLimit(road)
-
-                    maneuvers.add(
-                        TurnManeuver(
-                            instruction = instruction,
-                            distanceMeters = lengthKm * 1000.0,
-                            type = mType,
-                            point = point,
-                            roadName = road,
-                            lanes = lanes,
-                            speedLimitKmh = speedLimit
-                        )
-                    )
+                val leg0 = legs.getJSONObject(0)
+                val encodedShape = leg0.optString("shape", "")
+                val decodedGeometry = if (encodedShape.isNotEmpty()) {
+                    PolylineDecoder.decodePolyline6(encodedShape)
+                } else {
+                    listOf(start, end)
                 }
-            }
 
-            val routeId = "valhalla_${routeType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
+                val maneuvers = mutableListOf<TurnManeuver>()
+                val maneuversArray = leg0.optJSONArray("maneuvers")
+                if (maneuversArray != null) {
+                    for (i in 0 until maneuversArray.length()) {
+                        val m = maneuversArray.getJSONObject(i)
+                        val instruction = m.optString("instruction", "Yola devam edin")
+                        val lengthKm = m.optDouble("length", 0.0)
+                        val typeCode = m.optInt("type", 0)
+                        val streetNames = m.optJSONArray("street_names")
+                        val road = if (streetNames != null && streetNames.length() > 0) streetNames.getString(0) else ""
+                        val shapeIndex = m.optInt("begin_shape_index", 0)
+                        val point = if (shapeIndex in decodedGeometry.indices) decodedGeometry[shapeIndex] else start
 
-            return RouteOption(
-                routeId = routeId,
-                title = routeType.displayName,
-                summary = maneuvers.firstOrNull { it.roadName.isNotEmpty() }?.roadName ?: "En uygun rota",
-                durationSeconds = totalTime,
-                distanceMeters = distanceMeters,
-                geometry = decodedGeometry,
-                maneuvers = maneuvers,
-                hasTolls = hasToll,
-                hasFerry = hasFerry,
-                routeType = routeType,
-                generationId = generationId
-            )
+                        val mType = mapValhallaManeuverType(typeCode)
+                        val lanes = LaneGuidanceHelper.generateLanesForManeuver(mType, road)
+                        val speedLimit = LaneGuidanceHelper.determineSpeedLimit(road)
+
+                        maneuvers.add(
+                            TurnManeuver(
+                                instruction = instruction,
+                                distanceMeters = lengthKm * 1000.0,
+                                type = mType,
+                                point = point,
+                                roadName = road,
+                                lanes = lanes,
+                                speedLimitKmh = speedLimit
+                            )
+                        )
+                    }
+                }
+
+                val routeId = "valhalla_${routeType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
+
+                return RouteOption(
+                    routeId = routeId,
+                    title = routeType.displayName,
+                    summary = maneuvers.firstOrNull { it.roadName.isNotEmpty() }?.roadName ?: "En uygun rota",
+                    durationSeconds = totalTime,
+                    distanceMeters = distanceMeters,
+                    geometry = decodedGeometry,
+                    maneuvers = maneuvers,
+                    hasTolls = hasToll,
+                    hasFerry = hasFerry,
+                    routeType = routeType,
+                    generationId = generationId
+                )
         } catch (e: Exception) {
             return null
         }
@@ -230,7 +230,6 @@ class ValhallaRoutingProvider(
             17, 18 -> ManeuverType.RAMP_RIGHT
             19, 20 -> ManeuverType.RAMP_LEFT
             24 -> ManeuverType.FERRY
-            4, 5, 6, 7, 8, 9 -> ManeuverType.STRAIGHT
             else -> ManeuverType.STRAIGHT
         }
     }
@@ -258,114 +257,114 @@ class OsrmRoutingProvider(
                 .header("User-Agent", "HaritalarAndroidNav/1.0")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
+            client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext emptyList()
 
-            val body = response.body?.string() ?: return@withContext emptyList()
-            val root = JSONObject(body)
-            val routesArray = root.optJSONArray("routes") ?: return@withContext emptyList()
+                    val body = response.body?.string() ?: return@withContext emptyList()
+                    val root = JSONObject(body)
+                    val routesArray = root.optJSONArray("routes") ?: return@withContext emptyList()
 
-            val results = mutableListOf<RouteOption>()
-            val routeTypes = listOf(
-                RouteType.FASTEST,
-                RouteType.SHORTEST,
-                RouteType.TOLL_FREE,
-                RouteType.FASTEST_TOLL,
-                RouteType.NO_FERRY,
-                RouteType.WITH_FERRY,
-                RouteType.TOLL_AND_FERRY_FREE
-            )
+                val results = mutableListOf<RouteOption>()
+                val routeTypes = listOf(
+                    RouteType.FASTEST,
+                    RouteType.SHORTEST,
+                    RouteType.TOLL_FREE,
+                    RouteType.FASTEST_TOLL,
+                    RouteType.NO_FERRY,
+                    RouteType.WITH_FERRY,
+                    RouteType.TOLL_AND_FERRY_FREE
+                )
 
-            for (i in 0 until routesArray.length()) {
-                val r = routesArray.getJSONObject(i)
-                val duration = r.optDouble("duration", 0.0).toLong()
-                val distance = r.optDouble("distance", 0.0)
+                for (i in 0 until routesArray.length()) {
+                    val r = routesArray.getJSONObject(i)
+                    val duration = r.optDouble("duration", 0.0).toLong()
+                    val distance = r.optDouble("distance", 0.0)
 
-                val geom = r.optJSONObject("geometry")
-                val coords = geom?.optJSONArray("coordinates")
-                val geometryPoints = mutableListOf<GeoPoint>()
-                if (coords != null) {
-                    for (c in 0 until coords.length()) {
-                        val pt = coords.getJSONArray(c)
-                        geometryPoints.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
-                    }
-                }
-
-                val legs = r.optJSONArray("legs")
-                val maneuvers = mutableListOf<TurnManeuver>()
-                var mainRoad = ""
-                var hasToll = false
-                var hasFerry = false
-
-                if (legs != null && legs.length() > 0) {
-                    val leg = legs.getJSONObject(0)
-                    val steps = leg.optJSONArray("steps")
-                    if (steps != null) {
-                        for (s in 0 until steps.length()) {
-                            val step = steps.getJSONObject(s)
-                            val stepName = step.optString("name", "")
-                            if (mainRoad.isEmpty() && stepName.isNotEmpty()) {
-                                mainRoad = stepName
-                            }
-                            val stepDist = step.optDouble("distance", 0.0)
-                            val manObj = step.optJSONObject("maneuver")
-                            val manTypeStr = manObj?.optString("type", "continue")
-                            val modifier = manObj?.optString("modifier", "")
-
-                            val manLocation = manObj?.optJSONArray("location")
-                            val stepPoint = if (manLocation != null && manLocation.length() >= 2) {
-                                GeoPoint(manLocation.getDouble(1), manLocation.getDouble(0))
-                            } else {
-                                start
-                            }
-
-                            if (manTypeStr == "toll" || step.optString("mode") == "toll") {
-                                hasToll = true
-                            }
-                            if (manTypeStr == "ferry" || step.optString("mode") == "ferry") {
-                                hasFerry = true
-                            }
-
-                            val instruction = formatOsrmInstruction(manTypeStr, modifier, stepName)
-                            val mType = mapOsrmManeuverType(manTypeStr, modifier)
-                            val lanes = LaneGuidanceHelper.generateLanesForManeuver(mType, stepName)
-                            val speedLimit = LaneGuidanceHelper.determineSpeedLimit(stepName)
-
-                            maneuvers.add(
-                                TurnManeuver(
-                                    instruction = instruction,
-                                    distanceMeters = stepDist,
-                                    type = mType,
-                                    point = stepPoint,
-                                    roadName = stepName,
-                                    lanes = lanes,
-                                    speedLimitKmh = speedLimit
-                                )
-                            )
+                    val geom = r.optJSONObject("geometry")
+                    val coords = geom?.optJSONArray("coordinates")
+                    val geometryPoints = mutableListOf<GeoPoint>()
+                    if (coords != null) {
+                        for (c in 0 until coords.length()) {
+                            val pt = coords.getJSONArray(c)
+                            geometryPoints.add(GeoPoint(pt.getDouble(1), pt.getDouble(0)))
                         }
                     }
-                }
 
-                val assignedType = routeTypes.getOrElse(i) { RouteType.FASTEST }
-                val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
+                    val legs = r.optJSONArray("legs")
+                    val maneuvers = mutableListOf<TurnManeuver>()
+                    var mainRoad = ""
+                    var hasToll = false
+                    var hasFerry = false
 
-                results.add(
-                    RouteOption(
-                        routeId = routeId,
-                        title = assignedType.displayName,
-                        summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
-                        durationSeconds = duration,
-                        distanceMeters = distance,
-                        geometry = if (geometryPoints.isNotEmpty()) geometryPoints else listOf(start, end),
-                        maneuvers = maneuvers,
-                        hasTolls = hasToll,
-                        hasFerry = hasFerry,
-                        routeType = assignedType,
-                        generationId = generationId
+                    if (legs != null && legs.length() > 0) {
+                        val leg = legs.getJSONObject(0)
+                        val steps = leg.optJSONArray("steps")
+                        if (steps != null) {
+                            for (s in 0 until steps.length()) {
+                                val step = steps.getJSONObject(s)
+                                val stepName = step.optString("name", "")
+                                if (mainRoad.isEmpty() && stepName.isNotEmpty()) {
+                                    mainRoad = stepName
+                                }
+                                val stepDist = step.optDouble("distance", 0.0)
+                                val manObj = step.optJSONObject("maneuver")
+                                val manTypeStr = manObj?.optString("type", "continue")
+                                val modifier = manObj?.optString("modifier", "")
+
+                                val manLocation = manObj?.optJSONArray("location")
+                                val stepPoint = if (manLocation != null && manLocation.length() >= 2) {
+                                    GeoPoint(manLocation.getDouble(1), manLocation.getDouble(0))
+                                } else {
+                                    start
+                                }
+
+                                if (manTypeStr == "toll" || step.optString("mode") == "toll") {
+                                    hasToll = true
+                                }
+                                if (manTypeStr == "ferry" || step.optString("mode") == "ferry") {
+                                    hasFerry = true
+                                }
+
+                                val instruction = formatOsrmInstruction(manTypeStr, modifier, stepName)
+                                val mType = mapOsrmManeuverType(manTypeStr, modifier)
+                                val lanes = LaneGuidanceHelper.generateLanesForManeuver(mType, stepName)
+                                val speedLimit = LaneGuidanceHelper.determineSpeedLimit(stepName)
+
+                                maneuvers.add(
+                                    TurnManeuver(
+                                        instruction = instruction,
+                                        distanceMeters = stepDist,
+                                        type = mType,
+                                        point = stepPoint,
+                                        roadName = stepName,
+                                        lanes = lanes,
+                                        speedLimitKmh = speedLimit
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    val assignedType = routeTypes.getOrElse(i) { RouteType.FASTEST }
+                    val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
+
+                    results.add(
+                        RouteOption(
+                            routeId = routeId,
+                            title = assignedType.displayName,
+                            summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
+                            durationSeconds = duration,
+                            distanceMeters = distance,
+                            geometry = geometryPoints,
+                            maneuvers = maneuvers,
+                            hasTolls = hasToll,
+                            hasFerry = hasFerry,
+                            routeType = assignedType,
+                            generationId = generationId
+                        )
                     )
-                )
-            }
-            results
+                }
+                results
         } catch (e: Exception) {
             emptyList()
         }
