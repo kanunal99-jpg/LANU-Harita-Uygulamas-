@@ -65,75 +65,76 @@ class TomTomTrafficProvider(
                 .build()
 
             val callStart = System.currentTimeMillis()
-            val response = client.newCall(request).execute()
-            val latency = System.currentTimeMillis() - callStart
-            val code = response.code
-            val body = response.body?.string() ?: ""
+            client.newCall(request).execute().use { response ->
+                val latency = System.currentTimeMillis() - callStart
+                val code = response.code
+                val body = response.body?.string() ?: ""
 
-            lastResponseCode = code
-            lastLatencyMs = latency
-            lastRequestTimestamp = System.currentTimeMillis()
+                lastResponseCode = code
+                lastLatencyMs = latency
+                lastRequestTimestamp = System.currentTimeMillis()
 
-            if (!response.isSuccessful) {
-                val errorMsg = when (code) {
-                    401 -> "HTTP 401 Unauthorized: Geçersiz veya yetkisiz API Anahtarı"
-                    403 -> "HTTP 403 Forbidden: API Anahtarının Traffic Flow izni yok veya kota doldu"
-                    429 -> "HTTP 429 Too Many Requests: Hız limiti aşıldı"
-                    else -> "HTTP $code: TomTom sunucu hatası"
+                if (!response.isSuccessful) {
+                    val errorMsg = when (code) {
+                        401 -> "HTTP 401 Unauthorized: Geçersiz veya yetkisiz API Anahtarı"
+                        403 -> "HTTP 403 Forbidden: API Anahtarının Traffic Flow izni yok veya kota doldu"
+                        429 -> "HTTP 429 Too Many Requests: Hız limiti aşıldı"
+                        else -> "HTTP $code: TomTom sunucu hatası"
+                    }
+                    lastErrorMessage = errorMsg
+                    return@withContext TrafficTestResult(
+                        sourceUrl = url.replace(cleanKey, "••••••••"),
+                        httpStatusCode = code,
+                        isSuccess = false,
+                        latencyMs = latency,
+                        rawJsonSnippet = body.take(300),
+                        errorMessage = errorMsg
+                    )
                 }
-                lastErrorMessage = errorMsg
-                return@withContext TrafficTestResult(
+
+                val root = JSONObject(body)
+                val flowData = root.optJSONObject("flowSegmentData")
+                if (flowData == null) {
+                    return@withContext TrafficTestResult(
+                        sourceUrl = url.replace(cleanKey, "••••••••"),
+                        httpStatusCode = code,
+                        isSuccess = false,
+                        latencyMs = latency,
+                        rawJsonSnippet = body.take(300),
+                        errorMessage = "Beklenen 'flowSegmentData' JSON gövdesi bulunamadı."
+                    )
+                }
+
+                val currentSpeed = flowData.optDouble("currentSpeed", 0.0)
+                val freeFlowSpeed = flowData.optDouble("freeFlowSpeed", 0.0)
+                val currentTravelTime = flowData.optLong("currentTravelTime", 0)
+                val freeFlowTravelTime = flowData.optLong("freeFlowTravelTime", 0)
+                val confidence = flowData.optDouble("confidence", 0.0)
+                val roadClosure = flowData.optBoolean("roadClosure", false)
+
+                val coordsObj = flowData.optJSONObject("coordinates")
+                val coordArray = coordsObj?.optJSONArray("coordinate")
+                val coordCount = coordArray?.length() ?: 0
+                val delay = Math.max(0L, currentTravelTime - freeFlowTravelTime)
+
+                lastRawSampleSnippet = "Anlık: ${currentSpeed.toInt()} km/h, Serbest: ${freeFlowSpeed.toInt()} km/h, Güvenilirlik: $confidence"
+
+                TrafficTestResult(
                     sourceUrl = url.replace(cleanKey, "••••••••"),
                     httpStatusCode = code,
-                    isSuccess = false,
+                    isSuccess = true,
                     latencyMs = latency,
-                    rawJsonSnippet = body.take(300),
-                    errorMessage = errorMsg
+                    currentSpeedKmh = currentSpeed,
+                    freeFlowSpeedKmh = freeFlowSpeed,
+                    currentTravelTimeSec = currentTravelTime,
+                    freeFlowTravelTimeSec = freeFlowTravelTime,
+                    delaySeconds = delay,
+                    confidence = confidence,
+                    roadClosure = roadClosure,
+                    coordinateCount = coordCount,
+                    rawJsonSnippet = body.take(400)
                 )
             }
-
-            val root = JSONObject(body)
-            val flowData = root.optJSONObject("flowSegmentData")
-            if (flowData == null) {
-                return@withContext TrafficTestResult(
-                    sourceUrl = url.replace(cleanKey, "••••••••"),
-                    httpStatusCode = code,
-                    isSuccess = false,
-                    latencyMs = latency,
-                    rawJsonSnippet = body.take(300),
-                    errorMessage = "Beklenen 'flowSegmentData' JSON gövdesi bulunamadı."
-                )
-            }
-
-            val currentSpeed = flowData.optDouble("currentSpeed", 0.0)
-            val freeFlowSpeed = flowData.optDouble("freeFlowSpeed", 0.0)
-            val currentTravelTime = flowData.optLong("currentTravelTime", 0)
-            val freeFlowTravelTime = flowData.optLong("freeFlowTravelTime", 0)
-            val confidence = flowData.optDouble("confidence", 0.0)
-            val roadClosure = flowData.optBoolean("roadClosure", false)
-
-            val coordsObj = flowData.optJSONObject("coordinates")
-            val coordArray = coordsObj?.optJSONArray("coordinate")
-            val coordCount = coordArray?.length() ?: 0
-            val delay = Math.max(0L, currentTravelTime - freeFlowTravelTime)
-
-            lastRawSampleSnippet = "Anlık: ${currentSpeed.toInt()} km/s, Serbest: ${freeFlowSpeed.toInt()} km/s, Güvenilirlik: $confidence"
-
-            TrafficTestResult(
-                sourceUrl = url.replace(cleanKey, "••••••••"),
-                httpStatusCode = code,
-                isSuccess = true,
-                latencyMs = latency,
-                currentSpeedKmh = currentSpeed,
-                freeFlowSpeedKmh = freeFlowSpeed,
-                currentTravelTimeSec = currentTravelTime,
-                freeFlowTravelTimeSec = freeFlowTravelTime,
-                delaySeconds = delay,
-                confidence = confidence,
-                roadClosure = roadClosure,
-                coordinateCount = coordCount,
-                rawJsonSnippet = body.take(400)
-            )
         } catch (e: Exception) {
             val latency = System.currentTimeMillis() - start
             TrafficTestResult(
@@ -160,50 +161,51 @@ class TomTomTrafficProvider(
                 .build()
 
             val callStart = System.currentTimeMillis()
-            val response = client.newCall(request).execute()
-            lastLatencyMs = System.currentTimeMillis() - callStart
-            lastResponseCode = response.code
-            lastRequestTimestamp = System.currentTimeMillis()
+            client.newCall(request).execute().use { response ->
+                lastLatencyMs = System.currentTimeMillis() - callStart
+                lastResponseCode = response.code
+                lastRequestTimestamp = System.currentTimeMillis()
 
-            if (!response.isSuccessful) {
-                lastErrorMessage = "HTTP ${response.code}"
-                return@withContext null
-            }
-
-            val body = response.body?.string() ?: return@withContext null
-            val root = JSONObject(body)
-            val flowData = root.optJSONObject("flowSegmentData") ?: return@withContext null
-
-            val currentSpeed = flowData.optDouble("currentSpeed", 0.0)
-            val freeFlowSpeed = flowData.optDouble("freeFlowSpeed", 0.0)
-            val currentTravelTime = flowData.optLong("currentTravelTime", 0)
-            val freeFlowTravelTime = flowData.optLong("freeFlowTravelTime", 0)
-            val confidence = flowData.optDouble("confidence", 0.0)
-            val roadClosure = flowData.optBoolean("roadClosure", false)
-
-            val coordinates = mutableListOf<GeoPoint>()
-            val coordsObj = flowData.optJSONObject("coordinates")
-            val coordArray = coordsObj?.optJSONArray("coordinate")
-            if (coordArray != null) {
-                for (i in 0 until coordArray.length()) {
-                    val c = coordArray.getJSONObject(i)
-                    coordinates.add(GeoPoint(c.getDouble("latitude"), c.getDouble("longitude")))
+                if (!response.isSuccessful) {
+                    lastErrorMessage = "HTTP ${response.code}"
+                    return@withContext null
                 }
-            }
-            if (coordinates.isEmpty()) {
-                coordinates.add(point)
-            }
 
-            val delay = Math.max(0L, currentTravelTime - freeFlowTravelTime)
+                val body = response.body?.string() ?: return@withContext null
+                val root = JSONObject(body)
+                val flowData = root.optJSONObject("flowSegmentData") ?: return@withContext null
 
-            TrafficSegment(
-                coordinates = coordinates,
-                currentSpeed = currentSpeed,
-                freeFlowSpeed = freeFlowSpeed,
-                delaySeconds = delay,
-                confidence = confidence,
-                roadClosure = roadClosure
-            )
+                val currentSpeed = flowData.optDouble("currentSpeed", 0.0)
+                val freeFlowSpeed = flowData.optDouble("freeFlowSpeed", 0.0)
+                val currentTravelTime = flowData.optLong("currentTravelTime", 0)
+                val freeFlowTravelTime = flowData.optLong("freeFlowTravelTime", 0)
+                val confidence = flowData.optDouble("confidence", 0.0)
+                val roadClosure = flowData.optBoolean("roadClosure", false)
+
+                val coordinates = mutableListOf<GeoPoint>()
+                val coordsObj = flowData.optJSONObject("coordinates")
+                val coordArray = coordsObj?.optJSONArray("coordinate")
+                if (coordArray != null) {
+                    for (i in 0 until coordArray.length()) {
+                        val c = coordArray.getJSONObject(i)
+                        coordinates.add(GeoPoint(c.getDouble("latitude"), c.getDouble("longitude")))
+                    }
+                }
+                if (coordinates.isEmpty()) {
+                    coordinates.add(point)
+                }
+
+                val delay = Math.max(0L, currentTravelTime - freeFlowTravelTime)
+
+                TrafficSegment(
+                    coordinates = coordinates,
+                    currentSpeed = currentSpeed,
+                    freeFlowSpeed = freeFlowSpeed,
+                    delaySeconds = delay,
+                    confidence = confidence,
+                    roadClosure = roadClosure
+                )
+            }
         } catch (e: Exception) {
             Log.d("TomTomTrafficProvider", "Traffic segment query error: ${e.message}")
             null
@@ -344,8 +346,8 @@ object TrafficRouteCostModel {
             val isNoKey = !hasProvider
             return TrafficStatus(
                 verified = false,
-                message = if (isNoKey) "Canlı API anahtarı girilmedi • OSRM temel yol hızı"
-                          else "Trafik akıcı • 0 dk gecikme",
+                message = if (isNoKey) "Canlı trafik doğrulanamadı • temel ETA korunuyor"
+                          else "Canlı trafik doğrulanamadı • temel ETA korunuyor",
                 delaySeconds = 0,
                 trafficLevel = TrafficLevel.UNKNOWN,
                 sourceName = if (isNoKey) "OSRM / Valhalla Statik Yol Profili" else providerName,
@@ -397,7 +399,7 @@ object TrafficRouteCostModel {
             segmentCount = segments.size,
             lastCheckTimestamp = lastCheckTimestamp,
             averageSpeedKmh = avgSpeed,
-            rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed?.toInt() ?: 0} km/s"
+            rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed?.toInt() ?: 0} km/h"
         )
     }
 }
