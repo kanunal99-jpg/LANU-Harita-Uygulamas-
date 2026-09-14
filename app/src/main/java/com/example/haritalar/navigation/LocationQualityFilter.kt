@@ -1,6 +1,5 @@
 package com.example.haritalar.navigation
 
-import com.example.haritalar.model.GeoPoint
 import kotlin.math.max
 
 /**
@@ -19,8 +18,7 @@ class LocationQualityFilter(
         if (!candidate.point.latitude.isFinite() || !candidate.point.longitude.isFinite()) return null
         if (candidate.point.latitude !in -90.0..90.0 || candidate.point.longitude !in -180.0..180.0) return null
 
-        val now = nowMs()
-        val age = now - candidate.timestamp
+        val age = nowMs() - candidate.timestamp
         if (age > maxTimestampAgeMs || age < -maxFutureTimestampMs) return null
         if (candidate.accuracyMeters.isNaN() || candidate.accuracyMeters < 0f) return null
 
