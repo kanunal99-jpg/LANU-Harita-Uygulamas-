@@ -57,11 +57,12 @@ class ExampleRobolectricTest {
         val dao = db.favoriteDao()
         val id = dao.insertFavorite(
             FavoritePlace(
-                title = "Evim",
-                address = "Karaköy, Beyoğlu, İstanbul",
-                latitude = 41.025,
-                longitude = 28.974,
-                category = "HOME"
+                0L,
+                "Evim",
+                "Karaköy, Beyoğlu, İstanbul",
+                41.025,
+                28.974,
+                "HOME"
             )
         )
         assertTrue(id > 0)
