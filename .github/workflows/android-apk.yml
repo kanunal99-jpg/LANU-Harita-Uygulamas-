@@ -1,5 +1,6 @@
 name: Android APK
 
+# Build/publish trigger for the current navigation build.
 on:
   push:
     branches: [ main ]
@@ -11,119 +12,13 @@ permissions:
 jobs:
   build-apk:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+    # Android emulator CI runs on Linux/KVM instead of macOS/HVF.
+    # The previous macOS ARM runner failed before the app test because
+    # QEMU could not initialize Apple's HVF virtualization layer.
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Apply one-pass full-project audit hardening
-        env:
-          HEAD_MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          set -euo pipefail
-          if [[ "$HEAD_MESSAGE" == *"[audit-pass]"* ]]; then exit 0; fi
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-          def rep(p, old, new):
-              f=Path(p); s=f.read_text()
-              if old not in s: raise SystemExit(f'MISSING PATCH TARGET: {p}')
-              f.write_text(s.replace(old,new,1))
-          # No fabricated traffic geometry.
-          p='app/src/main/java/com/example/haritalar/ui/MapLibreContainer.kt'
-          rep(p,'''            val segmentsToDraw = if (trafficSegments.isEmpty()) {
-                generateContinuousTrafficSegments(activeRoute.geometry, trafficStatus)
-            } else {
-                trafficSegments
-            }
-            src.setGeoJson(createTrafficGeoJson(segmentsToDraw))''','''            if (trafficSegments.isEmpty()) {
-                src.setGeoJson(createEmptyFeatureCollection())
-                layer?.setProperties(visibility(Property.NONE))
-            } else {
-                src.setGeoJson(createTrafficGeoJson(trafficSegments))
-            }''')
-          s=Path(p).read_text(); s,n=re.subn(r'\nprivate fun generateContinuousTrafficSegments\(.*?\nprivate fun createTrafficGeoJson','\nprivate fun createTrafficGeoJson',s,1,re.S)
-          if n!=1: raise SystemExit('synthetic traffic helper missing')
-          Path(p).write_text(s)
-          # No straight-line routing fallback; close network responses.
-          p='app/src/main/java/com/example/haritalar/data/network/RoutingProviders.kt'
-          rep(p,'''            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return null
-
-            val body = response.body?.string() ?: return null''','''            val response = client.newCall(request).execute()
-            val successful = response.isSuccessful
-            val body = response.body?.string()
-            response.close()
-            if (!successful) return null
-            val body = body ?: return null''')
-          rep(p,'''            val decodedGeometry = if (encodedShape.isNotEmpty()) {
-                PolylineDecoder.decodePolyline6(encodedShape)
-            } else {
-                listOf(start, end)
-            }''','''            if (encodedShape.isEmpty()) return null
-            val decodedGeometry = PolylineDecoder.decodePolyline6(encodedShape)
-            if (decodedGeometry.size < 2) return null''')
-          rep(p,'''            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
-
-            val body = response.body?.string() ?: return@withContext emptyList()''','''            val response = client.newCall(request).execute()
-            val successful = response.isSuccessful
-            val body = response.body?.string()
-            response.close()
-            if (!successful) return@withContext emptyList()
-            val body = body ?: return@withContext emptyList()''')
-          rep(p,'geometry = if (geometryPoints.isNotEmpty()) geometryPoints else listOf(start, end),','geometry = geometryPoints,')
-          rep(p,'''                results.add(
-                    RouteOption(''','''                if (geometryPoints.size < 2) continue
-                results.add(
-                    RouteOption(''')
-          # Search HTTP lifecycle and placeholder identity.
-          for p in ['app/src/main/java/com/example/haritalar/data/search/NominatimSearchProvider.kt','app/src/main/java/com/example/haritalar/data/search/PhotonSearchProvider.kt']:
-              f=Path(p); f.write_text(f.read_text().replace('LANUHaritaAndroidNav/1.0 (lanu-nav@example.com)','LANUHaritaAndroidNav/1.0'))
-          p='app/src/main/java/com/example/haritalar/data/search/NominatimSearchProvider.kt'
-          rep(p,'''        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            throw IOException("Nominatim HTTP Error: ${response.code} ${response.message}")
-        }
-
-        val bodyString = response.body?.string() ?: return@withContext emptyList()''','''        val response = client.newCall(request).execute()
-        val successful = response.isSuccessful
-        val code = response.code
-        val message = response.message
-        val bodyString = response.body?.string()
-        response.close()
-        if (!successful) throw IOException("Nominatim HTTP Error: $code $message")
-        val bodyString = bodyString ?: return@withContext emptyList()''')
-          p='app/src/main/java/com/example/haritalar/data/search/PhotonSearchProvider.kt'
-          rep(p,'''        val response = client.newCall(request).execute()
-        if (!response.isSuccessful) {
-            throw IOException("Photon HTTP Error: ${response.code} ${response.message}")
-        }
-
-        val bodyString = response.body?.string() ?: return@withContext emptyList()''','''        val response = client.newCall(request).execute()
-        val successful = response.isSuccessful
-        val code = response.code
-        val message = response.message
-        val bodyString = response.body?.string()
-        response.close()
-        if (!successful) throw IOException("Photon HTTP Error: $code $message")
-        val bodyString = bodyString ?: return@withContext emptyList()''')
-          # Security and static validation.
-          rep('app/src/main/AndroidManifest.xml','android:usesCleartextTraffic="true"','android:usesCleartextTraffic="false"')
-          for p in ['.github/workflows/android-apk.yml','.github/workflows/pr-android-test.yml']:
-              f=Path(p); s=f.read_text()
-              if 'name: Run Android lint' not in s:
-                  marker='      - name: Run unit tests\n'
-                  if marker not in s: raise SystemExit(f'lint target missing: {p}')
-                  s=s.replace(marker,'      - name: Run Android lint\n        run: gradle :app:lintDebug --stacktrace\n        env:\n          CI: true\n\n'+marker,1); f.write_text(s)
-          # Remove temporary audit workflow/trigger files.
-          for p in ['.github/workflows/full-audit-apply.yml','FULL_AUDIT_TRIGGER.md','AUDIT_TRIGGER.md']:
-              Path(p).unlink(missing_ok=True)
-          PY
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'audit: consolidate full-project hardening [audit-pass]'
-          git push
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -136,16 +31,25 @@ jobs:
       - name: Prepare Linux KVM permissions
         run: |
           set -euo pipefail
-          test -e /dev/kvm
+          if [ ! -e /dev/kvm ]; then
+            echo 'ERROR: /dev/kvm is unavailable on the GitHub runner.'
+            exit 1
+          fi
           sudo chmod 666 /dev/kvm
+          ls -l /dev/kvm
           test -r /dev/kvm
           test -w /dev/kvm
       - name: Create Android debug keystore
-        run: keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname 'CN=Android Debug,O=Android,C=US'
-      - name: Run Android lint
-        run: gradle :app:lintDebug --stacktrace
-        env:
-          CI: true
+        run: |
+          keytool -genkeypair -v \
+            -keystore debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname 'CN=Android Debug,O=Android,C=US'
       - name: Run unit tests
         run: gradle :app:testDebugUnitTest --stacktrace
         env:
@@ -168,9 +72,29 @@ jobs:
         if: always()
         run: |
           set +e
-          adb devices -l > adb-devices.txt 2>&1
-          adb logcat -d > android-logcat.txt 2>&1
-          adb shell dumpsys activity exit-info com.aistudio.haritalar.navtr > android-exit-info.txt 2>&1
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          commands = [
+              ("adb-devices.txt", ["adb", "devices", "-l"], 20),
+              ("android-logcat.txt", ["adb", "logcat", "-d"], 30),
+              ("android-exit-info.txt", ["adb", "shell", "dumpsys", "activity", "exit-info", "com.aistudio.haritalar.navtr"], 20),
+          ]
+          for filename, command, timeout_seconds in commands:
+              try:
+                  result = subprocess.run(command, capture_output=True, text=True, timeout=timeout_seconds)
+                  output = (result.stdout or "") + (result.stderr or "")
+                  Path(filename).write_text(output, encoding="utf-8")
+              except subprocess.TimeoutExpired as exc:
+                  output = (exc.stdout or b"").decode(errors="replace") if isinstance(exc.stdout, bytes) else (exc.stdout or "")
+                  output += (exc.stderr or b"").decode(errors="replace") if isinstance(exc.stderr, bytes) else (exc.stderr or "")
+                  output += f"\nCOMMAND_TIMEOUT after {timeout_seconds}s: {' '.join(command)}\n"
+                  Path(filename).write_text(output, encoding="utf-8")
+              except Exception as exc:
+                  Path(filename).write_text(f"COMMAND_ERROR: {exc}\n", encoding="utf-8")
+          print("Diagnostics collection completed.")
+          PY
       - name: Upload Android diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -187,7 +111,9 @@ jobs:
         env:
           CI: true
       - name: Verify APK SHA-256
-        run: sha256sum app/build/outputs/apk/debug/*.apk | tee apk-sha256.txt
+        run: |
+          set -euo pipefail
+          sha256sum app/build/outputs/apk/debug/*.apk | tee apk-sha256.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -204,13 +130,24 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add downloads/LANU-Harita-latest.apk
-          if git diff --cached --quiet; then echo 'APK unchanged'; else git commit -m 'build: publish latest LANU Harita APK [skip ci]'; git push; fi
+          if git diff --cached --quiet; then
+            echo 'APK unchanged; no repository commit needed.'
+          else
+            git commit -m 'build: publish latest LANU Harita APK [skip ci]'
+            git push
+          fi
       - name: Remove previous latest Release APK
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
           asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/latest" --jq '.assets[] | select(.name == "app-debug.apk") | .id' | head -n 1)"
-          if [ -n "${asset_id}" ]; then gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"; fi
+          if [ -n "${asset_id}" ]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            echo "Removed previous app-debug.apk release asset: ${asset_id}"
+          else
+            echo 'No previous app-debug.apk release asset found.'
+          fi
       - name: Publish APK to latest GitHub Release
         uses: softprops/action-gh-release@v2
         with:
