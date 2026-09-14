@@ -49,17 +49,14 @@ class WeatherRepository(
                 }
 
                 parsed.mapIndexedNotNull { index, current ->
-                    val code = current.optInt("current", JSONObject()).optInt("weather_code", -1)
+                    val currentWeather = current.optJSONObject("current") ?: return@mapIndexedNotNull null
+                    val code = currentWeather.optInt("weather_code", -1)
                     if (code < 0 || index >= points.size) return@mapIndexedNotNull null
 
-                    val precipitation = current.optJSONObject("current")
-                        ?.optDouble("precipitation", 0.0) ?: 0.0
-                    val rain = current.optJSONObject("current")
-                        ?.optDouble("rain", 0.0) ?: 0.0
-                    val showers = current.optJSONObject("current")
-                        ?.optDouble("showers", 0.0) ?: 0.0
-                    val snowfall = current.optJSONObject("current")
-                        ?.optDouble("snowfall", 0.0) ?: 0.0
+                    val precipitation = currentWeather.optDouble("precipitation", 0.0)
+                    val rain = currentWeather.optDouble("rain", 0.0)
+                    val showers = currentWeather.optDouble("showers", 0.0)
+                    val snowfall = currentWeather.optDouble("snowfall", 0.0)
 
                     val type = weatherTypeForCode(code)
                     val intensity = when (type) {
