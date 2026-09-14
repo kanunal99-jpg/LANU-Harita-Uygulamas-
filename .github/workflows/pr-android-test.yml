@@ -22,10 +22,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.3.1'
-      - name: Run unit tests
-        run: gradle :app:testDebugUnitTest --stacktrace
-        env:
-          CI: true
+      - name: Prepare Linux KVM permissions
+        run: |
+          set -euo pipefail
+          test -e /dev/kvm
+          sudo chmod 666 /dev/kvm
+          test -r /dev/kvm
+          test -w /dev/kvm
       - name: Create Android debug keystore
         run: |
           keytool -genkeypair -v \
@@ -37,6 +40,24 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -dname 'CN=Android Debug,O=Android,C=US'
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
+        env:
+          CI: true
+      - name: Run Android smoke instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: true
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect -no-snapshot -wipe-data
+          disable-animations: true
+          script: |
+            adb devices
+            gradle :app:connectedDebugAndroidTest --stacktrace
+        env:
+          CI: true
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
         env:
