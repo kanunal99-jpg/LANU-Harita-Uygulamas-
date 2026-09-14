@@ -13,7 +13,7 @@ class RouteProviderFallbackTest {
         title = id,
         summary = id,
         durationSeconds = 120,
-        distanceMeters = 222.4,
+        distanceMeters = 332.0,
         geometry = listOf(
             GeoPoint(41.0082, 28.9784),
             GeoPoint(41.0092, 28.9804),
@@ -65,7 +65,7 @@ class RouteProviderFallbackTest {
         var alternativeCalls = 0
         val result = RouteProviderFallback.resolve(
             primary = { error("primary unavailable") },
-            alternative = { alternativeCalls++ ; emptyList() }
+            alternative = { alternativeCalls++; emptyList() }
         )
 
         assertTrue(result.isEmpty())
