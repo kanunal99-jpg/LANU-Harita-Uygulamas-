@@ -1,6 +1,5 @@
 package com.example.haritalar.data.offline
 
-import androidx.test.core.app.ApplicationProvider
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.ManeuverType
 import com.example.haritalar.model.RouteOption
@@ -9,9 +8,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Before
 import org.junit.Test
+import org.robolectric.RuntimeEnvironment
 
 class OfflineRouteCacheTest {
-    private val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+    private val context = RuntimeEnvironment.getApplication()
     private val start = GeoPoint(41.0000, 29.0000)
     private val middle = GeoPoint(41.0000, 29.0010)
     private val end = GeoPoint(41.0000, 29.0020)
