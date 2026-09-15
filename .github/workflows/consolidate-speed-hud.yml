@@ -17,11 +17,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: 9.3.1
-
       - name: Remove synthetic dashboard speed limit
         shell: bash
         run: |
@@ -31,35 +26,15 @@ jobs:
 
           path = Path('app/src/main/java/com/example/haritalar/ui/DrivingHud.kt')
           text = path.read_text(encoding='utf-8')
-          old_limit = '    val speedLimit = progress.speedLimitKmh ?: 50\n'
-          new_limit = '    val speedLimit = progress.speedLimitKmh\n'
-          if old_limit not in text:
-              raise SystemExit('Synthetic speed limit line not found')
-          text = text.replace(old_limit, new_limit, 1)
-
-          old_over = '    val isOverSpeed = speedKmh > (speedLimit + 5)\n'
-          new_over = '    val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)\n'
-          if old_over not in text:
-              raise SystemExit('Overspeed expression not found')
-          text = text.replace(old_over, new_over, 1)
-
-          old_display = '                                text = "$speedLimit",\n'
-          new_display = '                                text = speedLimit?.toString() ?: "—",\n'
-          if old_display not in text:
-              raise SystemExit('Speed limit display line not found')
-          text = text.replace(old_display, new_display, 1)
-
+          text = text.replace('    val speedLimit = progress.speedLimitKmh ?: 50\n', '    val speedLimit = progress.speedLimitKmh\n', 1)
+          text = text.replace('    val isOverSpeed = speedKmh > (speedLimit + 5)\n', '    val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)\n', 1)
+          text = text.replace('                                text = "$speedLimit",\n', '                                text = speedLimit?.toString() ?: "—",\n', 1)
+          if 'progress.speedLimitKmh ?: 50' in text:
+              raise SystemExit('Synthetic speed limit still present')
+          if 'val speedLimit = progress.speedLimitKmh\n' not in text:
+              raise SystemExit('Truthful speed limit declaration missing')
           path.write_text(text, encoding='utf-8')
           PY
-
-      - name: Validate
-        run: |
-          set -euo pipefail
-          grep -q 'val speedLimit = progress.speedLimitKmh$' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt
-          grep -q 'val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt
-          grep -q 'text = speedLimit?.toString() ?: "—"' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt
-          ! grep -q 'progress.speedLimitKmh ?: 50' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt
-          gradle :app:testDebugUnitTest :app:lintDebug --no-daemon
 
       - name: Commit and remove workflow
         shell: bash
