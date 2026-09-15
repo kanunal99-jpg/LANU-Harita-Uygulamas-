@@ -3,6 +3,7 @@ package com.example.haritalar.voice
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import com.example.haritalar.navigation.NavigationVoicePolicy
 import java.util.Locale
 
 class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, NavigationVoice {
@@ -27,7 +28,6 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
             tts?.setSpeechRate(1.0f)
             tts?.setPitch(1.0f)
             isInitialized = true
-            Log.d("TurkishTtsManager", "TTS initialized successfully")
             synchronized(pendingInitQueue) {
                 for (queued in pendingInitQueue) executeSpeak(queued.text, queued.isPriority)
                 pendingInitQueue.clear()
@@ -37,23 +37,18 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
         }
     }
 
-    fun formatTextForPronunciation(text: String): String {
-        return text
-            .replace(Regex("\\bL[\\s-]?A[\\s-]?N[\\s-]?U\\b", RegexOption.IGNORE_CASE), "Lanu")
-            .replace("LANU", "Lanu")
-    }
+    fun formatTextForPronunciation(text: String): String = text
+        .replace(Regex("\\bL[\\s-]?A[\\s-]?N[\\s-]?U\\b", RegexOption.IGNORE_CASE), "Lanu")
+        .replace("LANU", "Lanu")
 
     override fun speak(text: String, isPriority: Boolean) {
         if (isMuted) return
         val cleanText = text.trim()
         if (cleanText.isEmpty()) return
-
         val now = System.currentTimeMillis()
         if (!isPriority && cleanText == lastSpokenText && now - lastSpokenTime < repeatCooldownMs) return
-
         lastSpokenText = cleanText
         lastSpokenTime = now
-
         if (!isInitialized) {
             synchronized(pendingInitQueue) {
                 if (isPriority) pendingInitQueue.clear()
@@ -65,32 +60,24 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
     }
 
     private fun executeSpeak(text: String, isPriority: Boolean) {
-        val speechReadyText = formatTextForPronunciation(text)
-        val queueMode = if (isPriority) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
         try {
-            tts?.speak(speechReadyText, queueMode, null, "NAV_${System.currentTimeMillis()}")
+            val queueMode = if (isPriority) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
+            tts?.speak(formatTextForPronunciation(text), queueMode, null, "NAV_${System.currentTimeMillis()}")
         } catch (e: Exception) {
             Log.e("TurkishTtsManager", "Error speaking text: ${e.message}")
         }
     }
 
     override fun playNavigationStartSequence() {
-        val safetyText = "Lütfen emniyet kemerinizi takınız. Aynalarınızı ve lastiklerinizi kontrol ediniz. LANU güvenli ve iyi yolculuklar dileriz."
-        val startText = "LANU, iyi yolculuklar diler. Rotanız başlıyor."
-        speak(safetyText, isPriority = true)
-        speak(startText)
+        speak(NavigationVoicePolicy.SEAT_BELT_MESSAGE, isPriority = true)
+        speak(NavigationVoicePolicy.START_MESSAGE)
     }
 
-    override fun announceArrival() {
-        speak("Vardınız. LANU sağlıklı günler diler.", isPriority = true)
-    }
+    override fun announceArrival() = speak(NavigationVoicePolicy.ARRIVAL_MESSAGE, isPriority = true)
 
     fun speakDistanceInstruction(distanceMeters: Double, instruction: String) {
         val formatted = when {
-            distanceMeters > 1000 -> {
-                val km = String.format(Locale.US, "%.1f", distanceMeters / 1000.0)
-                "$km kilometre sonra $instruction"
-            }
+            distanceMeters > 1000 -> "${String.format(Locale.US, "%.1f", distanceMeters / 1000.0)} kilometre sonra $instruction"
             distanceMeters > 80 -> "${(Math.round(distanceMeters / 50.0) * 50).toInt()} metre sonra $instruction"
             distanceMeters > 20 -> "Şimdi $instruction"
             else -> instruction
@@ -98,21 +85,17 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
         speak(formatted)
     }
 
-    override fun announceReroute() {
-        speak("Rotanızdan çıktınız. Yeni rota hesaplanıyor.", isPriority = true)
+    fun speakSafetyCamera(distanceBucketMeters: Int, overspeed: Boolean) {
+        speak(NavigationVoicePolicy.safetyCamera(distanceBucketMeters, overspeed), isPriority = true)
     }
 
-    fun announceLaneGuidance(laneHint: String) {
-        speak(laneHint)
-    }
+    override fun announceReroute() = speak("Rotanızdan çıktınız. Yeni rota hesaplanıyor.", isPriority = true)
+
+    fun announceLaneGuidance(laneHint: String) = speak(laneHint)
 
     override fun stop() {
         synchronized(pendingInitQueue) { pendingInitQueue.clear() }
-        try {
-            tts?.stop()
-        } catch (e: Exception) {
-            Log.e("TurkishTtsManager", "Error stopping TTS: ${e.message}")
-        }
+        try { tts?.stop() } catch (e: Exception) { Log.e("TurkishTtsManager", "Error stopping TTS: ${e.message}") }
     }
 
     fun shutdown() {
@@ -120,7 +103,6 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
             stop()
             tts?.shutdown()
             tts = null
-        } catch (_: Exception) {
-        }
+        } catch (_: Exception) { }
     }
 }
