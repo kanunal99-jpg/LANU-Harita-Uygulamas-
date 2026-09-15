@@ -1,0 +1,93 @@
+name: Live Share Server Test
+
+on:
+  push:
+    branches:
+      - feat/p1-offline-routing-consolidation
+  pull_request:
+    branches:
+      - main
+    paths:
+      - server/**
+      - .github/workflows/live-share-server-test.yml
+
+permissions:
+  contents: read
+
+jobs:
+  server-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Install dependencies
+        working-directory: server
+        run: npm ci
+
+      - name: Syntax check
+        working-directory: server
+        run: node --check src/server.mjs
+
+      - name: Start server
+        working-directory: server
+        env:
+          PORT: '18080'
+          PUBLIC_BASE_URL: 'http://127.0.0.1:18080'
+          LIVE_SHARE_TTL_SECONDS: '120'
+        run: |
+          nohup npm start > /tmp/lanu-live-share.log 2>&1 &
+          echo $! > /tmp/lanu-live-share.pid
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:18080/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/lanu-live-share.log
+          exit 1
+
+      - name: End-to-end session smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          create_response=$(curl -fsS -X POST http://127.0.0.1:18080/v1/sessions \
+            -H 'content-type: application/json' \
+            -d '{"latitude":41.0082,"longitude":28.9784,"bearing":90,"speedKmh":42,"etaSeconds":900}')
+          session_id=$(printf '%s' "$create_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sessionId"])')
+          token=$(printf '%s' "$create_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')
+          test -n "$session_id"
+          test -n "$token"
+
+          curl -fsS -X PUT "http://127.0.0.1:18080/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token" \
+            -H 'content-type: application/json' \
+            -d '{"latitude":41.0090,"longitude":28.9800,"bearing":92,"speedKmh":45,"etaSeconds":840}'
+
+          state=$(curl -fsS "http://127.0.0.1:18080/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token")
+          printf '%s' "$state" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["latitude"] == 41.009; assert d["speedKmh"] == 45'
+
+          curl -fsS -X DELETE "http://127.0.0.1:18080/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token"
+
+          if curl -sS -o /tmp/revoked.json -w '%{http_code}' "http://127.0.0.1:18080/v1/sessions/$session_id" -H "authorization: Bearer $token" | grep -q '^401$'; then
+            exit 0
+          fi
+          cat /tmp/revoked.json
+          exit 1
+
+      - name: Print server log on failure
+        if: failure()
+        run: cat /tmp/lanu-live-share.log || true
+
+      - name: Stop server
+        if: always()
+        run: kill "$(cat /tmp/lanu-live-share.pid 2>/dev/null || echo 0)" 2>/dev/null || true

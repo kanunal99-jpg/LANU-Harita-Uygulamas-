@@ -1,0 +1,61 @@
+name: P1 Professional PR Gate
+
+on:
+  push:
+    branches:
+      - feat/p1-offline-routing-consolidation
+  pull_request:
+    branches:
+      - main
+    paths:
+      - app/**
+      - server/**
+      - docs/P1_PROFESSIONAL_READINESS.md
+      - .github/workflows/p1-professional-pr.yml
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+      - name: Create Android debug keystore
+        run: |
+          keytool -genkeypair -v \
+            -keystore debug.keystore \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname 'CN=Android Debug,O=Android,C=US'
+      - run: gradle :app:testDebugUnitTest :app:lintDebug --stacktrace
+        env:
+          CI: true
+      - run: gradle :app:assembleDebug --stacktrace
+        env:
+          CI: true
+
+  server:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - working-directory: server
+        run: npm ci
+      - working-directory: server
+        run: node --check src/server.mjs

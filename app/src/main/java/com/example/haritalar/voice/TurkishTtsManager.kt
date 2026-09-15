@@ -3,6 +3,7 @@ package com.example.haritalar.voice
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.util.Log
+import com.example.haritalar.navigation.NavigationVoicePolicy
 import java.util.Locale
 
 class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, NavigationVoice {
@@ -75,14 +76,14 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
     }
 
     override fun playNavigationStartSequence() {
-        val safetyText = "Lütfen emniyet kemerinizi takınız. Aynalarınızı ve lastiklerinizi kontrol ediniz. LANU güvenli ve iyi yolculuklar dileriz."
-        val startText = "LANU, iyi yolculuklar diler. Rotanız başlıyor."
-        speak(safetyText, isPriority = true)
-        speak(startText)
+        speak(
+            "${NavigationVoicePolicy.SEAT_BELT_MESSAGE} ${NavigationVoicePolicy.START_MESSAGE}",
+            isPriority = true
+        )
     }
 
     override fun announceArrival() {
-        speak("Vardınız. LANU sağlıklı günler diler.", isPriority = true)
+        speak(NavigationVoicePolicy.ARRIVAL_MESSAGE, isPriority = true)
     }
 
     fun speakDistanceInstruction(distanceMeters: Double, instruction: String) {
