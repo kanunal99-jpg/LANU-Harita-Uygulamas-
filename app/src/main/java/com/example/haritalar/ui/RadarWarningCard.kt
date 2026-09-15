@@ -34,7 +34,7 @@ fun RadarWarningCard(
         if (camera != null) {
             Surface(
                 shape = RoundedCornerShape(12.dp),
-                color = Color(0xFFEF4444), // Red background for warning
+                color = Color(0xFFEF4444),
                 shadowElevation = 8.dp
             ) {
                 Row(
@@ -55,17 +55,23 @@ fun RadarWarningCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
+                        Text(
+                            text = "Dikkat: ileride kamera noktası",
+                            color = Color.White.copy(alpha = 0.95f),
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp
+                        )
                         if (!camera.maxSpeed.isNullOrBlank()) {
                             Text(
-                                text = "Hız Sınırı: ${camera.maxSpeed} km/h",
+                                text = "Hız sınırı: ${camera.maxSpeed} km/h",
                                 color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 14.sp
+                                fontSize = 13.sp
                             )
                         } else {
                             Text(
-                                text = "Sabit Hız Kamerası",
+                                text = "Hız limiti verisi doğrulanamadı",
                                 color = Color.White.copy(alpha = 0.9f),
-                                fontSize = 14.sp
+                                fontSize = 13.sp
                             )
                         }
                     }
