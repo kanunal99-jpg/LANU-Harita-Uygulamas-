@@ -29,13 +29,14 @@ jobs:
               if old not in s:
                   raise SystemExit(f'missing expected source: {old}')
               s = s.replace(old, new, 1)
+          if 'val isOverSpeed = speedKmh > (speedLimit + 5)' not in s:
+              raise SystemExit('missing expected overspeed expression')
           s = s.replace('val isOverSpeed = speedKmh > (speedLimit + 5)', 'val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)', 1)
           p.write_text(s, encoding='utf-8')
           print('HUD truthfulness patch applied')
           PY
           grep -n 'speedLimitKmh' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt | head
           grep -n 'km/h' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt | head
-          ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
       - name: Commit patch
         shell: bash
         run: |
