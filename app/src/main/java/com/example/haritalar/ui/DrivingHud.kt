@@ -325,8 +325,8 @@ fun DrivingBottomDashboard(
     val etaString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(etaDate)
     val remainingMins = Math.max(1, Math.round(progress.totalRemainingSeconds / 60.0).toInt())
     val remainingDistanceText = formatDistance(progress.totalRemainingDistanceMeters)
-    val speedLimit = progress.speedLimitKmh ?: 50
-    val isOverSpeed = speedKmh > (speedLimit + 5)
+    val speedLimit = progress.speedLimitKmh
+    val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)
 
     Surface(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -359,7 +359,7 @@ fun DrivingBottomDashboard(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = "$speedLimit",
+                                text = speedLimit?.toString() ?: "—",
                                 color = Color.Black,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 13.sp
