@@ -7,6 +7,7 @@ import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
 import com.example.haritalar.data.repository.TrafficSignalRepository
+import com.example.haritalar.data.repository.SafetyCameraRepository
 import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.DepartureGuidance
 import com.example.haritalar.model.GeoPoint
@@ -16,6 +17,7 @@ import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SearchResult
+import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficSignal
 import com.example.haritalar.model.TrafficSignalBoundingBox
@@ -87,7 +89,8 @@ data class MainUiState(
     val isLiveSharingActive: Boolean = false,
     val liveShareUrl: String? = null,
     val isSafetyCamerasLayerVisible: Boolean = true,
-    val approachingCamera: com.example.haritalar.model.SafetyCamera? = null,
+    val safetyCameras: List<SafetyCamera> = emptyList(),
+    val approachingCamera: SafetyCamera? = null,
     val currentViewportBbox: com.example.haritalar.model.TrafficSignalBoundingBox? = null,
     val currentZoomLevel: Float = 0f,
     val isWeatherLayerVisible: Boolean = true,
@@ -100,6 +103,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val locationManager = AppLocationManager(application)
     val offlineMapManager = com.example.haritalar.data.offline.OfflineMapManager(application)
     val weatherRepository = com.example.haritalar.data.weather.WeatherRepository()
+    val safetyCameraRepository = SafetyCameraRepository()
     val ttsManager = TurkishTtsManager(application)
     val compassSensor = CompassHeadingSensor(application)
     val vehicleHeadingManager = VehicleHeadingManager(compassSensor)
@@ -123,6 +127,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var routeCalculationJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
+    private var safetyCameraRefreshJob: Job? = null
+    private var lastSafetyCameraRefreshPoint: GeoPoint? = null
+    private var lastSafetyCameraRefreshAt = 0L
     private var generationCounter = 1L
 
     private val trafficSignalRepository = repository.trafficSignalRepository
@@ -158,6 +165,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             departureGuidance = currentDep,
                             isWrongWay = wrongWay
                         )
+                        refreshSafetyCamerasIfNeeded(displayLoc)
+                        checkSafetyCameraProximity(_uiState.value.safetyCameras)
                     } else {
                         _uiState.value = _uiState.value.copy(
                             userLocation = loc.copy(bearing = headingState.heading),
@@ -470,6 +479,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
+        lastSafetyCameraRefreshPoint = null
+        lastSafetyCameraRefreshAt = 0L
         announcedCameraWarningBuckets.clear()
         lastOverspeedCameraWarningKey = null
         val currentHeading = _uiState.value.vehicleHeadingState.heading
@@ -497,6 +508,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         navigationEngine.stop()
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
+        safetyCameraRefreshJob?.cancel()
+        safetyCameraRefreshJob = null
         ttsManager.stop()
         announcedCameraWarningBuckets.clear()
         lastOverspeedCameraWarningKey = null
@@ -506,7 +519,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
-            isWrongWay = false, isLoadingRoutes = false
+            isWrongWay = false, isLoadingRoutes = false, safetyCameras = emptyList(), approachingCamera = null
         )
     }
 
@@ -648,8 +661,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             approachingCamera = if (newVisible) _uiState.value.approachingCamera else null
         )
         if (!newVisible) {
+            safetyCameraRefreshJob?.cancel()
+            safetyCameraRefreshJob = null
+            lastSafetyCameraRefreshPoint = null
+            lastSafetyCameraRefreshAt = 0L
             announcedCameraWarningBuckets.clear()
             lastOverspeedCameraWarningKey = null
+            _uiState.value = _uiState.value.copy(safetyCameras = emptyList(), approachingCamera = null)
+        } else {
+            currentRoutingLocation()?.let { refreshSafetyCamerasIfNeeded(it, force = true) }
         }
     }
 
@@ -675,6 +695,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val announcedCameraWarningBuckets = mutableSetOf<String>()
     private var lastOverspeedCameraWarningKey: String? = null
+
+    private fun refreshSafetyCamerasIfNeeded(location: UserLocationData, force: Boolean = false) {
+        if (!_uiState.value.isSafetyCamerasLayerVisible || _uiState.value.navigationState != NavigationState.NAVIGATING) return
+        val now = System.currentTimeMillis()
+        val movedMeters = lastSafetyCameraRefreshPoint?.distanceTo(location.point) ?: Double.MAX_VALUE
+        if (!force && now - lastSafetyCameraRefreshAt < 45_000L && movedMeters < 750.0) return
+        lastSafetyCameraRefreshAt = now
+        lastSafetyCameraRefreshPoint = location.point
+        safetyCameraRefreshJob?.cancel()
+        safetyCameraRefreshJob = viewModelScope.launch {
+            val cameras = safetyCameraRepository.getNearbyCameras(location.point)
+            if (_uiState.value.navigationState == NavigationState.NAVIGATING && _uiState.value.isSafetyCamerasLayerVisible) {
+                _uiState.value = _uiState.value.copy(safetyCameras = cameras)
+                checkSafetyCameraProximity(cameras)
+            }
+        }
+    }
 
     private fun formatSafetyWarningDistance(distanceBucketMeters: Int): String = when {
         distanceBucketMeters >= 1000 -> {
@@ -836,6 +873,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         routeCalculationJob?.cancel()
+        safetyCameraRefreshJob?.cancel()
         vehicleHeadingManager.stop()
         locationManager.stopLocationUpdates()
         ttsManager.shutdown()

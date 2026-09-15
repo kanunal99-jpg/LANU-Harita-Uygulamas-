@@ -14,7 +14,7 @@ This document records capabilities that are implemented and capabilities that ar
 - Truthful live-traffic status; no synthetic traffic values.
 - Real weather provider with empty-on-failure behavior; no random weather.
 - Search provider fallback and HTTP resource lifecycle protection.
-- Safety-camera warnings use real source data only, a 5 km warning envelope, 500 m TTS buckets and navigation-session reset behavior.
+- Safety-camera warnings use real OpenStreetMap/Overpass source data, a verified in-memory stale-cache fallback, a 5 km warning envelope, 500 m TTS buckets and navigation-session reset behavior.
 - Radar UI never invents a speed limit when source data is missing.
 - Navigation dashboard displays speed in km/h and only evaluates overspeed when a real route speed limit is present.
 - Android lint, unit tests, emulator instrumentation and debug APK CI gates.
