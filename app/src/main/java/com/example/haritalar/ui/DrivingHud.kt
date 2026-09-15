@@ -325,8 +325,8 @@ fun DrivingBottomDashboard(
     val etaString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(etaDate)
     val remainingMins = Math.max(1, Math.round(progress.totalRemainingSeconds / 60.0).toInt())
     val remainingDistanceText = formatDistance(progress.totalRemainingDistanceMeters)
-    val speedLimit = progress.speedLimitKmh ?: 50
-    val isOverSpeed = speedKmh > (speedLimit + 5)
+    val speedLimit = progress.speedLimitKmh
+    val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)
 
     Surface(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -359,7 +359,7 @@ fun DrivingBottomDashboard(
                     ) {
                         Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = "$speedLimit",
+                                text = speedLimit?.toString() ?: "—",
                                 color = Color.Black,
                                 fontWeight = FontWeight.Black,
                                 fontSize = 13.sp
@@ -377,7 +377,7 @@ fun DrivingBottomDashboard(
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "${Math.round(speedKmh)} km/s",
+                            text = "${Math.round(speedKmh)} km/h",
                             color = if (isOverSpeed) Color.White else Color(0xFF38BDF8),
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
@@ -687,7 +687,7 @@ fun TripSummaryDialog(
 ) {
     val totalKm = String.format(Locale.US, "%.1f km", summary.totalDistanceMeters / 1000.0)
     val mins = Math.max(1, Math.round(summary.totalDurationSeconds / 60.0).toInt())
-    val avgSpeed = String.format(Locale.US, "%.0f km/s", summary.averageSpeedKmh)
+    val avgSpeed = String.format(Locale.US, "%.0f km/h", summary.averageSpeedKmh)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
