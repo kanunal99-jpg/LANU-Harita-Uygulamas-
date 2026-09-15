@@ -5,7 +5,7 @@ s = p.read_text()
 
 s = s.replace(
 'import com.example.haritalar.data.repository.TrafficSignalRepository\n',
-'import com.example.haritalar.data.repository.TrafficSignalRepository\nimport com.example.haritalar.data.network.LiveSharingClient\n'
+'import com.example.BuildConfig\nimport com.example.haritalar.data.repository.TrafficSignalRepository\nimport com.example.haritalar.data.network.LiveSharingClient\n'
 )
 
 s = s.replace(
