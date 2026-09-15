@@ -17,7 +17,7 @@ class SafetyCameraWarningCoordinatorTest {
     @Test
     fun sameDistanceBucketIsEmittedOnlyOnce() {
         val coordinator = SafetyCameraWarningCoordinator()
-        val point = GeoPoint(41.0, 29.004)
+        val point = camera.point
 
         val first = coordinator.evaluate(listOf(camera), point, 60f)
         val second = coordinator.evaluate(listOf(camera), point, 60f)
@@ -26,12 +26,13 @@ class SafetyCameraWarningCoordinatorTest {
         assertNull(second)
         assertEquals(60, first?.speedLimitKmh)
         assertEquals(true, first?.overspeed)
+        assertEquals(0, first?.distanceBucketMeters)
     }
 
     @Test
     fun resetAllowsTheSameCameraToWarnAgain() {
         val coordinator = SafetyCameraWarningCoordinator()
-        val point = GeoPoint(41.0, 29.004)
+        val point = camera.point
 
         assertNotNull(coordinator.evaluate(listOf(camera), point, 40f))
         coordinator.reset()
@@ -41,7 +42,7 @@ class SafetyCameraWarningCoordinatorTest {
     @Test
     fun cameraWithoutSpeedLimitNeverCreatesOverspeed() {
         val coordinator = SafetyCameraWarningCoordinator()
-        val point = GeoPoint(41.0, 29.004)
+        val point = camera.point
         val cameraWithoutLimit = camera.copy(maxSpeed = null)
 
         val warning = coordinator.evaluate(listOf(cameraWithoutLimit), point, 200f)
