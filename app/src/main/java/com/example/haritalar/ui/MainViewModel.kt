@@ -6,7 +6,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
+import com.example.BuildConfig
 import com.example.haritalar.data.repository.TrafficSignalRepository
+import com.example.haritalar.data.network.LiveSharingClient
 import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.DepartureGuidance
 import com.example.haritalar.model.GeoPoint
@@ -123,6 +125,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var routeCalculationJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
+    private var liveShareJob: Job? = null
+    private var liveShareSession: LiveSharingClient.Session? = null
+    private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
     private var generationCounter = 1L
 
     private val trafficSignalRepository = repository.trafficSignalRepository
@@ -772,11 +777,73 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun toggleLiveSharing() {
-        _uiState.value = _uiState.value.copy(
-            isLiveSharingActive = false,
-            liveShareUrl = null,
-            statusMessage = "Canlı paylaşım şu anda devre dışı: doğrulanmış paylaşım sunucusu bağlı değil."
-        )
+        if (liveShareSession != null) {
+            val session = liveShareSession
+            liveShareSession = null
+            liveShareJob?.cancel()
+            liveShareJob = null
+            _uiState.value = _uiState.value.copy(isLiveSharingActive = false, liveShareUrl = null)
+            viewModelScope.launch {
+                runCatching { liveSharingClient.revoke(session!!.id, session.token) }
+            }
+            return
+        }
+
+        val location = currentRoutingLocation() ?: run {
+            _uiState.value = _uiState.value.copy(statusMessage = "Canlı paylaşım için gerçek GPS konumu gerekli.")
+            return
+        }
+
+        liveShareJob?.cancel()
+        liveShareJob = viewModelScope.launch {
+            try {
+                val eta = _uiState.value.navigationProgress?.totalRemainingSeconds
+                val session = liveSharingClient.createSession(
+                    latitude = location.point.latitude,
+                    longitude = location.point.longitude,
+                    bearing = location.bearing,
+                    speedKmh = location.speedKmh,
+                    etaSeconds = eta
+                )
+                liveShareSession = session
+                _uiState.value = _uiState.value.copy(
+                    isLiveSharingActive = true,
+                    liveShareUrl = session.viewerUrl,
+                    statusMessage = "Canlı takip paylaşımı açıldı."
+                )
+
+                while (liveShareSession?.id == session.id) {
+                    val current = currentRoutingLocation() ?: break
+                    val currentEta = _uiState.value.navigationProgress?.totalRemainingSeconds
+                    runCatching {
+                        liveSharingClient.updateLocation(
+                            sessionId = session.id,
+                            token = session.token,
+                            latitude = current.point.latitude,
+                            longitude = current.point.longitude,
+                            bearing = current.bearing,
+                            speedKmh = current.speedKmh,
+                            etaSeconds = currentEta
+                        )
+                    }.onFailure {
+                        _uiState.value = _uiState.value.copy(statusMessage = "Canlı takip sunucusuna ulaşılamadı; paylaşım durduruldu.")
+                        liveShareSession = null
+                        _uiState.value = _uiState.value.copy(isLiveSharingActive = false, liveShareUrl = null)
+                        break
+                    }
+                    delay(15_000L)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                liveShareSession = null
+                _uiState.value = _uiState.value.copy(
+                    isLiveSharingActive = false,
+                    liveShareUrl = null,
+                    statusMessage = "Canlı paylaşım başlatılamadı: ${e.message ?: "sunucu hatası"}"
+                )
+            }
+        }
     }
 
     fun addFavorite(title: String, category: String) {
@@ -836,6 +903,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         routeCalculationJob?.cancel()
+        liveShareJob?.cancel()
+        liveShareSession = null
         vehicleHeadingManager.stop()
         locationManager.stopLocationUpdates()
         ttsManager.shutdown()
