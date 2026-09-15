@@ -1,0 +1,48 @@
+name: Consolidate HUD truth
+on:
+  push:
+    branches: [feat/consolidated-hud-truth]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Patch HUD truthfulness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/com/example/haritalar/ui/DrivingHud.kt')
+          s = p.read_text(encoding='utf-8')
+          replacements = {
+              'val speedLimit = progress.speedLimitKmh ?: 50': 'val speedLimit = progress.speedLimitKmh',
+              'text = "$speedLimit",': 'text = speedLimit?.toString() ?: "—",',
+              'text = "${Math.round(speedKmh)} km/s",': 'text = "${Math.round(speedKmh)} km/h",',
+              'String.format(Locale.US, "%.0f km/s", summary.averageSpeedKmh)': 'String.format(Locale.US, "%.0f km/h", summary.averageSpeedKmh)',
+          }
+          for old, new in replacements.items():
+              if old not in s:
+                  raise SystemExit(f'missing expected source: {old}')
+              s = s.replace(old, new, 1)
+          s = s.replace('val isOverSpeed = speedKmh > (speedLimit + 5)', 'val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)', 1)
+          p.write_text(s, encoding='utf-8')
+          print('HUD truthfulness patch applied')
+          PY
+          grep -n 'speedLimitKmh' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt | head
+          grep -n 'km/h' app/src/main/java/com/example/haritalar/ui/DrivingHud.kt | head
+          ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/consolidate-hud-truth.yml
+          git add app/src/main/java/com/example/haritalar/ui/DrivingHud.kt .github/workflows/consolidate-hud-truth.yml
+          git commit -m 'fix: remove fabricated HUD speed limits and correct speed units'
+          git push origin HEAD:feat/consolidated-hud-truth
