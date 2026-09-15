@@ -23,7 +23,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.navigation.NavigationProgress
-import com.example.haritalar.ui.formatDistance
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -48,7 +47,7 @@ fun DrivingBottomDashboard(
     val etaDate = Date(System.currentTimeMillis() + progress.totalRemainingSeconds * 1000L)
     val etaString = SimpleDateFormat("HH:mm", Locale.getDefault()).format(etaDate)
     val remainingMins = max(1, (progress.totalRemainingSeconds / 60.0).roundToInt())
-    val remainingDistanceText = formatDistance(progress.totalRemainingDistanceMeters)
+    val remainingDistanceText = formatDashboardDistance(progress.totalRemainingDistanceMeters)
     val speedLimit = progress.speedLimitKmh
     val isOverSpeed = speedLimit != null && speedKmh > (speedLimit + 5)
 
@@ -182,5 +181,13 @@ fun DrivingBottomDashboard(
                 }
             }
         }
+    }
+}
+
+private fun formatDashboardDistance(meters: Double): String {
+    return if (meters >= 1000.0) {
+        String.format(Locale.US, "%.1f km", meters / 1000.0)
+    } else {
+        "${meters.toInt()} m"
     }
 }
