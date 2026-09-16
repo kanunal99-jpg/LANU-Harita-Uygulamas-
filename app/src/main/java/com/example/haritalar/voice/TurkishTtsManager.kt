@@ -2,6 +2,7 @@ package com.example.haritalar.voice
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import com.example.haritalar.navigation.NavigationVoicePolicy
 import java.util.Locale
@@ -9,6 +10,7 @@ import java.util.Locale
 class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, NavigationVoice {
     private var tts: TextToSpeech? = TextToSpeech(context.applicationContext, this)
     private var isInitialized = false
+    private var shuttingDown = false
     var isMuted: Boolean = false
 
     private var lastSpokenText: String = ""
@@ -21,13 +23,20 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
     override fun onInit(status: Int) {
         if (status == TextToSpeech.SUCCESS) {
             val locale = Locale("tr", "TR")
-            val result = tts?.setLanguage(locale)
+            val availability = tts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED
+            val result = tts?.setLanguage(if (availability >= TextToSpeech.LANG_AVAILABLE) locale else Locale.getDefault())
             if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
                 tts?.setLanguage(Locale.getDefault())
             }
-            tts?.setSpeechRate(1.0f)
+            tts?.setSpeechRate(0.95f)
             tts?.setPitch(1.0f)
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) = Unit
+                override fun onDone(utteranceId: String?) = Unit
+                override fun onError(utteranceId: String?) = Unit
+            })
             isInitialized = true
+            shuttingDown = false
             Log.d("TurkishTtsManager", "TTS initialized successfully")
             synchronized(pendingInitQueue) {
                 for (queued in pendingInitQueue) executeSpeak(queued.text, queued.isPriority)
@@ -45,7 +54,7 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
     }
 
     override fun speak(text: String, isPriority: Boolean) {
-        if (isMuted) return
+        if (isMuted || shuttingDown) return
         val cleanText = text.trim()
         if (cleanText.isEmpty()) return
 
@@ -117,6 +126,8 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
     }
 
     fun shutdown() {
+        shuttingDown = true
+        isInitialized = false
         try {
             stop()
             tts?.shutdown()
