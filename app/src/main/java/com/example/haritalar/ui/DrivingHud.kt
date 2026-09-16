@@ -377,7 +377,7 @@ fun DrivingBottomDashboard(
                             .padding(horizontal = 10.dp, vertical = 6.dp)
                     ) {
                         Text(
-                            text = "${Math.round(speedKmh)} km/s",
+                            text = "${Math.round(speedKmh)} km/h",
                             color = if (isOverSpeed) Color.White else Color(0xFF38BDF8),
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp
@@ -687,7 +687,7 @@ fun TripSummaryDialog(
 ) {
     val totalKm = String.format(Locale.US, "%.1f km", summary.totalDistanceMeters / 1000.0)
     val mins = Math.max(1, Math.round(summary.totalDurationSeconds / 60.0).toInt())
-    val avgSpeed = String.format(Locale.US, "%.0f km/s", summary.averageSpeedKmh)
+    val avgSpeed = String.format(Locale.US, "%.0f km/h", summary.averageSpeedKmh)
 
     Dialog(onDismissRequest = onDismiss) {
         Surface(
