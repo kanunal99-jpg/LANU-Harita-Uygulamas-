@@ -1,0 +1,105 @@
+name: Consolidate product final
+
+on:
+  push:
+    branches: [feat/consolidated-product-final]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - name: Apply guarded hardening
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text(encoding='utf-8')
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f'{path}: expected 1 match, got {n}')
+              p.write_text(s.replace(old, new, 1), encoding='utf-8')
+
+          # TTS hardening.
+          p = 'app/src/main/java/com/example/haritalar/voice/TurkishTtsManager.kt'
+          s = Path(p).read_text(encoding='utf-8')
+          if 'import android.speech.tts.UtteranceProgressListener' not in s:
+              s = s.replace('import android.speech.tts.TextToSpeech\n','import android.speech.tts.TextToSpeech\nimport android.speech.tts.UtteranceProgressListener\n',1)
+          s = s.replace('    private var isInitialized = false\n','    private var isInitialized = false\n    private var shuttingDown = false\n',1)
+          old = '''            val locale = Locale("tr", "TR")\n            val result = tts?.setLanguage(locale)\n            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {\n                tts?.setLanguage(Locale.getDefault())\n            }\n            tts?.setSpeechRate(1.0f)\n            tts?.setPitch(1.0f)\n            isInitialized = true\n'''
+          new = '''            val locale = Locale("tr", "TR")\n            val availability = tts?.isLanguageAvailable(locale) ?: TextToSpeech.LANG_NOT_SUPPORTED\n            val result = tts?.setLanguage(if (availability >= TextToSpeech.LANG_AVAILABLE) locale else Locale.getDefault())\n            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {\n                tts?.setLanguage(Locale.getDefault())\n            }\n            tts?.setSpeechRate(0.95f)\n            tts?.setPitch(1.0f)\n            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {\n                override fun onStart(utteranceId: String?) = Unit\n                override fun onDone(utteranceId: String?) = Unit\n                override fun onError(utteranceId: String?) = Unit\n            })\n            isInitialized = true\n            shuttingDown = false\n'''
+          replace_once(p, old, new)
+          s = Path(p).read_text(encoding='utf-8')
+          s = s.replace('        if (isMuted) return\n','        if (isMuted || shuttingDown) return\n',1)
+          s = s.replace('    fun shutdown() {\n','    fun shutdown() {\n        shuttingDown = true\n        isInitialized = false\n',1)
+          Path(p).write_text(s, encoding='utf-8')
+
+          # Live share retry policy and client resilience.
+          retry = Path('app/src/main/java/com/example/haritalar/data/network/LiveSharingRetryPolicy.kt')
+          retry.parent.mkdir(parents=True, exist_ok=True)
+          retry.write_text('''package com.example.haritalar.data.network\n\nobject LiveSharingRetryPolicy {\n    const val MAX_ATTEMPTS = 3\n    fun shouldRetryHttp(code: Int): Boolean = code == 408 || code == 429 || code in 500..599\n    fun backoffMs(attempt: Int): Long = when (attempt) { 1 -> 500L; 2 -> 1500L; else -> 0L }\n}\n''', encoding='utf-8')
+          p = 'app/src/main/java/com/example/haritalar/data/network/LiveSharingClient.kt'
+          s = Path(p).read_text(encoding='utf-8')
+          if 'kotlinx.coroutines.delay' not in s:
+              s = s.replace('import kotlinx.coroutines.Dispatchers\n','import kotlinx.coroutines.Dispatchers\nimport kotlinx.coroutines.delay\n',1)
+          if 'java.io.IOException' not in s:
+              s = s.replace('import kotlinx.coroutines.withContext\n','import kotlinx.coroutines.withContext\nimport java.io.IOException\n',1)
+          s = s.replace('private val httpClient: OkHttpClient = OkHttpClient()','private val httpClient: OkHttpClient = OkHttpClient.Builder()\n        .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)\n        .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)\n        .writeTimeout(8, java.util.concurrent.TimeUnit.SECONDS)\n        .build()',1)
+          if 'private suspend fun <T> executeWithRetry' not in s:
+              s = s.replace('\n}\n','''\n    private suspend fun <T> executeWithRetry(request: Request, operation: String, block: (okhttp3.Response) -> T): T {\n        var attempt = 1\n        var last: Throwable? = null\n        while (attempt <= LiveSharingRetryPolicy.MAX_ATTEMPTS) {\n            try {\n                httpClient.newCall(request).execute().use { response ->\n                    if (response.isSuccessful) return block(response)\n                    if (!LiveSharingRetryPolicy.shouldRetryHttp(response.code) || attempt == LiveSharingRetryPolicy.MAX_ATTEMPTS) return block(response)\n                    last = IllegalStateException("$operation-${response.code}")\n                }\n            } catch (e: IOException) {\n                last = e\n                if (attempt == LiveSharingRetryPolicy.MAX_ATTEMPTS) throw e\n            }\n            delay(LiveSharingRetryPolicy.backoffMs(attempt))\n            attempt++\n        }\n        throw last ?: IllegalStateException(operation)\n    }\n}\n''',1)
+              s = s.replace('httpClient.newCall(request).execute().use { response ->','executeWithRetry(request, "live-share") { response ->')
+              s = s.replace('            }\n        }\n','            }\n        }\n',1)
+          Path(p).write_text(s, encoding='utf-8')
+
+          # Foreground service.
+          service = Path('app/src/main/java/com/example/haritalar/navigation/NavigationForegroundService.kt')
+          service.write_text('''package com.example.haritalar.navigation\n\nimport android.app.NotificationChannel\nimport android.app.NotificationManager\nimport android.app.PendingIntent\nimport android.app.Service\nimport android.content.Context\nimport android.content.Intent\nimport android.os.Build\nimport androidx.core.app.NotificationCompat\nimport androidx.core.content.ContextCompat\nimport com.example.MainActivity\n\nclass NavigationForegroundService : Service() {\n    override fun onCreate() { super.onCreate(); createChannel() }\n    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {\n        if (intent?.action == ACTION_STOP) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf(); return START_NOT_STICKY }\n        val n = NotificationCompat.Builder(this, CHANNEL_ID)\n            .setSmallIcon(android.R.drawable.ic_menu_mylocation)\n            .setContentTitle("LANU Navigasyon")\n            .setContentText("Navigasyon aktif • GPS takibi sürüyor")\n            .setContentIntent(PendingIntent.getActivity(this,0,Intent(this,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))\n            .setOngoing(true).setCategory(NotificationCompat.CATEGORY_NAVIGATION).setPriority(NotificationCompat.PRIORITY_LOW).build()\n        if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION_ID,n,android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION) else startForeground(NOTIFICATION_ID,n)\n        return START_STICKY\n    }\n    override fun onBind(intent: Intent?) = null\n    private fun createChannel() { if (Build.VERSION.SDK_INT >= 26) getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL_ID,"LANU Navigasyon",NotificationManager.IMPORTANCE_LOW)) }\n    companion object {\n        private const val CHANNEL_ID="lanu_navigation"\n        private const val NOTIFICATION_ID=7001\n        private const val ACTION_STOP="com.aistudio.haritalar.navtr.STOP_NAVIGATION"\n        fun start(context: Context) { ContextCompat.startForegroundService(context,Intent(context,NavigationForegroundService::class.java)) }\n        fun stop(context: Context) { context.startService(Intent(context,NavigationForegroundService::class.java).setAction(ACTION_STOP)) }\n    }\n}\n''', encoding='utf-8')
+
+          # Manifest.
+          p = Path('app/src/main/AndroidManifest.xml'); m=p.read_text(encoding='utf-8')
+          if 'android.permission.FOREGROUND_SERVICE_LOCATION' not in m:
+              m = m.replace('    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n','    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />\n',1)
+          if 'NavigationForegroundService' not in m:
+              m = m.replace('        <activity\n','        <service android:name=".haritalar.navigation.NavigationForegroundService" android:exported="false" android:foregroundServiceType="location" />\n        <activity\n',1)
+          p.write_text(m,encoding='utf-8')
+
+          # MainViewModel lifecycle hooks.
+          p = Path('app/src/main/java/com/example/haritalar/ui/MainViewModel.kt'); v=p.read_text(encoding='utf-8')
+          if 'import com.example.haritalar.navigation.NavigationForegroundService' not in v:
+              v=v.replace('import com.example.haritalar.navigation.NavigationEngine\n','import com.example.haritalar.navigation.NavigationEngine\nimport com.example.haritalar.navigation.NavigationForegroundService\n',1)
+          if 'NavigationForegroundService.start(getApplication())' not in v:
+              marker='        navigationEngine.startNavigation(route)\n'
+              if v.count(marker)!=1: raise SystemExit('start marker mismatch')
+              v=v.replace(marker,'        NavigationForegroundService.start(getApplication())\n'+marker,1)
+          if 'NavigationForegroundService.stop(getApplication())' not in v:
+              marker='        navigationEngine.stop()\n'
+              if v.count(marker)!=2: raise SystemExit('stop marker mismatch')
+              v=v.replace(marker,marker+'        NavigationForegroundService.stop(getApplication())\n')
+          p.write_text(v,encoding='utf-8')
+
+          # Unit tests.
+          p=Path('app/src/test/java/com/example/LiveSharingRetryPolicyTest.kt'); p.parent.mkdir(parents=True,exist_ok=True)
+          p.write_text('''package com.example\n\nimport com.example.haritalar.data.network.LiveSharingRetryPolicy\nimport org.junit.Assert.*\nimport org.junit.Test\n\nclass LiveSharingRetryPolicyTest {\n @Test fun transientHttpCodesRetry(){ assertTrue(LiveSharingRetryPolicy.shouldRetryHttp(408)); assertTrue(LiveSharingRetryPolicy.shouldRetryHttp(429)); assertTrue(LiveSharingRetryPolicy.shouldRetryHttp(503)); assertFalse(LiveSharingRetryPolicy.shouldRetryHttp(401)) }\n @Test fun backoffIsBounded(){ assertEquals(500L,LiveSharingRetryPolicy.backoffMs(1)); assertEquals(1500L,LiveSharingRetryPolicy.backoffMs(2)); assertEquals(0L,LiveSharingRetryPolicy.backoffMs(3)) }\n}\n''',encoding='utf-8')
+          print('guarded product changes applied')
+          PY
+      - name: Unit tests
+        run: ./gradlew :app:testDebugUnitTest --no-daemon
+      - name: Commit
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          rm -f .github/workflows/consolidate-product-final.yml
+          git add app/src/main/java/com/example/haritalar/voice/TurkishTtsManager.kt app/src/main/java/com/example/haritalar/data/network/LiveSharingClient.kt app/src/main/java/com/example/haritalar/data/network/LiveSharingRetryPolicy.kt app/src/main/java/com/example/haritalar/navigation/NavigationForegroundService.kt app/src/main/java/com/example/haritalar/ui/MainViewModel.kt app/src/main/AndroidManifest.xml app/src/test/java/com/example/LiveSharingRetryPolicyTest.kt .github/workflows/consolidate-product-final.yml
+          git diff --check
+          git commit -m 'fix: consolidate navigation product hardening'
+          git push origin HEAD:feat/consolidated-product-final
