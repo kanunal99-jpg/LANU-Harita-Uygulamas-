@@ -48,6 +48,7 @@ Gerekenler:
 - JDK 17
 - Android SDK / API 36
 - Gradle 9.3.1 (CI tarafından kurulur)
+- Live-share server: Node.js 24.x
 
 Yerel debug build:
 
