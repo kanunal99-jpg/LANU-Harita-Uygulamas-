@@ -262,35 +262,37 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            if (uiState.navigationState == NavigationState.NAVIGATING || uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING) {
-                DrivingTopInstructionBanner(
-                    progress = uiState.navigationProgress,
-                    isOffRoute = uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING ||
-                            (uiState.navigationProgress?.isOffRoute == true),
-                    isGpsWeak = uiState.userLocation?.isGpsWeak == true,
-                    departureGuidance = uiState.departureGuidance,
-                    isWrongWay = uiState.isWrongWay,
+            if (uiState.navigationState == NavigationState.NAVIGATING ||
+                uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING
+            ) {
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                )
+                        .padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    DrivingTopInstructionBanner(
+                        progress = uiState.navigationProgress,
+                        isOffRoute = uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING ||
+                                (uiState.navigationProgress?.isOffRoute == true),
+                        isGpsWeak = uiState.userLocation?.isGpsWeak == true,
+                        departureGuidance = uiState.departureGuidance,
+                        isWrongWay = uiState.isWrongWay,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    RadarWarningCard(
+                        warning = uiState.approachingCameraWarning,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    com.example.haritalar.ui.WeatherWarningCard(
+                        weather = uiState.approachingWeather,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
-
-            RadarWarningCard(
-                warning = uiState.approachingCameraWarning,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 140.dp else 100.dp)
-                    .statusBarsPadding()
-            )
-
-            com.example.haritalar.ui.WeatherWarningCard(
-                weather = uiState.approachingWeather,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 220.dp else 180.dp)
-                    .statusBarsPadding()
-            )
 
             FloatingMapControls(
                 cameraMode = uiState.cameraMode,
