@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.DirectionsWalk
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
@@ -107,7 +109,7 @@ fun TrafficSignalDetailSheet(
 
                     if (!signal.crossing.isNullOrBlank()) {
                         DetailRow(
-                            icon = Icons.Default.DirectionsWalk,
+                            icon = Icons.AutoMirrored.Filled.DirectionsWalk,
                             label = "Yaya Geçidi Tipi",
                             value = when (signal.crossing.lowercase()) {
                                 "traffic_signals" -> "Sinyalize yaya geçidi"
@@ -122,7 +124,7 @@ fun TrafficSignalDetailSheet(
 
                     if (signal.hasSound) {
                         DetailRow(
-                            icon = Icons.Default.VolumeUp,
+                            icon = Icons.AutoMirrored.Filled.VolumeUp,
                             label = "Sesli Sinyalizasyon",
                             value = "Mevcut (Görme engelli desteği)",
                             valueColor = Color(0xFF15803D)
