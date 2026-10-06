@@ -46,6 +46,12 @@ Bu çalışma bu maddeleri kod seviyesinde düzeltir ve CI ile tekrar oluşmalar
 - Sample backup/data-extraction dosyaları kaldırılarak shared preferences, database, files ve external data açık biçimde backup/device-transfer dışında bırakıldı.
 - Cleartext trafik zaten kapalıydı; korunuyor.
 
+### P1 — Android yaşam döngüsü
+
+- Aktif navigasyon için `foregroundServiceType="location"` servisi eklendi.
+- Android 13+ bildirim izni akışı mevcut konum iznini bozmadan yönetilir.
+- Servis navigasyon başlangıcında başlar; stop, varış ve ViewModel kapanışında durur.
+
 ### P1 — Yönetişim
 
 - Kök dizine `ANAYASA.md` eklendi.
@@ -70,8 +76,7 @@ Aşağıdaki noktalar sahte biçimde “tamamlandı” sayılmaz:
 1. **Bağımsız tam offline routing:** cache’te olmayan yepyeni rotayı internet olmadan hesaplayan graph engine yok.
 2. **İkinci bağımsız live-traffic provider:** şu an doğrulanmış live trafik kaynağı TomTom. Uydurma ikinci kaynak eklenmedi.
 3. **Live-share kalıcı sunucu deposu:** backend session’ları process memory’dedir; backend restart aktif paylaşımı düşürebilir. Kalıcı DB eklemek ek altyapı/maliyet kararı gerektirir.
-4. **Arka planda kesintisiz tam navigasyon:** foreground location service mimarisi henüz tamamlanmış ürün yeteneği olarak ilan edilmemelidir.
-5. **GitHub main branch koruması:** denetim başlangıcında main protected değildi. Platform izinleri elverdiğinde required checks ile branch protection etkinleştirilmelidir.
+4. **GitHub main branch koruması:** denetim başlangıcında main protected değildi. Platform izinleri elverdiğinde required checks ile branch protection etkinleştirilmelidir.
 
 Bu sınırlar kullanıcıya yanlış iddia yapılmaması için üretim dokümanında tutulur.
 
