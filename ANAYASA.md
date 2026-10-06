@@ -39,7 +39,7 @@ Bu kural özellikle şunlar için geçerlidir:
 
 - Kaynak verisi olmayan kamera noktası üretilemez.
 - Hız limiti yalnızca kaynakta varsa gösterilir; varsayılan hız limiti atanmaz.
-- Navigasyon uyarısı görünür harita alanına bağlı olamaz; 5 km uyarı zarfı için veri daha geniş bir alandan önceden yüklenmelidir.
+- Navigasyon uyarısı görünür harita alanına bağlı olamaz; sürüş hızına göre 5–10 km erken uyarı zarfı kullanılabilir ve veri en büyük uyarı zarfından daha geniş bir alandan önceden yüklenmelidir.
 - Aktif rota varken uyarılar rota koridoruna ve mümkün olduğunca aracın ilerisine filtrelenir.
 - Birincil ağ isteği başarısız olursa yapılandırılmış aynalar denenir; tüm ağ kaynakları başarısızsa yalnızca yaşı ve kapsama alanı denetlenmiş last-known-good cache kullanılabilir.
 - Cache kullanılıyorsa UI kaynağı bunu açıkça belirtir.
