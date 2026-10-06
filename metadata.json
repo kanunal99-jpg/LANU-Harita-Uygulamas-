@@ -1,7 +1,6 @@
 {
-  "name": "Lanu Harita",
-  "description": "Profesyonel Navigasyon Uygulaması. GPS takip, 3D/2D harita, canlı rota alternatifleri, dinamik trafik, şerit yönlendirme ve Türkçe sesli navigasyon.",
+  "name": "LANU Harita",
+  "description": "Android navigasyon uygulaması: gerçek GPS, rota alternatifleri, trafik doğrulama, sabit hız kamerası uyarıları, çevrimdışı harita önbelleği ve canlı konum paylaşımı.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": []
 }
-

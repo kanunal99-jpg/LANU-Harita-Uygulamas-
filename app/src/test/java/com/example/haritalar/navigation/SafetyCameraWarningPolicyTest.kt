@@ -33,6 +33,7 @@ class SafetyCameraWarningPolicyTest {
     fun speedLimitIsParsedWithoutInventingMissingLimits() {
         assertEquals(50, SafetyCameraWarningPolicy.parseSpeedLimitKmh("50 km/h"))
         assertEquals(90, SafetyCameraWarningPolicy.parseSpeedLimitKmh("90"))
+        assertEquals(80, SafetyCameraWarningPolicy.parseSpeedLimitKmh("50 mph"))
         assertNull(SafetyCameraWarningPolicy.parseSpeedLimitKmh(null))
         assertNull(SafetyCameraWarningPolicy.parseSpeedLimitKmh("unknown"))
     }

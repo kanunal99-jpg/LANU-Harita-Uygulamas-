@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -76,23 +77,31 @@ fun HaritalarNavigationApp(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         viewModel.startLocationUpdates(fineGranted || coarseGranted)
     }
 
     LaunchedEffect(Unit) {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val missingPermissions = mutableListOf<String>()
         if (fine || coarse) {
             viewModel.startLocationUpdates(true)
         } else {
-            permissionLauncher.launch(
-                arrayOf(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            )
+            missingPermissions += Manifest.permission.ACCESS_FINE_LOCATION
+            missingPermissions += Manifest.permission.ACCESS_COARSE_LOCATION
+        }
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            missingPermissions += Manifest.permission.POST_NOTIFICATIONS
+        }
+        if (missingPermissions.isNotEmpty()) {
+            permissionLauncher.launch(missingPermissions.toTypedArray())
         }
     }
 
@@ -122,7 +131,22 @@ fun HaritalarNavigationApp(
         }
     }
 
-    LaunchedEffect(uiState.userLocation, safetyCameras) {
+    LaunchedEffect(
+        uiState.navigationState,
+        uiState.userLocation?.point,
+        uiState.isSafetyCamerasLayerVisible
+    ) {
+        val isDriving = uiState.navigationState == NavigationState.NAVIGATING ||
+            uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING
+        val point = uiState.userLocation?.point
+        if (isDriving && point != null && uiState.isSafetyCamerasLayerVisible) {
+            safetyCameraViewModel.prefetchForNavigation(point)
+        } else {
+            safetyCameraViewModel.clearNavigationPrefetch()
+        }
+    }
+
+    LaunchedEffect(uiState.userLocation, safetyCameras, uiState.selectedRoute, uiState.navigationState) {
         viewModel.checkSafetyCameraProximity(safetyCameras)
         viewModel.checkWeatherProximity()
     }
@@ -247,35 +271,37 @@ fun HaritalarNavigationApp(
                 )
             }
 
-            if (uiState.navigationState == NavigationState.NAVIGATING || uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING) {
-                DrivingTopInstructionBanner(
-                    progress = uiState.navigationProgress,
-                    isOffRoute = uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING ||
-                            (uiState.navigationProgress?.isOffRoute == true),
-                    isGpsWeak = uiState.userLocation?.isGpsWeak == true,
-                    departureGuidance = uiState.departureGuidance,
-                    isWrongWay = uiState.isWrongWay,
+            if (uiState.navigationState == NavigationState.NAVIGATING ||
+                uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING
+            ) {
+                Column(
                     modifier = Modifier
                         .align(Alignment.TopCenter)
                         .statusBarsPadding()
-                )
+                        .padding(horizontal = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    DrivingTopInstructionBanner(
+                        progress = uiState.navigationProgress,
+                        isOffRoute = uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING ||
+                                (uiState.navigationProgress?.isOffRoute == true),
+                        isGpsWeak = uiState.userLocation?.isGpsWeak == true,
+                        departureGuidance = uiState.departureGuidance,
+                        isWrongWay = uiState.isWrongWay,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    RadarWarningCard(
+                        warning = uiState.approachingCameraWarning,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    com.example.haritalar.ui.WeatherWarningCard(
+                        weather = uiState.approachingWeather,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
-
-            RadarWarningCard(
-                camera = uiState.approachingCamera,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 140.dp else 100.dp)
-                    .statusBarsPadding()
-            )
-
-            com.example.haritalar.ui.WeatherWarningCard(
-                weather = uiState.approachingWeather,
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 220.dp else 180.dp)
-                    .statusBarsPadding()
-            )
 
             FloatingMapControls(
                 cameraMode = uiState.cameraMode,

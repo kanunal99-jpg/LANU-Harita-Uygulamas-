@@ -10,8 +10,16 @@ on:
     paths:
       - app/**
       - server/**
-      - docs/P1_PROFESSIONAL_READINESS.md
+      - docs/**
+      - ANAYASA.md
+      - README.md
+      - metadata.json
+      - .github/scripts/**
       - .github/workflows/p1-professional-pr.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -21,6 +29,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Enforce LANU constitution
+        run: bash .github/scripts/constitution-quality-gate.sh
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

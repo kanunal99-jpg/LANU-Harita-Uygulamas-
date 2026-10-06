@@ -50,7 +50,10 @@ object SafetyCameraWarningPolicy {
 
     fun parseSpeedLimitKmh(raw: String?): Int? {
         if (raw.isNullOrBlank()) return null
-        val match = Regex("\\d+(?:[.,]\\d+)?").find(raw.trim()) ?: return null
-        return match.value.replace(',', '.').toDoubleOrNull()?.takeIf { it in 5.0..250.0 }?.toInt()
+        val normalized = raw.trim().lowercase()
+        val match = Regex("\\d+(?:[.,]\\d+)?").find(normalized) ?: return null
+        val numeric = match.value.replace(',', '.').toDoubleOrNull() ?: return null
+        val kmh = if ("mph" in normalized) numeric * 1.609344 else numeric
+        return kmh.takeIf { it in 5.0..250.0 }?.toInt()
     }
 }

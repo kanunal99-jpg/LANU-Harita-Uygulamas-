@@ -29,6 +29,7 @@ import com.example.haritalar.navigation.AppLocationManager
 import com.example.haritalar.navigation.CompassHeadingSensor
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
+import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
@@ -90,6 +91,7 @@ data class MainUiState(
     val liveShareUrl: String? = null,
     val isSafetyCamerasLayerVisible: Boolean = true,
     val approachingCamera: com.example.haritalar.model.SafetyCamera? = null,
+    val approachingCameraWarning: com.example.haritalar.navigation.SafetyCameraWarningPolicy.ProximityWarning? = null,
     val currentViewportBbox: com.example.haritalar.model.TrafficSignalBoundingBox? = null,
     val currentZoomLevel: Float = 0f,
     val isWeatherLayerVisible: Boolean = true,
@@ -491,6 +493,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = null
         )
         navigationEngine.startNavigation(route)
+        NavigationForegroundService.start(
+            getApplication(),
+            _uiState.value.selectedDestination?.displayName
+        )
         startPeriodicTrafficRefresh()
     }
 
@@ -500,6 +506,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
+        NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
         ttsManager.stop()
@@ -556,6 +563,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleArrival(summary: TripSummary) {
+        NavigationForegroundService.stop(getApplication())
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.ARRIVED, tripSummary = summary, statusMessage = "Hedefinize ulaştınız!"
         )
@@ -650,7 +658,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val newVisible = !_uiState.value.isSafetyCamerasLayerVisible
         _uiState.value = _uiState.value.copy(
             isSafetyCamerasLayerVisible = newVisible,
-            approachingCamera = if (newVisible) _uiState.value.approachingCamera else null
+            approachingCamera = if (newVisible) _uiState.value.approachingCamera else null,
+            approachingCameraWarning = if (newVisible) _uiState.value.approachingCameraWarning else null
         )
         if (!newVisible) {
             announcedCameraWarningBuckets.clear()
@@ -691,25 +700,54 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun checkSafetyCameraProximity(cameras: List<com.example.haritalar.model.SafetyCamera>) {
-        if (!_uiState.value.isSafetyCamerasLayerVisible || _uiState.value.navigationState != NavigationState.NAVIGATING) {
-            _uiState.value = _uiState.value.copy(approachingCamera = null)
+        val navState = _uiState.value.navigationState
+        val isDriving = navState == NavigationState.NAVIGATING || navState == NavigationState.OFF_ROUTE_REROUTING
+        if (!_uiState.value.isSafetyCamerasLayerVisible || !isDriving) {
+            _uiState.value = _uiState.value.copy(
+                approachingCamera = null,
+                approachingCameraWarning = null
+            )
             return
         }
 
-        val userLocation = currentRoutingLocation() ?: return
+        val userLocation = currentRoutingLocation() ?: run {
+            _uiState.value = _uiState.value.copy(
+                approachingCamera = null,
+                approachingCameraWarning = null
+            )
+            return
+        }
+
+        val routeGeometry = _uiState.value.selectedRoute?.geometry.orEmpty()
+        val routeScopedCameras = if (navState == NavigationState.NAVIGATING && routeGeometry.size >= 2) {
+            com.example.haritalar.navigation.SafetyCameraRouteFilterPolicy.relevantForRoute(
+                cameras = cameras,
+                route = routeGeometry,
+                userPoint = _uiState.value.navigationProgress?.snappedLocation ?: userLocation.point
+            )
+        } else {
+            cameras
+        }
+
         val warning = com.example.haritalar.navigation.SafetyCameraWarningPolicy.nearest(
-            cameras = cameras,
+            cameras = routeScopedCameras,
             point = userLocation.point,
             speedKmh = userLocation.speedKmh
         )
 
         if (warning == null) {
-            _uiState.value = _uiState.value.copy(approachingCamera = null)
+            _uiState.value = _uiState.value.copy(
+                approachingCamera = null,
+                approachingCameraWarning = null
+            )
             return
         }
 
         val camera = warning.camera
-        _uiState.value = _uiState.value.copy(approachingCamera = camera)
+        _uiState.value = _uiState.value.copy(
+            approachingCamera = camera,
+            approachingCameraWarning = warning
+        )
 
         if (warning.distanceBucketMeters > 0) {
             val bucketKey = "${camera.id}:${warning.distanceBucketMeters}"
@@ -909,5 +947,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.stopLocationUpdates()
         ttsManager.shutdown()
         navigationEngine.stop()
+        NavigationForegroundService.stop(getApplication())
     }
 }

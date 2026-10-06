@@ -4,6 +4,10 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -13,6 +17,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Enforce LANU constitution
+        run: bash .github/scripts/constitution-quality-gate.sh
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
