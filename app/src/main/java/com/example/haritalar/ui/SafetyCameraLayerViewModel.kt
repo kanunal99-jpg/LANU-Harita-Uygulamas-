@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 /**
  * Safety-camera state with two independent scopes:
  * 1) visible viewport, for map rendering
- * 2) navigation prefetch area, for warnings up to 5 km even when the map is tightly zoomed
+ * 2) navigation prefetch area, for speed-adaptive warnings up to 10 km even when the map is tightly zoomed
  *
  * Last successful data is retained if a provider/mirror fails.
  */
