@@ -20,6 +20,7 @@ Bu belge üretimde gerçekten desteklenen yetenekleri ve bilinçli ürün sını
 - Radar UI: mesafe + kaynak + yalnızca doğrulanmışsa hız limiti.
 - Sürüş hızı ve yolculuk ortalama hızı km/h.
 - Gerçek live-share backend; süreli token + revoke; PUT/DELETE için bounded retry.
+- Aktif navigasyonda Android location foreground service; rota bittiğinde güvenli stop yaşam döngüsü.
 - Android lint, unit test, emulator instrumentation, debug APK ve SHA-256 release kapıları.
 
 ## Bilinçli olarak uydurulmayan yetenekler
@@ -35,10 +36,6 @@ Doğrulanmış canlı trafik provider’ı şu an TomTom’dur. Kısa süreli ca
 ### Live-share kalıcılığı
 
 Sunucu token/TTL/revoke uygular fakat session store process memory’dedir. Sunucu restart’ı aktif paylaşımı sonlandırabilir. Kalıcı DB için ayrıca altyapı ve maliyet kararı gerekir.
-
-### Arka planda kesintisiz navigasyon
-
-Foreground location service tamamlanıp cihaz/CI yaşam döngüsü testleri geçmeden uygulama “arka planda kesintisiz navigasyon” iddiası taşımaz.
 
 ## Güvenlik
 
