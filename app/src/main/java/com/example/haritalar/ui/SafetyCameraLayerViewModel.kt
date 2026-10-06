@@ -1,9 +1,10 @@
 package com.example.haritalar.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.network.SafetyCameraAreaPolicy
-import com.example.haritalar.data.network.SafetyCameraService
+import com.example.haritalar.data.repository.SafetyCameraRepository
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
@@ -22,9 +23,8 @@ import kotlinx.coroutines.launch
  *
  * Last successful data is retained if a provider/mirror fails.
  */
-class SafetyCameraLayerViewModel(
-    private val service: SafetyCameraService = SafetyCameraService()
-) : ViewModel() {
+class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository = SafetyCameraRepository(application)
     private val _cameras = MutableStateFlow<List<SafetyCamera>>(emptyList())
     val cameras: StateFlow<List<SafetyCamera>> = _cameras.asStateFlow()
 
@@ -43,7 +43,7 @@ class SafetyCameraLayerViewModel(
         viewportJob?.cancel()
         viewportJob = viewModelScope.launch {
             delay(400)
-            when (val result = service.fetchSpeedCamerasInBoundingBox(bbox, maxCameras = 500)) {
+            when (val result = repository.get(bbox, maxCameras = 500)) {
                 is SafetyCameraFetchResult.Success -> {
                     lastViewportRequest = bbox
                     viewportCameras = result.cameras
@@ -70,7 +70,7 @@ class SafetyCameraLayerViewModel(
         navigationJob?.cancel()
         navigationJob = viewModelScope.launch {
             val bbox = SafetyCameraAreaPolicy.boundingBoxAround(center, radiusMeters)
-            when (val result = service.fetchSpeedCamerasInBoundingBox(bbox, maxCameras = 500)) {
+            when (val result = repository.get(bbox, maxCameras = 500)) {
                 is SafetyCameraFetchResult.Success -> {
                     lastNavigationCenter = center
                     navigationCameras = result.cameras
