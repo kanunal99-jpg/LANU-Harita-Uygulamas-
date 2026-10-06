@@ -5,7 +5,17 @@ import { URL } from 'node:url';
 const port = Number(process.env.PORT || 10000);
 const publicBaseUrl = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 const sessionTtlSeconds = Number(process.env.LIVE_SHARE_TTL_SECONDS || 7200);
+const revision = process.env.RENDER_GIT_COMMIT || null;
 const sessions = new Map();
+const MAX_JSON_BYTES = 32 * 1024;
+
+class HttpError extends Error {
+  constructor(status, code) {
+    super(code);
+    this.status = status;
+    this.code = code;
+  }
+}
 
 const json = (res, status, body) => {
   res.writeHead(status, {
@@ -20,9 +30,18 @@ const json = (res, status, body) => {
 
 const readJson = async (req) => {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let totalBytes = 0;
+  for await (const chunk of req) {
+    totalBytes += chunk.length;
+    if (totalBytes > MAX_JSON_BYTES) throw new HttpError(413, 'payload_too_large');
+    chunks.push(chunk);
+  }
   if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  } catch {
+    throw new HttpError(400, 'invalid_json');
+  }
 };
 
 const hashToken = (token) => crypto.createHash('sha256').update(token).digest('hex');
@@ -57,13 +76,25 @@ async function handle(req, res) {
   const parts = url.pathname.split('/').filter(Boolean);
 
   if (req.method === 'GET' && url.pathname === '/health') {
-    return json(res, 200, { ok: true, service: 'lanu-harita-live-share', sessions: sessions.size });
+    return json(res, 200, {
+      ok: true,
+      service: 'lanu-harita-live-share',
+      sessions: sessions.size,
+      revision,
+      storage: 'memory'
+    });
   }
 
   if (req.method === 'POST' && url.pathname === '/v1/sessions') {
     const body = await readJson(req);
-    if (!validCoordinate(body.latitude, -90, 90) || !validCoordinate(body.longitude, -180, 180)) {
-      return json(res, 400, { error: 'invalid_initial_location' });
+    if (
+      !validCoordinate(body.latitude, -90, 90) ||
+      !validCoordinate(body.longitude, -180, 180) ||
+      !validNumber(body.bearing, 0, 360) ||
+      !validNumber(body.speedKmh, 0, 400) ||
+      !validNumber(body.etaSeconds, 0, 172800)
+    ) {
+      return json(res, 400, { error: 'invalid_initial_location_payload' });
     }
     const id = newId();
     const token = newToken();
@@ -81,7 +112,12 @@ async function handle(req, res) {
     };
     sessions.set(id, session);
     const viewerUrl = `${publicBaseUrl}/share/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`;
-    return json(res, 201, { sessionId: id, token, expiresAt: new Date(session.expiresAt).toISOString(), viewerUrl });
+    return json(res, 201, {
+      sessionId: id,
+      token,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+      viewerUrl
+    });
   }
 
   if (req.method === 'GET' && parts[0] === 'share' && parts[1]) {
@@ -150,5 +186,8 @@ async function handle(req, res) {
 setInterval(cleanupExpired, 60_000).unref();
 http.createServer((req, res) => handle(req, res).catch((error) => {
   console.error(error);
-  json(res, 500, { error: 'internal_server_error' });
+  if (error instanceof HttpError) {
+    return json(res, error.status, { error: error.code });
+  }
+  return json(res, 500, { error: 'internal_server_error' });
 })).listen(port, '0.0.0.0', () => console.log(`LANU live-share listening on ${port}`));
