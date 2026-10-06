@@ -1,6 +1,11 @@
 package com.example.haritalar.ui
 
 import android.app.Application
+import android.content.Context
+import android.os.Build
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.db.FavoritePlace
@@ -477,7 +482,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
-        announcedCameraWarningBuckets.clear()
+        announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
         val currentHeading = _uiState.value.vehicleHeadingState.heading
         val depGuidance = VehicleHeadingManager.buildDepartureGuidance(
@@ -510,7 +515,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
         ttsManager.stop()
-        announcedCameraWarningBuckets.clear()
+        announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.IDLE, navigationProgress = null, selectedRoute = null,
@@ -662,7 +667,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             approachingCameraWarning = if (newVisible) _uiState.value.approachingCameraWarning else null
         )
         if (!newVisible) {
-            announcedCameraWarningBuckets.clear()
+            announcedCameraWarningMilestones.clear()
             lastOverspeedCameraWarningKey = null
         }
     }
@@ -687,7 +692,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } else _uiState.value = _uiState.value.copy(approachingWeather = null)
     }
 
-    private val announcedCameraWarningBuckets = mutableSetOf<String>()
+    private val announcedCameraWarningMilestones = mutableSetOf<String>()
     private var lastOverspeedCameraWarningKey: String? = null
 
     private fun formatSafetyWarningDistance(distanceBucketMeters: Int): String = when {
@@ -697,6 +702,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             else "${distanceBucketMeters / 1000.0} kilometre".replace('.', ',')
         }
         else -> "$distanceBucketMeters metre"
+    }
+
+    private fun vibrateSafetyWarning(durationMs: Long) {
+        val app = getApplication<Application>()
+        val vibrator: Vibrator? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            app.getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            app.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+        }
+
+        if (vibrator?.hasVibrator() != true) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(
+                VibrationEffect.createOneShot(
+                    durationMs.coerceIn(80L, 800L),
+                    VibrationEffect.DEFAULT_AMPLITUDE
+                )
+            )
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(durationMs.coerceIn(80L, 800L))
+        }
     }
 
     fun checkSafetyCameraProximity(cameras: List<com.example.haritalar.model.SafetyCamera>) {
@@ -749,12 +777,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             approachingCameraWarning = warning
         )
 
-        if (warning.distanceBucketMeters > 0) {
-            val bucketKey = "${camera.id}:${warning.distanceBucketMeters}"
-            if (announcedCameraWarningBuckets.add(bucketKey)) {
+        val milestone = warning.announcementMilestoneMeters
+        if (milestone != null && milestone > 0) {
+            val milestoneKey = "${camera.id}:$milestone"
+            if (announcedCameraWarningMilestones.add(milestoneKey)) {
                 ttsManager.speak(
-                    "Dikkat. ${formatSafetyWarningDistance(warning.distanceBucketMeters)} ileride radar noktası var."
+                    "Erken uyarı. ${formatSafetyWarningDistance(milestone)} ileride sabit hız kamerası noktası var."
                 )
+                vibrateSafetyWarning(140L)
             }
         }
 
@@ -763,7 +793,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val overspeedKey = "${camera.id}:$speedLimit"
             if (lastOverspeedCameraWarningKey != overspeedKey) {
                 lastOverspeedCameraWarningKey = overspeedKey
-                ttsManager.speak("Dikkat. Hız sınırını aştınız. Hız sınırı $speedLimit kilometre saat.")
+                ttsManager.speak(
+                    "Dikkat. Doğrulanmış hız sınırı $speedLimit kilometre saat. Güvenli şekilde hızınızı limite düşürün."
+                )
+                vibrateSafetyWarning(320L)
             }
         } else if (!warning.overspeed) {
             lastOverspeedCameraWarningKey = null

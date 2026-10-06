@@ -45,28 +45,35 @@ fun RadarWarningCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Sabit hız kamerası uyarısı",
+                        contentDescription = "Sabit hız kamerası erken uyarısı",
                         tint = Color.White,
                         modifier = Modifier.size(34.dp)
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "HIZ KAMERASI • ${formatRadarDistance(warning.distanceMeters)}",
+                            text = "ERKEN UYARI • SABİT HIZ KAMERASI • ${formatRadarDistance(warning.distanceMeters)}",
                             color = Color.White,
                             fontWeight = FontWeight.Black,
                             fontSize = 15.sp
                         )
                         Text(
                             text = if (warning.overspeed) {
-                                "Hızın doğrulanmış sınırın üzerinde."
+                                "Doğrulanmış hız sınırının üzerindesin; güvenli şekilde yavaşla."
                             } else {
-                                "Aktif rota üzerinde sabit kamera noktası."
+                                "Aktif rota üzerindeki doğrulanmış sabit kamera noktası."
                             },
                             color = Color.White.copy(alpha = 0.96f),
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp
                         )
+                        warning.estimatedSecondsToCamera?.let { seconds ->
+                            Text(
+                                text = "Mevcut hızla yaklaşık ${formatEta(seconds)} sonra.",
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 12.sp
+                            )
+                        }
                         Text(
                             text = warning.speedLimitKmh?.let { "Doğrulanmış hız sınırı: $it km/h" }
                                 ?: "Hız limiti kaynakta doğrulanamadı.",
@@ -90,5 +97,15 @@ private fun formatRadarDistance(distanceMeters: Double): String {
         String.format(Locale.US, "%.1f km", distanceMeters / 1000.0)
     } else {
         "${distanceMeters.coerceAtLeast(0.0).toInt()} m"
+    }
+}
+
+private fun formatEta(seconds: Int): String {
+    return if (seconds >= 60) {
+        val minutes = seconds / 60
+        val remainingSeconds = seconds % 60
+        if (remainingSeconds >= 30) "${minutes + 1} dk" else "$minutes dk"
+    } else {
+        "$seconds sn"
     }
 }

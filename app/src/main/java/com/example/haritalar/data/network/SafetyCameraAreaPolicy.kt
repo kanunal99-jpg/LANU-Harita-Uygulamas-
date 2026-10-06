@@ -10,8 +10,12 @@ import kotlin.math.max
  * Keeps navigation warnings independent from the currently visible map viewport.
  */
 object SafetyCameraAreaPolicy {
-    const val NAVIGATION_PREFETCH_RADIUS_METERS = 6_500.0
-    const val NAVIGATION_REFRESH_DISTANCE_METERS = 1_200.0
+    /**
+     * Must stay larger than SafetyCameraWarningPolicy.MAX_WARNING_DISTANCE_METERS so
+     * movement/network latency does not create a blind edge at the warning horizon.
+     */
+    const val NAVIGATION_PREFETCH_RADIUS_METERS = 12_000.0
+    const val NAVIGATION_REFRESH_DISTANCE_METERS = 1_500.0
 
     fun boundingBoxAround(
         center: GeoPoint,

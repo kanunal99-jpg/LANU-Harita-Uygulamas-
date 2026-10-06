@@ -4,6 +4,7 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -17,16 +18,44 @@ class SafetyCameraWarningPolicyTest {
     )
 
     @Test
-    fun warningBucketsCoverFiveKilometersIn500MeterSteps() {
-        assertEquals(5000, SafetyCameraWarningPolicy.warningBucket(5000.0))
+    fun warningBucketsCoverTenKilometersIn500MeterSteps() {
+        assertEquals(10000, SafetyCameraWarningPolicy.warningBucket(10000.0))
+        assertEquals(10000, SafetyCameraWarningPolicy.warningBucket(9999.0))
         assertEquals(5000, SafetyCameraWarningPolicy.warningBucket(4999.0))
         assertEquals(4500, SafetyCameraWarningPolicy.warningBucket(4500.0))
         assertEquals(500, SafetyCameraWarningPolicy.warningBucket(1.0))
     }
 
     @Test
-    fun outsideFiveKilometersProducesNoWarning() {
+    fun warningRadiusAdaptsToVehicleSpeed() {
+        assertEquals(5000, SafetyCameraWarningPolicy.warningRadiusMeters(40f))
+        assertEquals(6500, SafetyCameraWarningPolicy.warningRadiusMeters(70f))
+        assertEquals(8000, SafetyCameraWarningPolicy.warningRadiusMeters(90f))
+        assertEquals(10000, SafetyCameraWarningPolicy.warningRadiusMeters(110f))
+    }
+
+    @Test
+    fun outsideAdaptiveEnvelopeProducesNoWarning() {
         assertNull(SafetyCameraWarningPolicy.evaluate(camera, 5000.1, 40f))
+        assertNull(SafetyCameraWarningPolicy.evaluate(camera, 8000.1, 95f))
+        assertNotNull(SafetyCameraWarningPolicy.evaluate(camera, 9000.0, 120f))
+    }
+
+    @Test
+    fun announcementMilestonesAreSparseAndEarly() {
+        assertEquals(10000, SafetyCameraWarningPolicy.announcementMilestone(9900.0))
+        assertEquals(8000, SafetyCameraWarningPolicy.announcementMilestone(7900.0))
+        assertEquals(6500, SafetyCameraWarningPolicy.announcementMilestone(6400.0))
+        assertEquals(5000, SafetyCameraWarningPolicy.announcementMilestone(4900.0))
+        assertEquals(3000, SafetyCameraWarningPolicy.announcementMilestone(2990.0))
+        assertEquals(500, SafetyCameraWarningPolicy.announcementMilestone(450.0))
+        assertNull(SafetyCameraWarningPolicy.announcementMilestone(10000.1))
+    }
+
+    @Test
+    fun etaIsComputedOnlyAtMeaningfulDrivingSpeed() {
+        assertEquals(300, SafetyCameraWarningPolicy.estimateSecondsToCamera(10_000.0, 120f))
+        assertNull(SafetyCameraWarningPolicy.estimateSecondsToCamera(1000.0, 4f))
     }
 
     @Test

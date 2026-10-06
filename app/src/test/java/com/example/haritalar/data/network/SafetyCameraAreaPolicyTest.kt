@@ -7,12 +7,13 @@ import org.junit.Test
 
 class SafetyCameraAreaPolicyTest {
     @Test
-    fun navigationPrefetchCoversWarningEnvelope() {
+    fun navigationPrefetchCoversTenKilometerWarningEnvelopeWithBuffer() {
         val center = GeoPoint(41.015137, 28.979530)
         val bbox = SafetyCameraAreaPolicy.boundingBoxAround(center)
 
         assertTrue(bbox.isValid())
-        assertTrue(bbox.contains(GeoPoint(41.015137, 29.050000)))
+        assertTrue(bbox.contains(GeoPoint(41.105000, 28.979530)))
+        assertTrue(bbox.contains(GeoPoint(41.015137, 29.110000)))
         assertTrue(bbox.contains(center))
     }
 
