@@ -17,6 +17,10 @@ on:
       - .github/scripts/**
       - .github/workflows/p1-professional-pr.yml
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
