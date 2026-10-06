@@ -18,32 +18,20 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class TrafficSignalCache(
     private val trafficSignalDao: TrafficSignalDao? = null,
-    private val ttlMillis: Long = 2 * 60 * 60 * 1000L // 2 Hours TTL
+    private val ttlMillis: Long = 2 * 60 * 60 * 1000L, // 2 Hours TTL
+    private val nowProvider: () -> Long = System::currentTimeMillis
 ) {
     companion object {
         private const val TAG = "TrafficSignalCache"
-        // Grid cell step in degrees (~1.1 km grid)
-        private const val GRID_STEP = 0.01
     }
 
     private data class MemoryEntry(
-        val signals: List<TrafficSignal>,
-        val timestamp: Long
+        val signal: TrafficSignal,
+        val cachedAt: Long
     )
 
-    // Grid-cell key -> MemoryEntry
-    private val inMemoryCache = ConcurrentHashMap<String, MemoryEntry>()
-    // Set of all cached signal IDs in memory to guarantee 0 duplicates
-    private val inMemorySignalIndex = ConcurrentHashMap<Long, TrafficSignal>()
-
-    /**
-     * Generates a discrete grid key for a given lat/lon.
-     */
-    private fun getGridKey(lat: Double, lon: Double): String {
-        val latIndex = (lat / GRID_STEP).toInt()
-        val lonIndex = (lon / GRID_STEP).toInt()
-        return "$latIndex:$lonIndex"
-    }
+    // OSM node id -> signal + freshness timestamp.
+    private val inMemorySignalIndex = ConcurrentHashMap<Long, MemoryEntry>()
 
     /**
      * Retrieves cached traffic signals inside the bounding box.
@@ -54,15 +42,16 @@ class TrafficSignalCache(
         bbox: TrafficSignalBoundingBox,
         allowStale: Boolean = false
     ): List<TrafficSignal> = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
+        val now = nowProvider()
         val results = mutableListOf<TrafficSignal>()
         val seenIds = mutableSetOf<Long>()
 
         // 1. Check in-memory index first
-        for ((_, signal) in inMemorySignalIndex) {
-            if (bbox.contains(signal.point)) {
-                if (seenIds.add(signal.id)) {
-                    results.add(signal)
+        for ((_, entry) in inMemorySignalIndex) {
+            val isExpired = (now - entry.cachedAt) > ttlMillis
+            if ((!isExpired || allowStale) && bbox.contains(entry.signal.point)) {
+                if (seenIds.add(entry.signal.id)) {
+                    results.add(entry.signal)
                 }
             }
         }
@@ -98,7 +87,7 @@ class TrafficSignalCache(
                         )
                         if (seenIds.add(signal.id)) {
                             results.add(signal)
-                            inMemorySignalIndex[signal.id] = signal
+                            inMemorySignalIndex[signal.id] = MemoryEntry(signal, entity.cachedAt)
                         }
                     }
                 }
@@ -121,15 +110,12 @@ class TrafficSignalCache(
         bbox: TrafficSignalBoundingBox,
         signals: List<TrafficSignal>
     ) = withContext(Dispatchers.IO) {
-        val now = System.currentTimeMillis()
+        val now = nowProvider()
 
         // 1. Store into memory index
         for (signal in signals) {
-            inMemorySignalIndex[signal.id] = signal
+            inMemorySignalIndex[signal.id] = MemoryEntry(signal, now)
         }
-
-        val gridKey = "${getGridKey(bbox.south, bbox.west)}_${getGridKey(bbox.north, bbox.east)}"
-        inMemoryCache[gridKey] = MemoryEntry(signals, now)
 
         // 2. Persist into Room Database
         if (trafficSignalDao != null && signals.isNotEmpty()) {
@@ -160,7 +146,6 @@ class TrafficSignalCache(
      * Clears in-memory cache for testing or manual reset.
      */
     fun clearMemory() {
-        inMemoryCache.clear()
         inMemorySignalIndex.clear()
     }
 
@@ -170,7 +155,7 @@ class TrafficSignalCache(
     suspend fun pruneExpired() = withContext(Dispatchers.IO) {
         if (trafficSignalDao != null) {
             try {
-                val expiryThreshold = System.currentTimeMillis() - ttlMillis
+                val expiryThreshold = nowProvider() - ttlMillis
                 trafficSignalDao.deleteExpired(expiryThreshold)
             } catch (e: Exception) {
                 Log.w(TAG, "Error pruning expired traffic signals: ${e.message}")
