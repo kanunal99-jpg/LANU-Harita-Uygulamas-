@@ -29,6 +29,7 @@ import com.example.haritalar.navigation.AppLocationManager
 import com.example.haritalar.navigation.CompassHeadingSensor
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
+import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
@@ -492,6 +493,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = null
         )
         navigationEngine.startNavigation(route)
+        NavigationForegroundService.start(
+            getApplication(),
+            _uiState.value.selectedDestination?.displayName
+        )
         startPeriodicTrafficRefresh()
     }
 
@@ -501,6 +506,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
+        NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
         ttsManager.stop()
@@ -557,6 +563,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun handleArrival(summary: TripSummary) {
+        NavigationForegroundService.stop(getApplication())
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.ARRIVED, tripSummary = summary, statusMessage = "Hedefinize ulaştınız!"
         )
@@ -940,5 +947,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.stopLocationUpdates()
         ttsManager.shutdown()
         navigationEngine.stop()
+        NavigationForegroundService.stop(getApplication())
     }
 }
