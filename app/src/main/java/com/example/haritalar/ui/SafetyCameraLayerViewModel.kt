@@ -67,6 +67,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             return
         }
 
+        lastNavigationCenter = center
         navigationJob?.cancel()
         navigationJob = viewModelScope.launch {
             val bbox = SafetyCameraAreaPolicy.boundingBoxAround(center, radiusMeters)
@@ -77,6 +78,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
                     publishMerged()
                 }
                 is SafetyCameraFetchResult.Error -> {
+                    lastNavigationCenter = null
                     if (result.fallbackCameras.isNotEmpty()) {
                         navigationCameras = result.fallbackCameras
                         publishMerged()
