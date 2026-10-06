@@ -166,7 +166,7 @@ fun TrafficInspectorDialog(
                             )
                             if (trafficStatus.averageSpeedKmh != null) {
                                 Text(
-                                    text = "Ort. Hız: ${trafficStatus.averageSpeedKmh.toInt()} km/s",
+                                    text = "Ort. Hız: ${trafficStatus.averageSpeedKmh.toInt()} km/h",
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Medium,
                                     color = Color(0xFF1B5E20)
@@ -622,8 +622,8 @@ fun TrafficInspectorDialog(
 
                                     if (res.isSuccess) {
                                         Text(
-                                            text = "• Anlık Akış Hızı: ${res.currentSpeedKmh.toInt()} km/s\n" +
-                                                    "• Normal Serbest Hız: ${res.freeFlowSpeedKmh.toInt()} km/s\n" +
+                                            text = "• Anlık Akış Hızı: ${res.currentSpeedKmh.toInt()} km/h\n" +
+                                                    "• Normal Serbest Hız: ${res.freeFlowSpeedKmh.toInt()} km/h\n" +
                                                     "• Güvenilirlik Skoru: %${(res.confidence * 100).toInt()}\n" +
                                                     "• Gecikme: ${res.delaySeconds} sn\n" +
                                                     "• Segment Koordinat Sayısı: ${res.coordinateCount}",
