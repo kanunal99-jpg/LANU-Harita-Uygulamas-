@@ -713,13 +713,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         val routeGeometry = _uiState.value.selectedRoute?.geometry.orEmpty()
         val routeScopedCameras = if (navState == NavigationState.NAVIGATING && routeGeometry.size >= 2) {
-            cameras.filter { camera ->
-                com.example.haritalar.data.traffic.TrafficRouteMatcher.isPointNearPolyline(
-                    camera.point,
-                    routeGeometry,
-                    180.0
-                )
-            }
+            com.example.haritalar.navigation.SafetyCameraRouteFilterPolicy.relevantForRoute(
+                cameras = cameras,
+                route = routeGeometry,
+                userPoint = _uiState.value.navigationProgress?.snappedLocation ?: userLocation.point
+            )
         } else {
             cameras
         }
