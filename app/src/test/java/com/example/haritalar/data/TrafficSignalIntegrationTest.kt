@@ -123,6 +123,25 @@ class TrafficSignalIntegrationTest {
     }
 
     @Test
+    fun testTrafficSignalCache_respectsFreshnessAndExplicitStaleFallback() = runBlocking {
+        var now = 1_000L
+        val cache = TrafficSignalCache(
+            trafficSignalDao = null,
+            ttlMillis = 100L,
+            nowProvider = { now }
+        )
+        val bbox = TrafficSignalBoundingBox(south = 40.0, west = 28.0, north = 42.0, east = 30.0)
+        val signal = TrafficSignal(id = 701L, point = GeoPoint(41.0, 29.0))
+
+        cache.putSignals(bbox, listOf(signal))
+        assertEquals(1, cache.getSignalsForBoundingBox(bbox, allowStale = false).size)
+
+        now += 101L
+        assertTrue(cache.getSignalsForBoundingBox(bbox, allowStale = false).isEmpty())
+        assertEquals(1, cache.getSignalsForBoundingBox(bbox, allowStale = true).size)
+    }
+
+    @Test
     fun testTrafficSignalRepository_zoomCutoff() = runBlocking {
         val repo = TrafficSignalRepository()
         val bbox = TrafficSignalBoundingBox(south = 41.0, west = 28.9, north = 41.1, east = 29.0)
