@@ -23,6 +23,8 @@ test ! -e app/src/main/java/com/example/DrivingBottomDashboard.kt || fail "dupli
 grep -q 'NAVIGATION_PREFETCH_RADIUS_METERS = 6_500.0' app/src/main/java/com/example/haritalar/data/network/SafetyCameraAreaPolicy.kt || fail "radar navigasyon prefetch zarfı korunmuyor"
 grep -q 'timeout-minutes: 45' .github/workflows/android-apk.yml || fail "APK pipeline timeout sınırı eksik"
 grep -q 'actions/setup-java@v6.0.1' .github/workflows/android-apk.yml || fail "APK pipeline güncel Java action sürümünü kullanmıyor"
+grep -q '"node": "24.x"' server/package.json || fail "live-share production Node sürümü 24.x ile sabitlenmemiş"
+grep -q "node-version: '24'" .github/workflows/live-share-server-test.yml || fail "server CI production Node 24 ile hizalı değil"
 test -s .github/workflows/production-live-share-smoke.yml || fail "production live-share smoke workflow eksik"
 
 if grep -R --line-number --include='*.kt' ' km/s' app/src/main; then
