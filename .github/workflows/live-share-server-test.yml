@@ -3,7 +3,10 @@ name: Live Share Server Test
 on:
   push:
     branches:
-      - feat/p1-offline-routing-consolidation
+      - main
+    paths:
+      - server/**
+      - .github/workflows/live-share-server-test.yml
   pull_request:
     branches:
       - main
@@ -17,14 +20,15 @@ permissions:
 jobs:
   server-smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v7.0.0
         with:
-          node-version: '20'
+          node-version: '24'
           cache: npm
           cache-dependency-path: server/package-lock.json
 
@@ -53,6 +57,21 @@ jobs:
           done
           cat /tmp/lanu-live-share.log
           exit 1
+
+      - name: Reject malformed and out-of-range payloads
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /tmp/bad-json.json -w '%{http_code}' -X POST http://127.0.0.1:18080/v1/sessions \
+            -H 'content-type: application/json' --data-binary '{"latitude":41')
+          test "$code" = "400"
+          python3 -c 'import json; assert json.load(open("/tmp/bad-json.json"))["error"] == "invalid_json"'
+
+          code=$(curl -sS -o /tmp/bad-speed.json -w '%{http_code}' -X POST http://127.0.0.1:18080/v1/sessions \
+            -H 'content-type: application/json' \
+            -d '{"latitude":41.0082,"longitude":28.9784,"speedKmh":999}')
+          test "$code" = "400"
+          python3 -c 'import json; assert json.load(open("/tmp/bad-speed.json"))["error"] == "invalid_initial_location_payload"'
 
       - name: End-to-end session smoke test
         shell: bash

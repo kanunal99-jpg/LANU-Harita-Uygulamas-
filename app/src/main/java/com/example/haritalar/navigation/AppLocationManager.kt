@@ -47,6 +47,8 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val qualityFilter = LocationQualityFilter()
     @Volatile private var closed = false
+    private var hasFineLocationPermission = false
+    private var samplingMode = LocationSamplingPolicy.Mode.IDLE
 
     @SuppressLint("MissingPermission")
     fun startLocationUpdates(hasFinePermission: Boolean) {
@@ -56,6 +58,14 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             Log.w("AppLocationManager", "Location permission unavailable; waiting for a real fix.")
             return
         }
+
+        hasFineLocationPermission = true
+        samplingMode = LocationSamplingPolicy.nextMode(
+            samplingMode,
+            _userLocation.value?.speedKmh ?: 0f
+        )
+        clearProviderCallbacks()
+
         try {
             fusedClient.lastLocation.addOnSuccessListener { loc: Location? ->
                 if (closed) return@addOnSuccessListener
@@ -65,10 +75,31 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
                     (lastGps ?: lastNet)?.let(::onNewAndroidLocation)
                 }
             }
-            val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1500L)
-                .setMinUpdateIntervalMillis(1000L)
-                .setMinUpdateDistanceMeters(2.0f)
+            requestLocationProviders()
+        } catch (e: SecurityException) {
+            hasFineLocationPermission = false
+            clearProviderCallbacks()
+            Log.e("AppLocationManager", "Location permission missing: ${e.message}")
+        } catch (e: Exception) {
+            Log.e("AppLocationManager", "Location update error: ${e.message}")
+            clearProviderCallbacks()
+            startSystemLocationFallback()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun requestLocationProviders() {
+        if (closed || !hasFineLocationPermission) return
+        try {
+            val config = LocationSamplingPolicy.config(samplingMode)
+            val request = LocationRequest.Builder(
+                Priority.PRIORITY_HIGH_ACCURACY,
+                config.intervalMillis
+            )
+                .setMinUpdateIntervalMillis(config.minUpdateIntervalMillis)
+                .setMinUpdateDistanceMeters(config.minUpdateDistanceMeters)
                 .build()
+
             fusedCallback = object : LocationCallback() {
                 override fun onLocationResult(result: LocationResult) {
                     if (!closed) result.lastLocation?.let(::onNewAndroidLocation)
@@ -76,24 +107,41 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             }
             fusedClient.requestLocationUpdates(request, fusedCallback!!, Looper.getMainLooper())
         } catch (e: SecurityException) {
-            Log.e("AppLocationManager", "Location permission missing: ${e.message}")
+            hasFineLocationPermission = false
+            clearProviderCallbacks()
+            Log.e("AppLocationManager", "Fused location permission missing: ${e.message}")
         } catch (e: Exception) {
-            Log.e("AppLocationManager", "Location update error: ${e.message}")
+            Log.e("AppLocationManager", "Fused location update error: ${e.message}")
+            clearProviderCallbacks()
             startSystemLocationFallback()
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun startSystemLocationFallback() {
-        if (closed) return
+        if (closed || !hasFineLocationPermission) return
         try {
+            val config = LocationSamplingPolicy.config(samplingMode)
             sysListener = object : LocationListener {
-                override fun onLocationChanged(loc: Location) { if (!closed) onNewAndroidLocation(loc) }
+                override fun onLocationChanged(loc: Location) {
+                    if (!closed) onNewAndroidLocation(loc)
+                }
                 override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
                 override fun onProviderEnabled(provider: String) {}
                 override fun onProviderDisabled(provider: String) {}
             }
-            systemLocationManager?.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1500L, 2.0f, sysListener!!, Looper.getMainLooper())
+
+            systemLocationManager?.requestLocationUpdates(
+                LocationManager.GPS_PROVIDER,
+                config.intervalMillis,
+                config.minUpdateDistanceMeters,
+                sysListener!!,
+                Looper.getMainLooper()
+            )
+        } catch (e: SecurityException) {
+            hasFineLocationPermission = false
+            clearProviderCallbacks()
+            Log.e("AppLocationManager", "System location permission missing: ${e.message}")
         } catch (e: Exception) {
             Log.e("AppLocationManager", "System location fallback error: ${e.message}")
         }
@@ -110,12 +158,44 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             isGpsWeak = loc.hasAccuracy() && loc.accuracy > 45f,
             isSimulated = false
         )
-        qualityFilter.accept(candidate)?.let { _userLocation.value = it }
+        val accepted = qualityFilter.accept(candidate) ?: return
+        _userLocation.value = accepted
+
+        val nextMode = LocationSamplingPolicy.nextMode(samplingMode, accepted.speedKmh)
+        if (nextMode != samplingMode && hasFineLocationPermission) {
+            samplingMode = nextMode
+            restartLocationProviders()
+        }
+    }
+
+    private fun restartLocationProviders() {
+        if (closed || !hasFineLocationPermission) return
+        clearProviderCallbacks()
+        requestLocationProviders()
+    }
+
+    private fun clearProviderCallbacks() {
+        fusedCallback?.let {
+            fusedClient.removeLocationUpdates(it)
+            fusedCallback = null
+        }
+        sysListener?.let {
+            systemLocationManager?.removeUpdates(it)
+            sysListener = null
+        }
     }
 
     fun updateLocationManual(point: GeoPoint, bearing: Float, speedKmh: Float) {
         if (closed) return
-        _userLocation.value = UserLocationData(point, bearing, speedKmh, 5f, System.currentTimeMillis(), false, true)
+        _userLocation.value = UserLocationData(
+            point,
+            bearing,
+            speedKmh,
+            5f,
+            System.currentTimeMillis(),
+            false,
+            true
+        )
     }
 
     fun startRouteSimulation(routePoints: List<GeoPoint>, onProgress: (index: Int, point: GeoPoint) -> Unit) {
@@ -125,7 +205,11 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             for (i in routePoints.indices) {
                 val pt = routePoints[i]
                 val nextPt = routePoints.getOrElse(i + 1) { pt }
-                updateLocationManual(pt, calculateBearing(pt, nextPt), if (i == routePoints.lastIndex) 0f else 45f + (i % 15))
+                updateLocationManual(
+                    pt,
+                    calculateBearing(pt, nextPt),
+                    if (i == routePoints.lastIndex) 0f else 45f + (i % 15)
+                )
                 onProgress(i, pt)
                 delay(1200L)
             }
@@ -150,8 +234,9 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
 
     fun stopLocationUpdates() {
         stopSimulation()
-        fusedCallback?.let { fusedClient.removeLocationUpdates(it); fusedCallback = null }
-        sysListener?.let { systemLocationManager?.removeUpdates(it); sysListener = null }
+        clearProviderCallbacks()
+        hasFineLocationPermission = false
+        samplingMode = LocationSamplingPolicy.Mode.IDLE
         qualityFilter.reset()
     }
 
