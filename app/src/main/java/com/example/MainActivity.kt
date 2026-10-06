@@ -77,25 +77,31 @@ fun HaritalarNavigationApp(
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
-        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
-        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        val fineGranted = permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true ||
+            ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
         viewModel.startLocationUpdates(fineGranted || coarseGranted)
     }
 
     LaunchedEffect(Unit) {
         val fine = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
         val coarse = ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val missingPermissions = mutableListOf<String>()
         if (fine || coarse) {
             viewModel.startLocationUpdates(true)
         } else {
-            val permissions = mutableListOf(
-                Manifest.permission.ACCESS_FINE_LOCATION,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-            )
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                permissions += Manifest.permission.POST_NOTIFICATIONS
-            }
-            permissionLauncher.launch(permissions.toTypedArray())
+            missingPermissions += Manifest.permission.ACCESS_FINE_LOCATION
+            missingPermissions += Manifest.permission.ACCESS_COARSE_LOCATION
+        }
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            missingPermissions += Manifest.permission.POST_NOTIFICATIONS
+        }
+        if (missingPermissions.isNotEmpty()) {
+            permissionLauncher.launch(missingPermissions.toTypedArray())
         }
     }
 
