@@ -225,7 +225,7 @@ fun LayersBottomSheet(
             // Safety Cameras Layer Toggle
             LayerSwitchRow(
                 title = "Radar ve Hız Kameraları",
-                description = "Sabit hız kameraları ve radar uyarı sistemi",
+                description = "OSM kaynaklı sabit hız kameraları ve rota üzeri uyarılar",
                 icon = Icons.Default.CameraAlt,
                 iconColor = Color(0xFFEAB308),
                 isChecked = isSafetyCamerasLayerVisible,
