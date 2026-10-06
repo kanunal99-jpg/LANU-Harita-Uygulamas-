@@ -122,7 +122,22 @@ fun HaritalarNavigationApp(
         }
     }
 
-    LaunchedEffect(uiState.userLocation, safetyCameras) {
+    LaunchedEffect(
+        uiState.navigationState,
+        uiState.userLocation?.point,
+        uiState.isSafetyCamerasLayerVisible
+    ) {
+        val isDriving = uiState.navigationState == NavigationState.NAVIGATING ||
+            uiState.navigationState == NavigationState.OFF_ROUTE_REROUTING
+        val point = uiState.userLocation?.point
+        if (isDriving && point != null && uiState.isSafetyCamerasLayerVisible) {
+            safetyCameraViewModel.prefetchForNavigation(point)
+        } else {
+            safetyCameraViewModel.clearNavigationPrefetch()
+        }
+    }
+
+    LaunchedEffect(uiState.userLocation, safetyCameras, uiState.selectedRoute, uiState.navigationState) {
         viewModel.checkSafetyCameraProximity(safetyCameras)
         viewModel.checkWeatherProximity()
     }
@@ -262,7 +277,7 @@ fun HaritalarNavigationApp(
             }
 
             RadarWarningCard(
-                camera = uiState.approachingCamera,
+                warning = uiState.approachingCameraWarning,
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(top = if (uiState.navigationState == NavigationState.NAVIGATING) 140.dp else 100.dp)
