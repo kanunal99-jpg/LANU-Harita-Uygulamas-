@@ -28,6 +28,7 @@ Bu belge üretimde gerçekten desteklenen yetenekleri ve bilinçli ürün sını
 - Aktif navigasyonda Android location foreground service; rota bittiğinde güvenli stop yaşam döngüsü.
 - Android lint, unit test, emulator instrumentation, debug APK, SHA-256 ve GitHub Release kapıları.
 - CI job’larında bounded timeout ve güncel GitHub Action major sürümleri.
+- Live-share runtime ve CI Node.js 24.x üzerinde hizalıdır; Render/CI runtime drift’i engellenir.
 
 ## Bilinçli olarak uydurulmayan yetenekler
 
