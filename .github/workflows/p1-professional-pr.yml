@@ -1,9 +1,6 @@
 name: P1 Professional PR Gate
 
 on:
-  push:
-    branches:
-      - feat/p1-offline-routing-consolidation
   pull_request:
     branches:
       - main
@@ -27,15 +24,16 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Enforce LANU constitution
         run: bash .github/scripts/constitution-quality-gate.sh
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6.4.0
         with:
           gradle-version: '9.3.1'
       - name: Create Android debug keystore
@@ -49,18 +47,25 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -dname 'CN=Android Debug,O=Android,C=US'
-      - run: gradle :app:testDebugUnitTest :app:lintDebug --stacktrace
+      - name: Run unit tests
+        run: gradle :app:testDebugUnitTest --stacktrace
         env:
           CI: true
-      - run: gradle :app:assembleDebug --stacktrace
+      - name: Run lint
+        run: gradle :app:lintDebug --stacktrace
+        env:
+          CI: true
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --stacktrace
         env:
           CI: true
 
   server:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '20'
           cache: npm
