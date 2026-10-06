@@ -151,7 +151,10 @@ jobs:
             Bu yayın her başarılı Android APK derlemesinde güncellenir.
 
             **Güncel APK:** `app-debug.apk`
-          files: app/build/outputs/apk/debug/*.apk
+            **Checksum:** `apk-sha256.txt`
+          files: |
+            app/build/outputs/apk/debug/*.apk
+            apk-sha256.txt
           make_latest: true
           prerelease: false
           draft: false
