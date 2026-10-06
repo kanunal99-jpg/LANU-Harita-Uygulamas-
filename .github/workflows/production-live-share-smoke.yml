@@ -1,0 +1,91 @@
+name: Production Live Share Smoke
+
+on:
+  workflow_run:
+    workflows: ["Android APK"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  production-smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE_URL: https://lanu-harita-live-share.onrender.com
+      EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Wait for exact Render revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in {1..60}; do
+            health="$(curl -fsS --max-time 10 "$BASE_URL/health" || true)"
+            if [ -n "$health" ]; then
+              ok="$(printf '%s' "$health" | python3 -c 'import json,sys; print(str(json.load(sys.stdin).get("ok", False)).lower())' 2>/dev/null || true)"
+              revision="$(printf '%s' "$health" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("revision") or "")' 2>/dev/null || true)"
+              if [ "$ok" = "true" ] && [ "$revision" = "$EXPECTED_SHA" ]; then
+                echo "Render revision is live: $revision"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "ERROR: expected Render revision did not become healthy: $EXPECTED_SHA" >&2
+          exit 1
+
+      - name: Validate production session lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          session_id=""
+          token=""
+
+          cleanup() {
+            if [ -n "$session_id" ] && [ -n "$token" ]; then
+              curl -sS --max-time 10 -X DELETE "$BASE_URL/v1/sessions/$session_id" \
+                -H "authorization: Bearer $token" >/dev/null || true
+            fi
+          }
+          trap cleanup EXIT
+
+          invalid_code="$(curl -sS --max-time 10 -o /tmp/prod-invalid.json -w '%{http_code}' \
+            -X POST "$BASE_URL/v1/sessions" \
+            -H 'content-type: application/json' \
+            -d '{"latitude":41.0082,"longitude":28.9784,"speedKmh":999}')"
+          test "$invalid_code" = "400"
+
+          create_response="$(curl -fsS --max-time 10 -X POST "$BASE_URL/v1/sessions" \
+            -H 'content-type: application/json' \
+            -d '{"latitude":41.0082,"longitude":28.9784,"bearing":90,"speedKmh":42,"etaSeconds":900}')"
+          session_id="$(printf '%s' "$create_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["sessionId"])')"
+          token="$(printf '%s' "$create_response" | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])')"
+          test -n "$session_id"
+          test -n "$token"
+
+          curl -fsS --max-time 10 -X PUT "$BASE_URL/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token" \
+            -H 'content-type: application/json' \
+            -d '{"latitude":41.009,"longitude":28.98,"bearing":92,"speedKmh":45,"etaSeconds":840}' >/dev/null
+
+          state="$(curl -fsS --max-time 10 "$BASE_URL/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token")"
+          printf '%s' "$state" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["latitude"] == 41.009; assert d["speedKmh"] == 45'
+
+          viewer="$(curl -fsS --max-time 10 "$BASE_URL/share/$session_id?token=$token")"
+          printf '%s' "$viewer" | python3 -c 'import json,sys; d=json.load(sys.stdin)["session"]; assert d["sessionId"]; assert d["speedKmh"] == 45'
+
+          curl -fsS --max-time 10 -X DELETE "$BASE_URL/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token" >/dev/null
+
+          revoked_code="$(curl -sS --max-time 10 -o /tmp/prod-revoked.json -w '%{http_code}' \
+            "$BASE_URL/v1/sessions/$session_id" \
+            -H "authorization: Bearer $token")"
+          test "$revoked_code" = "401"
+
+          session_id=""
+          token=""
