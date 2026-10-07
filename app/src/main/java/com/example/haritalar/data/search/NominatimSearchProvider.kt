@@ -183,7 +183,7 @@ class NominatimSearchProvider(
     private fun determineResultType(rawClass: String, rawType: String, details: TurkishAddressDetails): AddressResultType {
         return when {
             details.houseNumber != null -> AddressResultType.ADDRESS
-            rawClass == "amenity" || rawClass == "shop" || rawClass == "tourism" || rawClass == "leisure" -> AddressResultType.POI
+            rawClass in listOf("amenity", "shop", "tourism", "leisure", "office", "craft", "industrial") -> AddressResultType.POI
             rawClass == "highway" || details.street != null -> AddressResultType.STREET
             rawType == "suburb" || rawType == "neighbourhood" || rawType == "quarter" -> AddressResultType.NEIGHBORHOOD
             rawType == "town" || rawType == "county" || rawType == "city_district" -> AddressResultType.DISTRICT
