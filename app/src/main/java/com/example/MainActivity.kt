@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.haritalar.model.NavigationState
+import com.example.haritalar.data.network.SafetyCameraAreaPolicy
 import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
@@ -240,7 +241,8 @@ fun HaritalarNavigationApp(
                 isPoiLayerVisible = uiState.isPoiLayerVisible,
                 poiList = uiState.poiList,
                 safetyCameras = safetyCameras,
-                isSafetyCamerasLayerVisible = uiState.isSafetyCamerasLayerVisible,
+                isSafetyCamerasLayerVisible = uiState.isSafetyCamerasLayerVisible &&
+                        uiState.currentZoomLevel >= SafetyCameraAreaPolicy.MIN_VIEWPORT_ZOOM,
                 destinationPoint = uiState.selectedDestination?.point,
                 cameraMode = uiState.cameraMode,
                 mapTrackingMode = uiState.mapTrackingMode,
