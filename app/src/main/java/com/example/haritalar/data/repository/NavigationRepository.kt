@@ -110,6 +110,7 @@ class NavigationRepository(context: Context) {
                 longitude = result.point.longitude
             )
         )
+        searchHistoryDao.trimHistory()
     }
 
     suspend fun searchPlaces(query: String, focusPoint: GeoPoint?): List<SearchResult> {
