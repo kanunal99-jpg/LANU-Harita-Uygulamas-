@@ -899,6 +899,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     geocodingService.reverseGeocode(camera.point)?.let { address ->
                         resolvedCameraAddresses[camera.id] = address
                     }
+                    delay(1_100L)
                 }
             }
         }
