@@ -32,6 +32,7 @@ import com.example.haritalar.model.TrafficTestResult
 import com.example.haritalar.model.TripSummary
 import com.example.haritalar.navigation.AppLocationManager
 import com.example.haritalar.navigation.CompassHeadingSensor
+import com.example.haritalar.navigation.DestinationSnapPolicy
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
@@ -234,6 +235,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             NavigationLocationPolicy.Readiness.READY -> action
         }
+    }
+
+    private fun destinationSnappedToRouteEndpoint(route: RouteOption?): SearchResult? {
+        val selected = _uiState.value.selectedDestination ?: return null
+        val routeEnd = route?.geometry?.lastOrNull()
+        val displayPoint = DestinationSnapPolicy.displayPoint(
+            resultType = selected.resultType,
+            geocoderPoint = selected.point,
+            routeEndPoint = routeEnd
+        )
+        return if (displayPoint == selected.point) selected else selected.copy(point = displayPoint)
     }
 
     private fun clearRoutePresentationForSearch() {
@@ -441,9 +453,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (genId != _uiState.value.activeGenerationId) return@launch
 
                 val primaryRoute = routes.firstOrNull()
+                val snappedDestination = destinationSnappedToRouteEndpoint(primaryRoute)
                 _uiState.value = _uiState.value.copy(
                     routeOptions = routes,
                     selectedRoute = primaryRoute,
+                    selectedDestination = snappedDestination ?: _uiState.value.selectedDestination,
                     trafficStatusMap = trafficMap,
                     navigationState = if (routes.isNotEmpty()) NavigationState.ROUTE_SELECTION else NavigationState.IDLE,
                     isLoadingRoutes = false,
@@ -490,17 +504,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     return@launch
                 }
+                val snappedDestination = destinationSnappedToRouteEndpoint(route)
                 val latestLocation = currentRoutingLocation()
                 if (latestLocation == null) {
                     _uiState.value = _uiState.value.copy(
                         isLoadingRoutes = false, routeOptions = routes, selectedRoute = route,
+                        selectedDestination = snappedDestination ?: _uiState.value.selectedDestination,
                         navigationState = NavigationState.ROUTE_SELECTION,
-                        statusMessage = "GPS konumu güncelliğini kaybetti. Navigasyon başlatılmadı."
+                        statusMessage = routingLocationFailureMessage("Navigasyon başlatılmadı.")
                     )
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
                     routeOptions = routes, selectedRoute = route, trafficStatusMap = trafficMap,
+                    selectedDestination = snappedDestination ?: _uiState.value.selectedDestination,
                     isLoadingRoutes = false, navigationState = NavigationState.ROUTE_SELECTION, statusMessage = null
                 )
                 startNavigationInternal(route, latestLocation)
