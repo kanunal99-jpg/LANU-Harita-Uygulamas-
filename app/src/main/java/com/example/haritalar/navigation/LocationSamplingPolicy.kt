@@ -2,7 +2,7 @@ package com.example.haritalar.navigation
 
 /**
  * Deterministic GPS sampling policy. Keeps frequent updates while driving and
- * relaxes the request while stationary/slow to reduce unnecessary work.
+ * relaxes the interval while stationary/slow but still permits periodic freshness fixes.
  */
 object LocationSamplingPolicy {
     enum class Mode { IDLE, MOVING }
@@ -19,7 +19,7 @@ object LocationSamplingPolicy {
 
     const val IDLE_INTERVAL_MS = 4_000L
     const val IDLE_MIN_INTERVAL_MS = 2_500L
-    const val IDLE_MIN_DISTANCE_METERS = 8.0f
+    const val IDLE_MIN_DISTANCE_METERS = 0.0f
 
     const val ENTER_MOVING_SPEED_KMH = 8.0f
     const val EXIT_MOVING_SPEED_KMH = 3.0f
