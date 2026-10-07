@@ -73,12 +73,12 @@ fun RouteOptionsCarousel(
                         text = "Rota Alternatifleri (${routes.size})",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
+                        color = mainTextColor
                     )
                     Text(
                         text = "İstediğiniz rotayı seçip navigasyonu başlatın",
                         fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = mainTextColorVariant
                     )
                 }
                 IconButton(
@@ -162,6 +162,10 @@ private fun RouteCard(
 
     val etaDate = Date(System.currentTimeMillis() + (totalSeconds * 1000L))
     val etaStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(etaDate)
+    val mainTextColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+        else MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
         shape = RoundedCornerShape(18.dp),
@@ -187,7 +191,7 @@ private fun RouteCard(
                     text = route.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                    color = mainTextColor
                 )
                 if (isSelected) {
                     Icon(
@@ -207,20 +211,20 @@ private fun RouteCard(
                     text = "$mins",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = mainTextColor
                 )
                 Text(
                     text = " dk",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = mainTextColor,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "• $km",
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = mainTextColorVariant,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
             }
@@ -228,7 +232,7 @@ private fun RouteCard(
             Text(
                 text = "Varış: $etaStr",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = secondaryTextColor
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -237,7 +241,7 @@ private fun RouteCard(
             Text(
                 text = route.summary.ifEmpty { "Doğrudan güzergâh" },
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = secondaryTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
