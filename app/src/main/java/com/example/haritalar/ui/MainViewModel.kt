@@ -22,6 +22,7 @@ import com.example.haritalar.model.NavigationState
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficSignal
@@ -38,6 +39,9 @@ import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.PoiViewportPolicy
+import com.example.haritalar.navigation.SafetyCameraRouteFilterPolicy
+import com.example.haritalar.navigation.SafetyCameraVoicePolicy
+import com.example.haritalar.navigation.SafetyCameraWarningPolicy
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
@@ -149,6 +153,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var poiGeneration = 0L
     private var lastPoiSearchCenter: GeoPoint? = null
     private var lastPoiSearchRadiusMeters: Int = 0
+    private var latestSafetyCameras: List<SafetyCamera> = emptyList()
+    private var lastPreDriveCameraBriefRouteId: String? = null
 
     private val trafficSignalRepository = repository.trafficSignalRepository
 
@@ -613,6 +619,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
+        maybeAnnouncePreDriveCameraBrief(route, userLocation.point)
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
         val currentHeading = _uiState.value.vehicleHeadingState.heading
@@ -651,6 +658,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
+        lastPreDriveCameraBriefRouteId = null
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.IDLE, navigationProgress = null, selectedRoute = null,
             routeOptions = emptyList(), selectedDestination = null, searchQuery = "",
@@ -814,6 +822,33 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun set2DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.TWO_D) }
     fun set3DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.THREE_D) }
     fun toggleTrafficLayer() { _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible) }
+    fun updateSafetyCameraData(cameras: List<SafetyCamera>) {
+        latestSafetyCameras = cameras
+        val state = _uiState.value
+        val route = state.selectedRoute ?: return
+        val point = currentRoutingLocation()?.point ?: return
+        val isDriving = state.navigationState == NavigationState.NAVIGATING ||
+            state.navigationState == NavigationState.OFF_ROUTE_REROUTING
+        if (!isDriving) {
+            maybeAnnouncePreDriveCameraBrief(route, point)
+        }
+    }
+
+    private fun maybeAnnouncePreDriveCameraBrief(route: RouteOption, userPoint: GeoPoint) {
+        if (!_uiState.value.isSafetyCamerasLayerVisible) return
+        if (lastPreDriveCameraBriefRouteId == route.routeId) return
+
+        val camerasAhead = SafetyCameraRouteFilterPolicy.camerasAhead(
+            cameras = latestSafetyCameras,
+            route = route.geometry,
+            userPoint = userPoint
+        ).filter { it.distanceAheadMeters <= SafetyCameraWarningPolicy.MAX_WARNING_DISTANCE_METERS }
+
+        val announcement = SafetyCameraVoicePolicy.preDriveBrief(camerasAhead) ?: return
+        lastPreDriveCameraBriefRouteId = route.routeId
+        ttsManager.speak(announcement)
+    }
+
     fun toggleSafetyCamerasLayer() {
         val newVisible = !_uiState.value.isSafetyCamerasLayerVisible
         _uiState.value = _uiState.value.copy(
@@ -849,15 +884,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val announcedCameraWarningMilestones = mutableSetOf<String>()
     private var lastOverspeedCameraWarningKey: String? = null
-
-    private fun formatSafetyWarningDistance(distanceBucketMeters: Int): String = when {
-        distanceBucketMeters >= 1000 -> {
-            val km = distanceBucketMeters / 1000
-            if (distanceBucketMeters % 1000 == 0) "$km kilometre"
-            else "${distanceBucketMeters / 1000.0} kilometre".replace('.', ',')
-        }
-        else -> "$distanceBucketMeters metre"
-    }
 
     private fun vibrateSafetyWarning(durationMs: Long) {
         val app = getApplication<Application>()
@@ -901,22 +927,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        latestSafetyCameras = cameras
         val routeGeometry = _uiState.value.selectedRoute?.geometry.orEmpty()
-        val routeScopedCameras = if (navState == NavigationState.NAVIGATING && routeGeometry.size >= 2) {
-            com.example.haritalar.navigation.SafetyCameraRouteFilterPolicy.relevantForRoute(
+        val routePoint = _uiState.value.navigationProgress?.snappedLocation ?: userLocation.point
+        val nearestAhead = if (routeGeometry.size >= 2) {
+            SafetyCameraRouteFilterPolicy.camerasAhead(
                 cameras = cameras,
                 route = routeGeometry,
-                userPoint = _uiState.value.navigationProgress?.snappedLocation ?: userLocation.point
-            )
+                userPoint = routePoint
+            ).firstOrNull()
         } else {
-            cameras
+            null
         }
 
-        val warning = com.example.haritalar.navigation.SafetyCameraWarningPolicy.nearest(
-            cameras = routeScopedCameras,
-            point = userLocation.point,
-            speedKmh = userLocation.speedKmh
-        )
+        val warning = nearestAhead?.let { ahead ->
+            SafetyCameraWarningPolicy.evaluate(
+                camera = ahead.camera,
+                distanceMeters = ahead.distanceAheadMeters,
+                speedKmh = userLocation.speedKmh
+            )
+        }
 
         if (warning == null) {
             _uiState.value = _uiState.value.copy(
@@ -937,7 +967,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val milestoneKey = "${camera.id}:$milestone"
             if (announcedCameraWarningMilestones.add(milestoneKey)) {
                 ttsManager.speak(
-                    "Erken uyarı. ${formatSafetyWarningDistance(milestone)} ileride sabit hız kamerası noktası var."
+                    SafetyCameraVoicePolicy.milestoneAnnouncement(warning)
                 )
                 vibrateSafetyWarning(140L)
             }
