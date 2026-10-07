@@ -16,6 +16,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -51,6 +55,7 @@ fun SearchHeader(
     onSelectCategory: (PoiCategory?) -> Unit,
     favorites: List<FavoritePlace>,
     onSelectFavorite: (FavoritePlace) -> Unit,
+    onDeleteFavorite: (FavoritePlace) -> Unit = {},
     recentSearches: List<SearchHistoryItem>,
     onSelectRecentSearch: (SearchHistoryItem) -> Unit = {},
     modifier: Modifier = Modifier
@@ -135,7 +140,8 @@ fun SearchHeader(
 
         // Search Results / Empty State / Error State / Recent Searches
         AnimatedVisibility(
-            visible = searchQuery.trim().length >= 2 || (searchQuery.isEmpty() && recentSearches.isNotEmpty()),
+            visible = searchQuery.trim().length >= 2 ||
+                    (searchQuery.isEmpty() && (recentSearches.isNotEmpty() || favorites.isNotEmpty())),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
@@ -318,33 +324,75 @@ fun SearchHeader(
                         }
                     }
 
-                    // 5. Recent Searches (When search query is empty)
-                    searchQuery.isEmpty() && recentSearches.isNotEmpty() -> {
-                        Column(modifier = Modifier.padding(vertical = 4.dp)) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.History,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = "Son Aramalar",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                    // 5. Saved places + recent searches
+                    searchQuery.isEmpty() && (favorites.isNotEmpty() || recentSearches.isNotEmpty()) -> {
+                        LazyColumn(modifier = Modifier.padding(vertical = 4.dp)) {
+                            if (favorites.isNotEmpty()) {
+                                item {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                imageVector = Icons.Default.Bookmarks,
+                                                contentDescription = null,
+                                                tint = MaterialTheme.colorScheme.primary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = "Kayıtlı Yerler",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                        }
+                                        Text(
+                                            text = "${favorites.size}/500",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                items(favorites.take(500), key = { "fav_${it.id}" }) { fav ->
+                                    SavedPlaceRow(
+                                        favorite = fav,
+                                        onClick = { onSelectFavorite(fav) },
+                                        onDelete = { onDeleteFavorite(fav) }
+                                    )
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
+                                }
                             }
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
 
-                            LazyColumn {
-                                items(recentSearches.take(5), key = { it.id }) { item ->
+                            if (recentSearches.isNotEmpty()) {
+                                item {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.History,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Son Aramalar",
+                                            fontSize = 12.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                items(recentSearches.take(5), key = { "recent_${it.id}" }) { item ->
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -389,7 +437,6 @@ fun SearchHeader(
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
-                                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
                                 }
                             }
                         }
@@ -599,9 +646,11 @@ fun DestinationPreviewCard(
     destination: SearchResult,
     onCalculateRoutes: () -> Unit,
     onStartNavigation: () -> Unit,
+    onSavePlace: (String, String) -> Unit = { _, _ -> },
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    var showSaveDialog by remember { mutableStateOf(false) }
     Surface(
         shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -709,6 +758,25 @@ fun DestinationPreviewCard(
 
             Spacer(modifier = Modifier.height(16.dp))
 
+            OutlinedButton(
+                onClick = { showSaveDialog = true },
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("save_place_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.BookmarkAdd,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Adresi Kaydet", fontWeight = FontWeight.SemiBold)
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
             // Action Buttons
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -761,6 +829,144 @@ fun DestinationPreviewCard(
             }
         }
     }
+
+    if (showSaveDialog) {
+        SavePlaceDialog(
+            defaultTitle = destination.name,
+            onDismiss = { showSaveDialog = false },
+            onSave = { title, category ->
+                onSavePlace(title, category)
+                showSaveDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+private fun SavedPlaceRow(
+    favorite: FavoritePlace,
+    onClick: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val icon = when (favorite.category) {
+        "HOME" -> Icons.Default.Home
+        "WORK" -> Icons.Default.Work
+        else -> Icons.Default.Bookmark
+    }
+    val label = when (favorite.category) {
+        "HOME" -> "Ev"
+        "WORK" -> "İş"
+        else -> "Kayıtlı"
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(horizontal = 16.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primaryContainer,
+            modifier = Modifier.size(38.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = label,
+                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.size(19.dp)
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = favorite.title,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = "$label • ${favorite.address}",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+            Icon(
+                imageVector = Icons.Default.DeleteOutline,
+                contentDescription = "Kaydı sil",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun SavePlaceDialog(
+    defaultTitle: String,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit
+) {
+    var title by remember(defaultTitle) { mutableStateOf(defaultTitle.take(80)) }
+    var category by remember { mutableStateOf("CUSTOM") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.BookmarkAdd, contentDescription = null) },
+        title = { Text("Adresi Kaydet") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = title,
+                    onValueChange = { title = it.take(80) },
+                    label = { Text("Kayıt adı") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf(
+                        Triple("HOME", "Ev", Icons.Default.Home),
+                        Triple("WORK", "İş", Icons.Default.Work),
+                        Triple("CUSTOM", "Özel", Icons.Default.Bookmark)
+                    ).forEach { (value, label, icon) ->
+                        FilterChip(
+                            selected = category == value,
+                            onClick = { category = value },
+                            label = { Text(label) },
+                            leadingIcon = {
+                                Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        )
+                    }
+                }
+                Text(
+                    text = "Ev ve İş kayıtları tekil tutulur. Toplam kapasite 500 adrestir.",
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = title.trim().isNotEmpty(),
+                onClick = { onSave(title.trim(), category) }
+            ) {
+                Text("Kaydet")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Vazgeç") }
+        }
+    )
 }
 
 @Composable
