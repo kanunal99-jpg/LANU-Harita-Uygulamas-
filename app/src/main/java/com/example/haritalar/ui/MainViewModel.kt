@@ -216,7 +216,51 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return location?.takeIf { NavigationLocationPolicy.isUsableForRouting(it) }
     }
 
+    private fun routingLocationFailureMessage(action: String): String {
+        val location = _uiState.value.userLocation
+        return when (NavigationLocationPolicy.readiness(location)) {
+            NavigationLocationPolicy.Readiness.MISSING ->
+                "Canlı GPS konumu henüz alınmadı. Konum servislerini ve izni kontrol edin. $action"
+            NavigationLocationPolicy.Readiness.STALE -> {
+                val ageSeconds = location?.let {
+                    ((System.currentTimeMillis() - it.timestamp).coerceAtLeast(0L) / 1000L)
+                } ?: 0L
+                "Haritadaki nokta son bilinen konum; canlı GPS yaklaşık ${ageSeconds} sn önce güncellendi. Yeni konum bekleniyor. $action"
+            }
+            NavigationLocationPolicy.Readiness.INACCURATE -> {
+                val accuracy = location?.accuracyMeters?.takeIf { it.isFinite() }?.toInt()
+                val accuracyText = accuracy?.let { " (±${it} m)" }.orEmpty()
+                "GPS doğruluğu navigasyon için yetersiz$accuracyText. Açık alanda yeni konum bekleniyor. $action"
+            }
+            NavigationLocationPolicy.Readiness.READY -> action
+        }
+    }
+
+    private fun clearRoutePresentationForSearch() {
+        if (_uiState.value.navigationState == NavigationState.NAVIGATING ||
+            _uiState.value.navigationState == NavigationState.OFF_ROUTE_REROUTING
+        ) return
+
+        routeCalculationJob?.cancel()
+        routeCalculationJob = null
+        val invalidateGeneration = ++generationCounter
+        _uiState.value = _uiState.value.copy(
+            selectedDestination = null,
+            isDestinationCardVisible = false,
+            routeOptions = emptyList(),
+            selectedRoute = null,
+            trafficStatusMap = emptyMap(),
+            isLoadingRoutes = false,
+            activeGenerationId = invalidateGeneration,
+            navigationState = NavigationState.IDLE,
+            statusMessage = null
+        )
+    }
+
     fun onSearchFocusChanged(focused: Boolean) {
+        if (focused && !_uiState.value.isSearchFocused) {
+            clearRoutePresentationForSearch()
+        }
         _uiState.value = _uiState.value.copy(isSearchFocused = focused)
     }
 
@@ -232,7 +276,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onSearchQueryChanged(query: String) {
-        _uiState.value = _uiState.value.copy(searchQuery = query)
+        if (query != _uiState.value.searchQuery &&
+            _uiState.value.navigationState != NavigationState.NAVIGATING &&
+            _uiState.value.navigationState != NavigationState.OFF_ROUTE_REROUTING
+        ) {
+            clearRoutePresentationForSearch()
+        }
+        _uiState.value = _uiState.value.copy(searchQuery = query, isSearchFocused = true)
         searchJob?.cancel()
         val currentGen = ++searchGenerationId
 
@@ -306,14 +356,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSearchResult(result: SearchResult) {
+        routeCalculationJob?.cancel()
+        val invalidateGeneration = ++generationCounter
         _uiState.value = _uiState.value.copy(
             selectedDestination = result,
             searchQuery = result.name,
             searchResults = emptyList(),
             searchStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
-            isDestinationCardVisible = true
+            searchErrorMessage = null,
+            isSearching = false,
+            isSearchFocused = false,
+            isDestinationCardVisible = true,
+            routeOptions = emptyList(),
+            selectedRoute = null,
+            trafficStatusMap = emptyMap(),
+            navigationState = NavigationState.IDLE,
+            isLoadingRoutes = false,
+            activeGenerationId = invalidateGeneration,
+            statusMessage = null
         )
-        calculateRoutes(result.point)
     }
 
     fun selectDestinationPoint(point: GeoPoint, title: String = "Seçilen Nokta") {
@@ -329,14 +390,25 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 resultType = com.example.haritalar.model.AddressResultType.PLACE,
                 provider = "Harita Dokunma"
             )
+            routeCalculationJob?.cancel()
+            val invalidateGeneration = ++generationCounter
             _uiState.value = _uiState.value.copy(
                 selectedDestination = result,
                 searchQuery = title,
                 searchResults = emptyList(),
                 searchStatus = com.example.haritalar.model.SearchUiStatus.IDLE,
-                isDestinationCardVisible = true
+                searchErrorMessage = null,
+                isSearching = false,
+                isSearchFocused = false,
+                isDestinationCardVisible = true,
+                routeOptions = emptyList(),
+                selectedRoute = null,
+                trafficStatusMap = emptyMap(),
+                navigationState = NavigationState.IDLE,
+                isLoadingRoutes = false,
+                activeGenerationId = invalidateGeneration,
+                statusMessage = null
             )
-            calculateRoutes(point)
         }
     }
 
@@ -351,7 +423,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isLoadingRoutes = false,
                 activeGenerationId = genId,
                 navigationState = NavigationState.IDLE,
-                statusMessage = "Gerçek GPS konumu bekleniyor. Konum alınmadan rota hesaplanamaz."
+                statusMessage = routingLocationFailureMessage("Konum alınmadan rota hesaplanamaz.")
             )
             return
         }
@@ -396,7 +468,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (initialLocation == null) {
             _uiState.value = _uiState.value.copy(
                 routeOptions = emptyList(), selectedRoute = null, isLoadingRoutes = false,
-                statusMessage = "Gerçek GPS konumu bekleniyor. Navigasyon başlatılamaz."
+                statusMessage = routingLocationFailureMessage("Navigasyon başlatılamaz.")
             )
             return
         }
@@ -475,7 +547,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
         val userLocation = currentRoutingLocation()
         if (userLocation == null) {
-            _uiState.value = _uiState.value.copy(statusMessage = "Gerçek GPS konumu alınamıyor. Navigasyon başlatılamadı.")
+            _uiState.value = _uiState.value.copy(
+                statusMessage = routingLocationFailureMessage("Navigasyon başlatılamadı.")
+            )
             return
         }
         startNavigationInternal(route, userLocation)
