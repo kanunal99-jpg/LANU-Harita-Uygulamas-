@@ -238,15 +238,21 @@ fun HaritalarNavigationApp(
         currentTrafficStatus,
         currentTrafficSegments,
         uiState.routeWeather,
-        safetyCameras
+        routeSafetyCameras,
+        completedRouteSafetyCameraPrefetchRouteId,
+        isRouteSafetyCameraPrefetching
     ) {
         uiState.selectedRoute?.let { route ->
+            val cameraScanComplete =
+                !isRouteSafetyCameraPrefetching &&
+                    completedRouteSafetyCameraPrefetchRouteId == route.routeId
             LanuBriefPolicy.build(
                 route = route,
                 traffic = currentTrafficStatus,
                 routeWeather = uiState.routeWeather,
-                loadedSafetyCameras = safetyCameras,
-                trafficSegments = currentTrafficSegments
+                loadedSafetyCameras = routeSafetyCameras,
+                trafficSegments = currentTrafficSegments,
+                cameraRouteScanComplete = cameraScanComplete
             )
         }
     }
