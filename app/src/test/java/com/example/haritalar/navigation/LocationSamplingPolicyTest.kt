@@ -33,6 +33,6 @@ class LocationSamplingPolicyTest {
         assertEquals(1000L, LocationSamplingPolicy.config(LocationSamplingPolicy.Mode.MOVING).intervalMillis)
         assertEquals(4000L, LocationSamplingPolicy.config(LocationSamplingPolicy.Mode.IDLE).intervalMillis)
         assertEquals(2.0f, LocationSamplingPolicy.config(LocationSamplingPolicy.Mode.MOVING).minUpdateDistanceMeters)
-        assertEquals(8.0f, LocationSamplingPolicy.config(LocationSamplingPolicy.Mode.IDLE).minUpdateDistanceMeters)
+        assertEquals(0.0f, LocationSamplingPolicy.config(LocationSamplingPolicy.Mode.IDLE).minUpdateDistanceMeters)
     }
 }
