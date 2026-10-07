@@ -288,6 +288,7 @@ fun HaritalarNavigationApp(
                     searchActiveProvider = uiState.searchActiveProvider,
                     isSearchFocused = uiState.isSearchFocused,
                     onSearchFocusChanged = { viewModel.onSearchFocusChanged(it) },
+                    onSubmitSearch = { viewModel.submitSearch() },
                     onRetrySearch = { viewModel.retrySearch() },
                     searchResults = uiState.searchResults,
                     onSelectResult = { viewModel.selectSearchResult(it) },
