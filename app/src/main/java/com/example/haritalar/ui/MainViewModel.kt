@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
+import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.BuildConfig
 import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.data.network.LiveSharingClient
@@ -118,6 +119,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val locationManager = AppLocationManager(application)
     val offlineMapManager = com.example.haritalar.data.offline.OfflineMapManager(application)
     val weatherRepository = com.example.haritalar.data.weather.WeatherRepository()
+    private val geocodingService = NominatimGeocodingService()
     val ttsManager = TurkishTtsManager(application)
     val compassSensor = CompassHeadingSensor(application)
     val vehicleHeadingManager = VehicleHeadingManager(compassSensor)
@@ -145,6 +147,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
     private var liveShareJob: Job? = null
+    private var cameraBriefJob: Job? = null
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
     private var generationCounter = 1L
@@ -155,6 +158,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var lastPoiSearchRadiusMeters: Int = 0
     private var latestSafetyCameras: List<SafetyCamera> = emptyList()
     private var lastPreDriveCameraBriefRouteId: String? = null
+    private val resolvedCameraAddresses = mutableMapOf<Long, String>()
 
     private val trafficSignalRepository = repository.trafficSignalRepository
 
@@ -547,7 +551,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false, navigationState = NavigationState.ROUTE_SELECTION, statusMessage = null
                 )
                 fetchWeatherForRoute(route)
-                startNavigationInternal(route, latestLocation)
+                lastPreDriveCameraBriefRouteId = null
+                _uiState.value = _uiState.value.copy(
+                    statusMessage = "Rota hazır. Radar güzergâh özeti hazırlanıyor."
+                )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -562,7 +569,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectRoute(route: RouteOption) {
-        _uiState.value = _uiState.value.copy(selectedRoute = route)
+        if (_uiState.value.selectedRoute?.routeId != route.routeId) {
+            lastPreDriveCameraBriefRouteId = null
+            cameraBriefJob?.cancel()
+        }
+        _uiState.value = _uiState.value.copy(
+            selectedRoute = route,
+            statusMessage = "Rota radar özeti hazırlanıyor."
+        )
         fetchWeatherForRoute(route)
     }
 
@@ -608,6 +622,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(statusMessage = "Başlatılacak hazır rota bulunamadı.")
             return
         }
+        if (_uiState.value.isSafetyCamerasLayerVisible &&
+            lastPreDriveCameraBriefRouteId != route.routeId
+        ) {
+            _uiState.value = _uiState.value.copy(
+                statusMessage = "Rota radar özeti hazırlanıyor. Özet tamamlanınca navigasyonu başlatın."
+            )
+            return
+        }
         val userLocation = currentRoutingLocation()
         if (userLocation == null) {
             _uiState.value = _uiState.value.copy(
@@ -619,7 +641,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
-        maybeAnnouncePreDriveCameraBrief(route, userLocation.point)
+        cameraBriefJob?.cancel()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
         val currentHeading = _uiState.value.vehicleHeadingState.heading
@@ -655,6 +677,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
+        cameraBriefJob?.cancel()
+        cameraBriefJob = null
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
@@ -822,31 +846,61 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun set2DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.TWO_D) }
     fun set3DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.THREE_D) }
     fun toggleTrafficLayer() { _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible) }
-    fun updateSafetyCameraData(cameras: List<SafetyCamera>) {
+    fun updatePreDriveSafetyCameraData(cameras: List<SafetyCamera>) {
         latestSafetyCameras = cameras
         val state = _uiState.value
         val route = state.selectedRoute ?: return
-        val point = currentRoutingLocation()?.point ?: return
-        val isDriving = state.navigationState == NavigationState.NAVIGATING ||
-            state.navigationState == NavigationState.OFF_ROUTE_REROUTING
-        if (!isDriving) {
-            maybeAnnouncePreDriveCameraBrief(route, point)
-        }
-    }
-
-    private fun maybeAnnouncePreDriveCameraBrief(route: RouteOption, userPoint: GeoPoint) {
-        if (!_uiState.value.isSafetyCamerasLayerVisible) return
+        if (state.navigationState != NavigationState.ROUTE_SELECTION) return
+        if (!state.isSafetyCamerasLayerVisible) return
         if (lastPreDriveCameraBriefRouteId == route.routeId) return
 
-        val camerasAhead = SafetyCameraRouteFilterPolicy.camerasAhead(
-            cameras = latestSafetyCameras,
-            route = route.geometry,
-            userPoint = userPoint
-        ).filter { it.distanceAheadMeters <= SafetyCameraWarningPolicy.MAX_WARNING_DISTANCE_METERS }
+        cameraBriefJob?.cancel()
+        cameraBriefJob = viewModelScope.launch {
+            val routeCameras = SafetyCameraRouteFilterPolicy.camerasAlongRoute(
+                cameras = cameras,
+                route = route.geometry
+            )
 
-        val announcement = SafetyCameraVoicePolicy.preDriveBrief(camerasAhead) ?: return
-        lastPreDriveCameraBriefRouteId = route.routeId
-        ttsManager.speak(announcement)
+            for (item in routeCameras) {
+                if (_uiState.value.selectedRoute?.routeId != route.routeId ||
+                    _uiState.value.navigationState != NavigationState.ROUTE_SELECTION
+                ) {
+                    return@launch
+                }
+
+                val camera = item.camera
+                if (SafetyCameraVoicePolicy.sourceLocationContext(camera) == null &&
+                    resolvedCameraAddresses[camera.id] == null
+                ) {
+                    geocodingService.reverseGeocode(camera.point)?.let { address ->
+                        resolvedCameraAddresses[camera.id] = address
+                    }
+                    delay(1_100L)
+                }
+            }
+
+            if (_uiState.value.selectedRoute?.routeId != route.routeId ||
+                _uiState.value.navigationState != NavigationState.ROUTE_SELECTION
+            ) {
+                return@launch
+            }
+
+            val announcements = SafetyCameraVoicePolicy.preDriveAnnouncements(
+                cameras = routeCameras,
+                resolvedAddresses = resolvedCameraAddresses
+            )
+            lastPreDriveCameraBriefRouteId = route.routeId
+            _uiState.value = _uiState.value.copy(
+                statusMessage = if (routeCameras.isEmpty()) {
+                    "Rota radar taraması tamamlandı: doğrulanmış sabit kamera görünmüyor."
+                } else {
+                    "Rota radar taraması tamamlandı: ${routeCameras.size} kamera."
+                }
+            )
+            announcements.forEach { announcement ->
+                ttsManager.speak(announcement)
+            }
+        }
     }
 
     fun toggleSafetyCamerasLayer() {
@@ -967,7 +1021,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val milestoneKey = "${camera.id}:$milestone"
             if (announcedCameraWarningMilestones.add(milestoneKey)) {
                 ttsManager.speak(
-                    SafetyCameraVoicePolicy.milestoneAnnouncement(warning)
+                    SafetyCameraVoicePolicy.drivingMilestoneAnnouncement(
+                        warning = warning,
+                        resolvedAddress = resolvedCameraAddresses[camera.id]
+                    )
                 )
                 vibrateSafetyWarning(140L)
             }
@@ -1334,6 +1391,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         poiViewportRefreshJob?.cancel()
         trafficSignalJob?.cancel()
         liveShareJob?.cancel()
+        cameraBriefJob?.cancel()
         liveShareSession = null
         vehicleHeadingManager.stop()
         locationManager.stopLocationUpdates()
