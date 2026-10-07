@@ -18,7 +18,7 @@ data class RouteSafetyCameraCoverage(
 /** Route-wide camera sampling plan for pre-drive LANU Brief. */
 object RouteSafetyCameraCoveragePolicy {
     const val MAX_FULL_SAMPLE_GAP_METERS = 20_000.0
-    const val MAX_SAMPLE_POINTS = 10
+    const val MAX_SAMPLE_POINTS = 6
 
     fun plan(route: List<GeoPoint>): RouteSamplingPolicy.Plan? =
         RouteSamplingPolicy.plan(
