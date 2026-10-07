@@ -279,6 +279,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             trafficStatusMap = emptyMap(),
+            routeWeather = emptyList(),
+            approachingWeather = null,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -433,6 +435,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             trafficStatusMap = emptyMap(),
+            routeWeather = emptyList(),
+            approachingWeather = null,
             navigationState = NavigationState.IDLE,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
@@ -514,6 +518,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
+                primaryRoute?.let(::fetchWeatherForRoute)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -564,6 +569,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.ROUTE_SELECTION,
                         statusMessage = routingLocationFailureMessage("Navigasyon başlatılmadı.")
                     )
+                    fetchWeatherForRoute(route)
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
@@ -720,6 +726,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun handleArrival(summary: TripSummary) {
         NavigationForegroundService.stop(getApplication())
         val correctedSummary = summary.copy(
+            startAddress = "Başlangıç konumu",
             destinationAddress = _uiState.value.selectedDestination?.displayName
                 ?.takeIf { it.isNotBlank() }
                 ?: summary.destinationAddress
