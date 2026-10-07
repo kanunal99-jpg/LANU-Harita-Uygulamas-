@@ -116,4 +116,34 @@ class LanuBriefPolicyTest {
         assertTrue(item.detail.contains("Şarj 0"))
     }
 
+
+    @Test
+    fun verifiedRouteCameraCoverageIncludesNearestRouteDistance() {
+        val camera = SafetyCamera(id = 99L, point = GeoPoint(40.91, 29.25))
+        val coverage = RouteSafetyCameraCoverage(
+            status = RouteDataCoverage.VERIFIED,
+            cameras = listOf(camera),
+            source = "OpenStreetMap / Overpass",
+            fetchedAtMillis = 2_000L,
+            sampleCount = 3,
+            successfulSampleCount = 3,
+            maxSampleGapMeters = 8_000.0,
+            note = "Rota kamera örneklerinin tamamı doğrulandı."
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            routeCameraCoverage = coverage
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertTrue(item.title.contains("1 sabit kamera"))
+        assertTrue(item.detail.contains("En yakın kamera rota boyunca yaklaşık"))
+        assertTrue(item.detail.contains("3/3 kamera örneği"))
+    }
+
 }
