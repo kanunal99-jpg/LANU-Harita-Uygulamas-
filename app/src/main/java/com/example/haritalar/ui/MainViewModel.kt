@@ -1150,6 +1150,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         ) {
             _uiState.value = _uiState.value.copy(
                 trafficSignals = emptyList(),
+                selectedTrafficSignal = null,
                 isLoadingTrafficSignals = false
             )
             return
@@ -1190,6 +1191,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             isTrafficSignalsLayerVisible = visible,
             trafficSignals = if (visible) _uiState.value.trafficSignals else emptyList(),
+            selectedTrafficSignal = if (visible) _uiState.value.selectedTrafficSignal else null,
             isLoadingTrafficSignals = false
         )
         if (visible) {
