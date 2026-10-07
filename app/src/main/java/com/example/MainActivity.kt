@@ -260,6 +260,7 @@ fun HaritalarNavigationApp(
                             fav.title
                         )
                     },
+                    onDeleteFavorite = { fav -> viewModel.removeFavorite(fav) },
                     recentSearches = recentSearches,
                     onSelectRecentSearch = { item ->
                         viewModel.selectDestinationPoint(
@@ -339,6 +340,9 @@ fun HaritalarNavigationApp(
                         onCalculateRoutes = { viewModel.calculateRoutes(dest.point) },
                         onStartNavigation = {
                             viewModel.startNavigationTo(dest.point)
+                        },
+                        onSavePlace = { title, category ->
+                            viewModel.saveSelectedPlace(title, category)
                         },
                         onDismiss = { viewModel.dismissDestinationCard() }
                     )
