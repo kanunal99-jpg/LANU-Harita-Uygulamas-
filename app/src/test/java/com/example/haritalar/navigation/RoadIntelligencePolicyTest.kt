@@ -142,6 +142,36 @@ class RoadIntelligencePolicyTest {
         assertTrue(events.none { it.type == RoadIntelligenceType.ROAD_CLOSURE })
     }
 
+
+    @Test
+    fun cachedClosureNeverBecomesP0EvenWhenTrafficStatusIsVerified() {
+        val traffic = TrafficStatus(
+            verified = true,
+            message = "Canlı trafik",
+            trafficLevel = TrafficLevel.MODERATE,
+            sourceName = "Verified Traffic",
+            isLiveApi = true
+        )
+        val cachedClosure = TrafficSegment(
+            coordinates = listOf(GeoPoint(40.9010, 29.2000)),
+            currentSpeed = 0.0,
+            freeFlowSpeed = 50.0,
+            delaySeconds = 600,
+            roadClosure = true,
+            fromCache = true
+        )
+
+        val events = RoadIntelligencePolicy.build(
+            cameraWarning = null,
+            weather = null,
+            traffic = traffic,
+            trafficSegments = listOf(cachedClosure),
+            userPoint = GeoPoint(40.9000, 29.2000)
+        )
+
+        assertTrue(events.none { it.type == RoadIntelligenceType.ROAD_CLOSURE })
+    }
+
     @Test
     fun clearWeatherDoesNotCreateNoise() {
         val weather = WeatherCondition(
