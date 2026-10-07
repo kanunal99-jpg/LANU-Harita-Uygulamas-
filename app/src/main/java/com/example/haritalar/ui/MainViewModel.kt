@@ -42,6 +42,7 @@ import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
 import com.example.haritalar.navigation.VehicleHeadingState
+import com.example.haritalar.navigation.WeatherRequestGuard
 import com.example.haritalar.voice.TurkishTtsManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -572,8 +573,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 route = route,
                 departureEpochMillis = departureEpochMillis
             )
-            if (requestGeneration != weatherGeneration ||
-                _uiState.value.selectedRoute?.routeId != route.routeId
+            if (!WeatherRequestGuard.shouldApply(
+                    requestGeneration = requestGeneration,
+                    currentGeneration = weatherGeneration,
+                    requestedRouteId = route.routeId,
+                    currentRouteId = _uiState.value.selectedRoute?.routeId
+                )
             ) {
                 return@launch
             }
