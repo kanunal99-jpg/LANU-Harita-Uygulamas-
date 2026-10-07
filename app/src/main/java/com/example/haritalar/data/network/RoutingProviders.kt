@@ -17,6 +17,13 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+internal object OsrmRouteMetadataPolicy {
+    fun routeTypeForIndex(index: Int): RouteType =
+        if (index == 0) RouteType.FASTEST else RouteType.ALTERNATIVE
+
+    const val TOLL_STATUS_VERIFIED: Boolean = false
+}
+
 interface RoutingProvider {
     suspend fun calculateRoutes(
         start: GeoPoint,
@@ -292,7 +299,7 @@ class OsrmRoutingProvider(
                         }
                     }
 
-                    val assignedType = if (i == 0) RouteType.FASTEST else RouteType.ALTERNATIVE
+                    val assignedType = OsrmRouteMetadataPolicy.routeTypeForIndex(i)
                     val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                     results.add(RouteOption(
                         routeId = routeId,
@@ -303,7 +310,7 @@ class OsrmRoutingProvider(
                         geometry = geometryPoints,
                         maneuvers = maneuvers,
                         hasTolls = hasToll,
-                        tollStatusVerified = false,
+                        tollStatusVerified = OsrmRouteMetadataPolicy.TOLL_STATUS_VERIFIED,
                         hasFerry = hasFerry,
                         routeType = assignedType,
                         generationId = generationId
