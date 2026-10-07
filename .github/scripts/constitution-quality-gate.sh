@@ -77,6 +77,7 @@ grep -q "hourly=weather_code,precipitation,rain,showers,snowfall" app/src/main/j
 grep -q "timeformat=unixtime" app/src/main/java/com/example/haritalar/data/weather/WeatherRepository.kt || fail "hava tahmin zaman formatı sabit değil"
 grep -q "forecast_hours=" app/src/main/java/com/example/haritalar/data/weather/WeatherRepository.kt || fail "rota süresine göre forecast horizon eksik"
 grep -q "WeatherRequestGuard.shouldApply" app/src/main/java/com/example/haritalar/ui/MainViewModel.kt || fail "geç hava cevabı yeni rotayı ezebilir"
+grep -q "fetchWeatherForRoute(newRoute)" app/src/main/java/com/example/haritalar/ui/MainViewModel.kt || fail "reroute sonrası hava yenileme eksik"
 grep -q "arrivalForecastShowsRoutePositionEtaAndSource" app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "LANU Brief ETA hava testi eksik"
 grep -q "currentWeatherFallbackIsExplicitlyPartial" app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "hava fallback provenance testi eksik"
 
