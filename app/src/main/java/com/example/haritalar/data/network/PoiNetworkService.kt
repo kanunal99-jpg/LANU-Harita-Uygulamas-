@@ -38,39 +38,65 @@ class PoiNetworkService(
         center: GeoPoint,
         radiusMeters: Int = 2_500,
         selectedCategory: PoiCategory? = null
-    ): List<PoiItem> = withContext(Dispatchers.IO) {
+    ): List<PoiItem> = when (
+        val result = fetchPoisAroundResult(center, radiusMeters, selectedCategory)
+    ) {
+        is PoiFetchResult.Success -> result.pois
+        is PoiFetchResult.Error -> emptyList()
+    }
+
+    suspend fun fetchPoisAroundResult(
+        center: GeoPoint,
+        radiusMeters: Int = 2_500,
+        selectedCategory: PoiCategory? = null
+    ): PoiFetchResult = withContext(Dispatchers.IO) {
         val safeRadius = radiusMeters.coerceIn(500, 20_000)
         val query = buildQuery(center, safeRadius, selectedCategory)
-        var lastError: String? = null
+        var lastError = "Bilinmeyen hata"
+        var networkError = false
 
         for (endpoint in endpoints) {
             try {
                 val request = Request.Builder()
                     .url(endpoint)
                     .post(query.toRequestBody("text/plain".toMediaType()))
-                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.7")
+                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.15")
                     .build()
 
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
                         lastError = "HTTP ${response.code}"
+                        networkError = true
                         Log.w(TAG, "POI endpoint failed: $endpoint -> ${response.code}")
                         return@use
                     }
 
                     val body = response.body?.string().orEmpty()
+                    if (!isValidOverpassPayload(body)) {
+                        lastError = "Geçersiz Overpass yanıtı"
+                        Log.w(TAG, "POI endpoint returned invalid JSON payload: $endpoint")
+                        return@use
+                    }
+
                     val parsed = parseOverpassResponse(body, selectedCategory, center)
                     Log.i(TAG, "POI endpoint $endpoint returned ${parsed.size} usable places")
-                    return@withContext parsed
+                    return@withContext PoiFetchResult.Success(
+                        pois = parsed,
+                        endpointUsed = endpoint
+                    )
                 }
             } catch (e: Exception) {
-                lastError = e.message
-                Log.w(TAG, "POI endpoint exception at $endpoint: ${e.message}")
+                networkError = true
+                lastError = e.message ?: "Bağlantı hatası"
+                Log.w(TAG, "POI endpoint exception at $endpoint: $lastError")
             }
         }
 
-        Log.e(TAG, "POI provider chain exhausted: ${lastError ?: "unknown"}")
-        emptyList()
+        Log.e(TAG, "POI provider chain exhausted: $lastError")
+        PoiFetchResult.Error(
+            message = lastError,
+            isNetworkError = networkError
+        )
     }
 
     internal fun buildQuery(center: GeoPoint, radiusMeters: Int, selectedCategory: PoiCategory?): String {
@@ -109,6 +135,11 @@ class PoiNetworkService(
             );
             out center 120;
         """.trimIndent()
+    }
+
+    internal fun isValidOverpassPayload(jsonString: String): Boolean {
+        val root = runCatching { JSONObject(jsonString) }.getOrNull() ?: return false
+        return root.optJSONArray("elements") != null
     }
 
     internal fun parseOverpassResponse(
