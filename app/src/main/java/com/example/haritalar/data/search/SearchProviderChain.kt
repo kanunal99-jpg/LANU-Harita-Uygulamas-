@@ -1,5 +1,6 @@
 package com.example.haritalar.data.search
 
+import androidx.collection.LruCache
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.HouseNumberStatus
 import com.example.haritalar.model.SearchResponse
@@ -25,6 +26,7 @@ class SearchProviderChain(
     val cacheProvider: CacheSearchProvider = CacheSearchProvider(),
     val businessProvider: SearchProvider = OverpassBusinessSearchProvider()
 ) {
+    private val committedForwardCache = LruCache<String, List<SearchResult>>(50)
 
     suspend fun executeSearch(
         query: String,
@@ -34,6 +36,13 @@ class SearchProviderChain(
         val trimmed = query.trim()
         if (trimmed.length < 2) {
             return@withContext SearchResponse.Empty(query)
+        }
+
+        val committedCacheKey = TurkishAddressHelper.normalizeTurkish(trimmed)
+        if (allowAlternativeForwardGeocoder) {
+            committedForwardCache.get(committedCacheKey)?.let { cached ->
+                return@withContext SearchResponse.Success(cached, "Önbellek • Kesin Arama")
+            }
         }
 
         val parsedQuery = TurkishAddressHelper.parseAddressQuery(trimmed)
@@ -105,7 +114,9 @@ class SearchProviderChain(
             }
         }
 
-        if (businessIntent && focusPoint != null && collectedResults.size < 12) {
+        if (allowAlternativeForwardGeocoder &&
+            businessIntent && focusPoint != null && collectedResults.size < 12
+        ) {
             try {
                 val businessResults = businessProvider.search(trimmed, focusPoint)
                 if (businessResults.isNotEmpty()) {
@@ -128,6 +139,9 @@ class SearchProviderChain(
             val deduplicated = deduplicateResults(collectedResults)
             val ranked = SearchRankingEvaluator.rankAndEvaluateResults(deduplicated, parsedQuery, focusPoint)
             cacheProvider.put(trimmed, ranked)
+            if (allowAlternativeForwardGeocoder) {
+                committedForwardCache.put(committedCacheKey, ranked)
+            }
             return@withContext SearchResponse.Success(ranked, activeProviderName)
         }
 
