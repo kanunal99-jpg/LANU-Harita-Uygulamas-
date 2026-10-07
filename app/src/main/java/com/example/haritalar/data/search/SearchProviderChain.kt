@@ -219,8 +219,10 @@ class SearchProviderChain(
             val isDuplicate = unique.any { existing ->
                 val closeCoordinates = abs(existing.point.latitude - item.point.latitude) < 0.0002 &&
                         abs(existing.point.longitude - item.point.longitude) < 0.0002
-                val sameName = existing.name.equals(item.name, ignoreCase = true)
-                closeCoordinates || sameName
+                val sameName = TurkishAddressHelper.normalizeTurkish(existing.name) ==
+                    TurkishAddressHelper.normalizeTurkish(item.name)
+                val sameNamedNearbyPlace = sameName && existing.point.distanceTo(item.point) <= 150.0
+                closeCoordinates || sameNamedNearbyPlace
             }
             if (!isDuplicate) {
                 unique.add(item)
