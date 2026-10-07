@@ -122,3 +122,116 @@ Bir geliştirme işi şu döngü tamamlanmadan kapanmaz:
 **Araştır → kök nedeni bul → düzelt → uygula → build → test → doğrula → deploy/yayınla → production smoke → kanıtla**
 
 Dış servis, erişim veya platform sınırı nedeniyle tamamlanamayan bir madde varsa “tamamlandı” denmez; sınır ve güvenli davranış açıkça kayda alınır.
+
+
+## 13. Ürün vizyonu: LANU Premium North Star
+
+LANU Harita'nın hedefi yalnızca çalışan bir navigasyon uygulaması olmak değildir. Ürün; **arama + rota + canlı sürüş + güvenlik + yol zekâsı + hava durumu + kamera/EDS + POI + çevrimdışı çalışma + kullanıcı raporları + araç entegrasyonu** yeteneklerini tek sürüş deneyiminde birleştiren premium bir sürüş platformu olarak geliştirilir.
+
+### 13.1 Rakip üstü ürün ilkesi
+
+Her ana özellik geliştirilirken şu soru sorulur:
+
+> “Bu özellik Google Maps, Yandex Navigator, Waze ve radar/kamera odaklı uygulamalarda nasıl çalışıyor; LANU bunu daha anlaşılır, daha ayrıntılı, daha güvenilir ve daha az sürücü etkileşimiyle nasıl yapar?”
+
+Rakiplerde bulunan kritik kullanıcı değerleri LANU'da eksik bırakılmaz; ancak lisans, kaynak doğruluğu, güvenlik veya yasal sınırlar nedeniyle yapılamayan işlevler sahte biçimde taklit edilmez.
+
+### 13.2 Tek tam sürüm ilkesi
+
+LANU içinde yapay Free / Plus / Pro / Premium özellik kilitleri oluşturulmaz. Teknik olarak mevcut, maliyeti onaylanmış ve güvenli şekilde sunulabilen ürün özellikleri kullanıcıya tek tam deneyim içinde açılır.
+
+Harici veri sağlayıcı ücretleri, platform şartları veya yasal kısıtlar bu ilkeden bağımsızdır; kullanıcı onayı olmadan ücret doğuran servis eklenemez.
+
+### 13.3 Sürüş öncesi brifing
+
+Rota başlatılmadan önce mümkün olduğunda tek ekranda şu bilgiler özetlenir:
+
+- toplam mesafe, ETA ve alternatif rotalar,
+- doğrulanmış trafik yoğunluğu ve tahmini gecikme,
+- rota üzerindeki yol çalışması, kaza, kapanış, su baskını ve benzeri olaylar,
+- rota üzerindeki sabit hız kameraları / ortalama hız koridorları / doğrulanmış hız limiti değişimleri,
+- yağmur, kar, sis, kuvvetli rüzgâr, buzlanma ve görüş riski,
+- ücretli yol / feribot / tünel / köprü bilgisi,
+- yakıt / şarj / dinlenme / hastane / eczane gibi kritik POI'ler,
+- yol tipi, keskin viraj, okul bölgesi, hemzemin geçit, şerit daralması gibi sürüş özellikleri,
+- internet/GPS/veri kaynağı eksiklikleri ve hangi verilerin doğrulanamadığı.
+
+### 13.4 Canlı sürüş kokpiti
+
+Navigasyon sırasında temel sürüş bilgisi tek bakışta okunur ve kullanıcıyı menülere göndermeden çalışır:
+
+- sonraki manevra + şerit yönlendirme,
+- mevcut hız + doğrulanmış hız limiti,
+- kalan mesafe + ETA + gecikme,
+- yaklaşan kritik olay / yol özelliği / hava olayı,
+- hız kamerası / koridor uyarısı,
+- daha iyi rota bulundu uyarısı,
+- rota dışına çıkma ve güvenli reroute,
+- GPS / internet / veri kalitesi göstergesi,
+- sürüş sırasında minimum dokunma ve sesli kontrol önceliği.
+
+### 13.5 Bilgi derinliği
+
+Kullanıcı herhangi bir olay, POI, kamera, hava uyarısı veya rota öğesine dokunduğunda mümkün olduğunca şu ayrıntılara ulaşabilmelidir:
+
+- nedir,
+- nerede,
+- rotadan kaç km ileride,
+- hangi yönde,
+- ne kadar süredir aktif,
+- kaynak,
+- veri güncelliği,
+- güven seviyesi,
+- sürüşe etkisi,
+- mümkün alternatif / öneri.
+
+### 13.6 Premium arayüz standardı
+
+LANU'nun arayüzü yalnızca “çalışıyor” seviyesinde kabul edilmez. Her ana ekran:
+
+- koyu ve açık temada yüksek kontrastlı,
+- tek elle kullanılabilir,
+- küçük ekranlarda taşmasız,
+- sürüş sırasında okunabilir,
+- tutarlı ikonografi ve tipografiye sahip,
+- gereksiz teknik provider isimlerini ana akıştan gizleyen,
+- kritik bilgi hiyerarşisi net,
+- animasyonları akıcı fakat dikkat dağıtmayan,
+- erişilebilirlik içerik açıklamaları ve büyük dokunma hedefleri olan
+
+premium ürün standardını karşılamalıdır.
+
+### 13.7 Yol zekâsı kapsamı
+
+LANU uzun vadede aşağıdaki kategorileri tek sistemde desteklemeyi hedefler:
+
+- canlı trafik ve gecikme,
+- kaza / yol çalışması / yol kapanışı / şerit kapanışı,
+- yolda nesne / su baskını / düşük görüş / kar-buz,
+- hız limiti değişimi,
+- sabit hız kamerası ve doğrulanabilir koridor hız bilgisi,
+- keskin viraj / hız tümseği / okul bölgesi,
+- demiryolu geçidi / dar köprü / şerit bitişi / birleşme,
+- yol yüzeyi ve hava kaynaklı risk,
+- kullanıcı bildirimi + doğrulama + yaşlandırma sistemi,
+- rota üzeri ve sürüş dışı yakın çevre uyarıları.
+
+### 13.8 Çevrimdışı ve dayanıklılık hedefi
+
+İnternet kesildiğinde uygulama mümkün olan en fazla işlevi sürdürür:
+
+- indirilebilir harita,
+- cached / offline rota fallback,
+- daha önce doğrulanmış hız kamerası ve kritik POI cache'i,
+- son bilinen yol/hız limit bilgisi yalnızca yaşı ve kapsamı doğrulanabiliyorsa,
+- ağ geri geldiğinde otomatik senkronizasyon.
+
+Çevrimdışı destek olmayan veri “varmış” gibi gösterilmez.
+
+### 13.9 Kabul ölçütü
+
+Yeni özellik yalnızca ekrana çizildiği için tamamlanmış sayılmaz. Tamamlanma için:
+
+**veri doğruluğu + UX + sürüş güvenliği + fallback + performans + test + gerçek cihaz doğrulaması + release kanıtı**
+
+birlikte değerlendirilir.
