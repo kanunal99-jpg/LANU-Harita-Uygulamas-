@@ -1,5 +1,6 @@
 package com.example.haritalar.data.network
 
+import android.util.Log
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
@@ -12,80 +13,188 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
+/**
+ * Real OSM POI chain.
+ *
+ * Primary Overpass -> mirrors -> repository search fallback.
+ * Queries nodes, ways and relations; ways/relations use their returned center.
+ */
 class PoiNetworkService(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(12, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(14, TimeUnit.SECONDS)
+        .build(),
+    private val endpoints: List<String> = listOf(
+        "https://overpass-api.de/api/interpreter",
+        "https://lz4.overpass-api.de/api/interpreter",
+        "https://z.overpass-api.de/api/interpreter"
+    )
 ) {
-    suspend fun fetchPoisAround(center: GeoPoint, radiusMeters: Int = 2500, selectedCategory: PoiCategory? = null): List<PoiItem> = withContext(Dispatchers.IO) {
-        try {
-            val amenityFilter = when (selectedCategory) {
-                PoiCategory.RESTAURANT -> "\"amenity\"=\"restaurant\""
-                PoiCategory.FUEL -> "\"amenity\"=\"fuel\""
-                PoiCategory.HOSPITAL -> "\"amenity\"=\"hospital\""
-                PoiCategory.PHARMACY -> "\"amenity\"=\"pharmacy\""
-                PoiCategory.MARKET -> "\"shop\"=\"supermarket\""
-                PoiCategory.PARKING -> "\"amenity\"=\"parking\""
-                PoiCategory.ATM -> "\"amenity\"=\"atm\""
-                PoiCategory.CAFE -> "\"amenity\"=\"cafe\""
-                PoiCategory.CHARGING_STATION -> "\"amenity\"=\"charging_station\""
-                null -> "\"amenity\"~\"restaurant|fuel|hospital|pharmacy|parking|atm|cafe|charging_station\""
-            }
-            val query = """
-                [out:json][timeout:15];
-                (node[$amenityFilter](around:$radiusMeters,${center.latitude},${center.longitude}););
-                out 35;
-            """.trimIndent()
-            val request = Request.Builder()
-                .url("https://overpass-api.de/api/interpreter")
-                .post(query.toRequestBody("text/plain".toMediaType()))
-                .header("User-Agent", "HaritalarAndroidNav/1.0")
-                .build()
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) return@withContext emptyList()
-            val body = response.body?.string() ?: return@withContext emptyList()
-            val elements = JSONObject(body).optJSONArray("elements") ?: return@withContext emptyList()
-            val results = mutableListOf<PoiItem>()
-            for (i in 0 until elements.length()) {
-                val elem = elements.getJSONObject(i)
-                val id = elem.optLong("id", 0).toString()
-                val lat = elem.optDouble("lat", Double.NaN)
-                val lon = elem.optDouble("lon", Double.NaN)
-                if (lat.isNaN() || lon.isNaN()) continue
-                val tags = elem.optJSONObject("tags")
-                val brand = tags?.optString("brand")?.ifBlank { null }
-                val operator = tags?.optString("operator")?.ifBlank { null }
-                val name = tags?.optString("name")?.ifBlank { null } ?: brand ?: operator ?: getDefaultNameForAmenity(tags)
-                val cat = mapTagsToCategory(tags)
-                val street = tags?.optString("addr:street")?.ifBlank { null }
-                val housenumber = tags?.optString("addr:housenumber")?.ifBlank { null }
-                val address = if (street != null) listOfNotNull(street, housenumber).joinToString(" ") else null
-                results.add(PoiItem(id, name, cat, GeoPoint(lat, lon), address, brand, operator))
-            }
-            results
-        } catch (_: Exception) {
-            emptyList()
-        }
+    companion object {
+        private const val TAG = "PoiNetworkService"
     }
 
-    private fun mapTagsToCategory(tags: JSONObject?): PoiCategory {
-        if (tags == null) return PoiCategory.RESTAURANT
+    suspend fun fetchPoisAround(
+        center: GeoPoint,
+        radiusMeters: Int = 2_500,
+        selectedCategory: PoiCategory? = null
+    ): List<PoiItem> = withContext(Dispatchers.IO) {
+        val safeRadius = radiusMeters.coerceIn(500, 20_000)
+        val query = buildQuery(center, safeRadius, selectedCategory)
+        var lastError: String? = null
+
+        for (endpoint in endpoints) {
+            try {
+                val request = Request.Builder()
+                    .url(endpoint)
+                    .post(query.toRequestBody("text/plain".toMediaType()))
+                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.3")
+                    .build()
+
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        lastError = "HTTP ${response.code}"
+                        Log.w(TAG, "POI endpoint failed: $endpoint -> ${response.code}")
+                        return@use
+                    }
+
+                    val body = response.body?.string().orEmpty()
+                    val parsed = parseOverpassResponse(body, selectedCategory, center)
+                    Log.i(TAG, "POI endpoint $endpoint returned ${parsed.size} usable places")
+                    return@withContext parsed
+                }
+            } catch (e: Exception) {
+                lastError = e.message
+                Log.w(TAG, "POI endpoint exception at $endpoint: ${e.message}")
+            }
+        }
+
+        Log.e(TAG, "POI provider chain exhausted: ${lastError ?: "unknown"}")
+        emptyList()
+    }
+
+    internal fun buildQuery(center: GeoPoint, radiusMeters: Int, selectedCategory: PoiCategory?): String {
+        val clauses = when (selectedCategory) {
+            PoiCategory.RESTAURANT -> listOf("""nwr["amenity"="restaurant"]""")
+            PoiCategory.FUEL -> listOf("""nwr["amenity"="fuel"]""")
+            PoiCategory.HOSPITAL -> listOf(
+                """nwr["amenity"="hospital"]""",
+                """nwr["healthcare"="hospital"]"""
+            )
+            PoiCategory.PHARMACY -> listOf(
+                """nwr["amenity"="pharmacy"]""",
+                """nwr["shop"="chemist"]"""
+            )
+            PoiCategory.MARKET -> listOf(
+                """nwr["shop"~"^(supermarket|convenience|wholesale|food)$"]"""
+            )
+            PoiCategory.PARKING -> listOf("""nwr["amenity"="parking"]""")
+            PoiCategory.ATM -> listOf("""nwr["amenity"="atm"]""")
+            PoiCategory.CAFE -> listOf("""nwr["amenity"="cafe"]""")
+            PoiCategory.CHARGING_STATION -> listOf("""nwr["amenity"="charging_station"]""")
+            null -> listOf(
+                """nwr["amenity"~"^(restaurant|fuel|hospital|pharmacy|parking|atm|cafe|charging_station)$"]""",
+                """nwr["shop"~"^(supermarket|convenience|chemist|wholesale|food)$"]"""
+            )
+        }
+
+        val body = clauses.joinToString("\n") { clause ->
+            "$clause(around:$radiusMeters,${center.latitude},${center.longitude});"
+        }
+
+        return """
+            [out:json][timeout:14];
+            (
+              $body
+            );
+            out center 120;
+        """.trimIndent()
+    }
+
+    internal fun parseOverpassResponse(
+        jsonString: String,
+        selectedCategory: PoiCategory?,
+        center: GeoPoint
+    ): List<PoiItem> {
+        val root = runCatching { JSONObject(jsonString) }.getOrNull() ?: return emptyList()
+        val elements = root.optJSONArray("elements") ?: return emptyList()
+        val results = mutableListOf<PoiItem>()
+
+        for (i in 0 until elements.length()) {
+            val elem = elements.optJSONObject(i) ?: continue
+            val tags = elem.optJSONObject("tags") ?: continue
+            val type = elem.optString("type", "node")
+            val osmId = elem.optLong("id", 0L)
+            if (osmId <= 0L) continue
+
+            val lat = if (elem.has("lat")) {
+                elem.optDouble("lat", Double.NaN)
+            } else {
+                elem.optJSONObject("center")?.optDouble("lat", Double.NaN) ?: Double.NaN
+            }
+            val lon = if (elem.has("lon")) {
+                elem.optDouble("lon", Double.NaN)
+            } else {
+                elem.optJSONObject("center")?.optDouble("lon", Double.NaN) ?: Double.NaN
+            }
+            if (lat.isNaN() || lon.isNaN()) continue
+
+            val category = mapTagsToCategory(tags) ?: continue
+            if (selectedCategory != null && category != selectedCategory) continue
+
+            val brand = tags.optString("brand").ifBlank { null }
+            val operator = tags.optString("operator").ifBlank { null }
+            val name = tags.optString("name").ifBlank { null }
+                ?: brand
+                ?: operator
+                ?: getDefaultNameForCategory(category)
+
+            val street = tags.optString("addr:street").ifBlank { null }
+            val housenumber = tags.optString("addr:housenumber").ifBlank { null }
+            val neighborhood = tags.optString("addr:neighbourhood").ifBlank {
+                tags.optString("addr:suburb").ifBlank { null }
+            }
+            val city = tags.optString("addr:city").ifBlank { null }
+            val address = listOfNotNull(
+                listOfNotNull(street, housenumber).joinToString(" ").ifBlank { null },
+                neighborhood,
+                city
+            ).joinToString(", ").ifBlank { null }
+
+            results += PoiItem(
+                id = "${type}_$osmId",
+                name = name,
+                category = category,
+                point = GeoPoint(lat, lon),
+                address = address,
+                brand = brand,
+                operator = operator
+            )
+        }
+
+        return results
+            .distinctBy { it.id }
+            .sortedBy { it.point.distanceTo(center) }
+            .take(120)
+    }
+
+    private fun mapTagsToCategory(tags: JSONObject): PoiCategory? {
         val amenity = tags.optString("amenity")
         val shop = tags.optString("shop")
+        val healthcare = tags.optString("healthcare")
         return when {
             amenity == "restaurant" -> PoiCategory.RESTAURANT
             amenity == "fuel" -> PoiCategory.FUEL
-            amenity == "hospital" -> PoiCategory.HOSPITAL
-            amenity == "pharmacy" -> PoiCategory.PHARMACY
+            amenity == "hospital" || healthcare == "hospital" -> PoiCategory.HOSPITAL
+            amenity == "pharmacy" || shop == "chemist" -> PoiCategory.PHARMACY
             amenity == "parking" -> PoiCategory.PARKING
             amenity == "atm" -> PoiCategory.ATM
             amenity == "cafe" -> PoiCategory.CAFE
             amenity == "charging_station" -> PoiCategory.CHARGING_STATION
-            shop == "supermarket" || shop == "convenience" -> PoiCategory.MARKET
-            else -> PoiCategory.RESTAURANT
+            shop in setOf("supermarket", "convenience", "wholesale", "food") -> PoiCategory.MARKET
+            else -> null
         }
     }
 
-    private fun getDefaultNameForAmenity(tags: JSONObject?): String = mapTagsToCategory(tags).displayName
+    private fun getDefaultNameForCategory(category: PoiCategory): String = category.displayName
 }

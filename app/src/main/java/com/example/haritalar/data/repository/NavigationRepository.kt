@@ -30,7 +30,18 @@ import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
 import kotlinx.coroutines.flow.Flow
 
+enum class SavedPlaceResult {
+    SAVED,
+    REPLACED,
+    DUPLICATE,
+    CAPACITY_REACHED,
+    INVALID
+}
+
 class NavigationRepository(context: Context) {
+    companion object {
+        const val MAX_SAVED_PLACES = SavedPlacePolicy.MAX_SAVED_PLACES
+    }
     val db = AppDatabase.getInstance(context)
     private val favoriteDao = db.favoriteDao()
     private val searchHistoryDao = db.searchHistoryDao()
@@ -103,8 +114,43 @@ class NavigationRepository(context: Context) {
     suspend fun reverseGeocode(point: GeoPoint): String? =
         searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
 
-    suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> =
-        poiService.fetchPoisAround(center, radiusMeters = 3000, selectedCategory = category)
+    suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> {
+        val primary = poiService.fetchPoisAround(center, radiusMeters = 8_000, selectedCategory = category)
+        if (primary.isNotEmpty()) return primary
+
+        if (category == null) return emptyList()
+        val fallbackQueries = when (category) {
+            PoiCategory.RESTAURANT -> listOf("restoran", "restaurant")
+            PoiCategory.FUEL -> listOf("benzinlik", "akaryakıt")
+            PoiCategory.HOSPITAL -> listOf("hastane", "hospital")
+            PoiCategory.PHARMACY -> listOf("eczane", "pharmacy")
+            PoiCategory.MARKET -> listOf("market", "süpermarket")
+            PoiCategory.PARKING -> listOf("otopark", "parking")
+            PoiCategory.ATM -> listOf("ATM", "banka ATM")
+            PoiCategory.CAFE -> listOf("kafe", "cafe")
+            PoiCategory.CHARGING_STATION -> listOf("şarj istasyonu", "elektrikli araç şarj")
+        }
+
+        for (query in fallbackQueries) {
+            val response = searchProviderChain.executeSearch(query, center)
+            if (response is com.example.haritalar.model.SearchResponse.Success) {
+                val fallback = response.results
+                    .filter { it.point.distanceTo(center) <= 20_000.0 }
+                    .take(40)
+                    .map {
+                        PoiItem(
+                            id = "search_${it.id}",
+                            name = it.name,
+                            category = category,
+                            point = it.point,
+                            address = it.shortAddress.ifBlank { it.displayName }
+                        )
+                    }
+                if (fallback.isNotEmpty()) return fallback
+            }
+        }
+        return emptyList()
+    }
 
     suspend fun calculateRouteAlternatives(
         start: GeoPoint,
@@ -133,16 +179,44 @@ class NavigationRepository(context: Context) {
         return trafficRankingService.rankAndApplyTraffic(normalizedRoutes, generationId)
     }
 
-    suspend fun addFavorite(title: String, address: String, point: GeoPoint, category: String) {
+    suspend fun addFavorite(title: String, address: String, point: GeoPoint, category: String): SavedPlaceResult {
+        val cleanedTitle = title.trim().take(80)
+        val cleanedCategory = SavedPlacePolicy.normalizeCategory(category) ?: return SavedPlaceResult.INVALID
+        if (cleanedTitle.isBlank() || point.latitude !in -90.0..90.0 || point.longitude !in -180.0..180.0) {
+            return SavedPlaceResult.INVALID
+        }
+
+        val exactDuplicate = favoriteDao.findExact(cleanedTitle, point.latitude, point.longitude) != null
+        val existingCategory = if (cleanedCategory == "HOME" || cleanedCategory == "WORK") {
+            favoriteDao.getFavoriteByCategory(cleanedCategory)
+        } else null
+        val decision = SavedPlacePolicy.decision(
+            currentCount = favoriteDao.getFavoriteCount(),
+            category = cleanedCategory,
+            hasExistingSingleCategory = existingCategory != null,
+            exactDuplicate = exactDuplicate
+        )
+        if (decision == SavedPlaceResult.DUPLICATE ||
+            decision == SavedPlaceResult.CAPACITY_REACHED ||
+            decision == SavedPlaceResult.INVALID
+        ) {
+            return decision
+        }
+
+        if (existingCategory != null) {
+            favoriteDao.deleteByCategory(cleanedCategory)
+        }
+
         favoriteDao.insertFavorite(
             FavoritePlace(
-                title = title,
-                address = address,
+                title = cleanedTitle,
+                address = address.trim().take(300),
                 latitude = point.latitude,
                 longitude = point.longitude,
-                category = category
+                category = cleanedCategory
             )
         )
+        return decision
     }
 
     suspend fun deleteFavorite(favorite: FavoritePlace) = favoriteDao.deleteFavorite(favorite)

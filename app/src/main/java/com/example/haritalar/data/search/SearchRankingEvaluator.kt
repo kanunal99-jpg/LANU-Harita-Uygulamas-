@@ -96,6 +96,23 @@ object SearchRankingEvaluator {
                 }
             }
 
+            // Business / POI keyword relevance.
+            parsedQuery.poiOrKeyword?.let { keyword ->
+                val stopWords = setOf("gida", "ve", "san", "tic", "ltd", "sti", "as")
+                val tokens = TurkishAddressHelper.normalizeTurkish(keyword)
+                    .split(" ")
+                    .filter { it.length >= 3 && it !in stopWords }
+                    .distinct()
+                if (tokens.isNotEmpty()) {
+                    val target = TurkishAddressHelper.normalizeTurkish(
+                        result.name + " " + result.displayName + " " + result.shortAddress
+                    )
+                    val hits = tokens.count { target.contains(it) }
+                    score += hits * 1200
+                    if (hits == tokens.size) score += 3200
+                }
+            }
+
             // Result type bonus
             when (result.resultType) {
                 AddressResultType.ADDRESS -> score += 1500

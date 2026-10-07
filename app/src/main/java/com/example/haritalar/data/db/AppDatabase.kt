@@ -17,8 +17,26 @@ data class FavoritePlace(
 
 @Dao
 interface FavoriteDao {
-    @Query("SELECT * FROM favorite_places ORDER BY id ASC")
+    @Query("""
+        SELECT * FROM favorite_places
+        ORDER BY
+          CASE category WHEN 'HOME' THEN 0 WHEN 'WORK' THEN 1 ELSE 2 END,
+          timestamp DESC
+    """)
     fun getAllFavorites(): Flow<List<FavoritePlace>>
+
+    @Query("SELECT COUNT(*) FROM favorite_places")
+    suspend fun getFavoriteCount(): Int
+
+    @Query("DELETE FROM favorite_places WHERE category = :category")
+    suspend fun deleteByCategory(category: String)
+
+    @Query("""
+        SELECT * FROM favorite_places
+        WHERE title = :title AND latitude = :latitude AND longitude = :longitude
+        LIMIT 1
+    """)
+    suspend fun findExact(title: String, latitude: Double, longitude: Double): FavoritePlace?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertFavorite(favorite: FavoritePlace): Long

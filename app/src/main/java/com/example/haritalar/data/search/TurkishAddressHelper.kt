@@ -240,6 +240,12 @@ object TurkishAddressHelper {
 
         val hasHouseNum = !detectedHouseNumber.isNullOrBlank()
 
+        val remainingKeyword = working
+            .replace(Regex("[,;]+"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .takeIf { it.length >= 2 }
+
         return ParsedAddressQuery(
             rawQuery = trimmed,
             province = detectedProvince,
@@ -247,6 +253,7 @@ object TurkishAddressHelper {
             neighborhood = detectedNeighborhood,
             street = detectedStreet,
             houseNumber = detectedHouseNumber,
+            poiOrKeyword = remainingKeyword,
             isBuildingLevelRequested = hasHouseNum
         )
     }
@@ -304,7 +311,19 @@ object TurkishAddressHelper {
             results.add(cleanedPunctuation)
         }
 
-        return results.distinct()
+        // 7. Business-intent expansions for Turkish retail/wholesale searches.
+        val normalizedQuery = normalizeTurkish(trimmed)
+        if ("donuk" in normalizedQuery || "dondurulmus" in normalizedQuery) {
+            results.add("donuk gıda")
+            results.add("dondurulmuş gıda")
+            results.add("donuk gıda üreticisi")
+        }
+        if ("toptan" in normalizedQuery) {
+            results.add("gıda toptancısı")
+            results.add("toptan gıda")
+        }
+
+        return results.filter { it.isNotBlank() }.distinct().take(10)
     }
 
     /**

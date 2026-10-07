@@ -917,13 +917,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun addFavorite(title: String, category: String) {
-        val dest = _uiState.value.selectedDestination ?: return
+    fun saveSelectedPlace(title: String, category: String) {
+        val dest = _uiState.value.selectedDestination ?: run {
+            _uiState.value = _uiState.value.copy(statusMessage = "Kaydedilecek konum seçilmedi.")
+            return
+        }
         viewModelScope.launch {
-            repository.addFavorite(title, dest.displayName, dest.point, category)
-            _uiState.value = _uiState.value.copy(statusMessage = "$title favorilere eklendi.")
+            val result = repository.addFavorite(title, dest.displayName, dest.point, category)
+            val message = when (result) {
+                com.example.haritalar.data.repository.SavedPlaceResult.SAVED -> "$title kaydedildi."
+                com.example.haritalar.data.repository.SavedPlaceResult.REPLACED -> "$title güncellendi."
+                com.example.haritalar.data.repository.SavedPlaceResult.DUPLICATE -> "Bu adres zaten kayıtlı."
+                com.example.haritalar.data.repository.SavedPlaceResult.CAPACITY_REACHED ->
+                    "Kayıt kapasitesi dolu. En fazla 500 adres kaydedilebilir."
+                com.example.haritalar.data.repository.SavedPlaceResult.INVALID ->
+                    "Adres kaydedilemedi; konum veya başlık geçersiz."
+            }
+            _uiState.value = _uiState.value.copy(statusMessage = message)
         }
     }
+
+    fun addFavorite(title: String, category: String) = saveSelectedPlace(title, category)
 
     fun removeFavorite(fav: FavoritePlace) { viewModelScope.launch { repository.deleteFavorite(fav) } }
     fun clearStatusMessage() { _uiState.value = _uiState.value.copy(statusMessage = null) }

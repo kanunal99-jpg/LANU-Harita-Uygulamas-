@@ -133,40 +133,26 @@ fun LayersBottomSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 16.dp, height = 4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color(0xFF10B981))
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                TrafficLegendItem(
+                                    label = "Akıcı",
+                                    color = Color(0xFF10B981),
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Yeşil (Akıcı)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 16.dp, height = 4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color(0xFFF59E0B))
+                                TrafficLegendItem(
+                                    label = "Yavaş",
+                                    color = Color(0xFFF59E0B),
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Sarı (Yavaş)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 16.dp, height = 4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color(0xFFEF4444))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Kırmızı (Sıkışık)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                            TrafficLegendItem(
+                                label = "Sıkışık",
+                                color = Color(0xFFEF4444)
+                            )
                         }
                     }
                 }
@@ -224,14 +210,44 @@ fun LayersBottomSheet(
 
             // Safety Cameras Layer Toggle
             LayerSwitchRow(
-                title = "Radar ve Hız Kameraları",
-                description = "OSM kaynaklı sabit hız kameraları ve rota üzeri uyarılar",
+                title = "Sabit Hız Kameraları",
+                description = "OSM kaynaklı doğrulanabilir kamera noktaları ve rota üzeri erken uyarılar",
                 icon = Icons.Default.CameraAlt,
-                iconColor = Color(0xFFEAB308),
+                iconColor = Color(0xFFDC2626),
                 isChecked = isSafetyCamerasLayerVisible,
                 onCheckedChange = { onToggleSafetyCamerasLayer() },
                 testTag = "layer_safety_cameras_switch"
             )
+
+            if (isSafetyCamerasLayerVisible) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 52.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PhotoCamera,
+                            contentDescription = null,
+                            tint = Color(0xFFDC2626),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Kırmızı kamera simgesi = OSM'de kayıtlı sabit hız kamerası",
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
 
             HorizontalDivider(
                 modifier = Modifier.padding(vertical = 12.dp),
@@ -308,6 +324,32 @@ fun LayersBottomSheet(
 }
 
 @Composable
+private fun TrafficLegendItem(
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 20.dp, height = 5.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(7.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
 private fun LayerOptionButton(
     title: String,
     subtitle: String,
@@ -318,10 +360,12 @@ private fun LayerOptionButton(
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
-        color = if (isSelected) Color(0xFFEFF6FF) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
         border = androidx.compose.foundation.BorderStroke(
             width = if (isSelected) 2.dp else 1.dp,
-            color = if (isSelected) Color(0xFF007AFF) else Color.Transparent
+            color = if (isSelected) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.25f)
         ),
         modifier = modifier.clickable { onClick() }
     ) {
@@ -333,13 +377,13 @@ private fun LayerOptionButton(
                 modifier = Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(if (isSelected) Color(0xFF007AFF) else MaterialTheme.colorScheme.surface),
+                    .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
+                    tint = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -348,13 +392,15 @@ private fun LayerOptionButton(
                 text = title,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = if (isSelected) Color(0xFF007AFF) else MaterialTheme.colorScheme.onSurface
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+                    else MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = subtitle,
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
                 lineHeight = 14.sp
             )
         }
