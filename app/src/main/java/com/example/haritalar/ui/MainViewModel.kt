@@ -454,6 +454,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 isLoadingRoutes = true,
                 activeGenerationId = genId,
+                routeWeather = emptyList(),
                 statusMessage = "Rotalar hesaplanıyor..."
             )
 
@@ -472,6 +473,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
+                primaryRoute?.let { fetchWeatherForRoute(it) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -500,7 +502,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCalculationJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoadingRoutes = true, activeGenerationId = genId,
-                routeOptions = emptyList(), selectedRoute = null, statusMessage = "Rota hesaplanıyor..."
+                routeOptions = emptyList(), selectedRoute = null, routeWeather = emptyList(),
+                statusMessage = "Rota hesaplanıyor..."
             )
             try {
                 val (routes, trafficMap) = repository.calculateRouteAlternatives(initialLocation.point, destination, genId)
@@ -529,6 +532,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     selectedDestination = snappedDestination ?: _uiState.value.selectedDestination,
                     isLoadingRoutes = false, navigationState = NavigationState.ROUTE_SELECTION, statusMessage = null
                 )
+                fetchWeatherForRoute(route)
                 startNavigationInternal(route, latestLocation)
             } catch (e: CancellationException) {
                 throw e
@@ -623,7 +627,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
-            isWrongWay = false, isLoadingRoutes = false
+            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), approachingWeather = null
         )
     }
 
