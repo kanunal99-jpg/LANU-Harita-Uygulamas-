@@ -77,6 +77,33 @@ class SearchProviderChainTest {
     }
 
     @Test
+    fun sameNameResultsFarApartAreNotDeduplicated() = runBlocking {
+        fakePrimaryProvider.returnResults = listOf(
+            SearchResult(
+                id = "opet_istanbul",
+                name = "Opet",
+                displayName = "Opet, İstanbul",
+                point = GeoPoint(41.01, 29.01),
+                resultType = AddressResultType.POI,
+                provider = fakePrimaryProvider.name
+            ),
+            SearchResult(
+                id = "opet_kocaeli",
+                name = "Opet",
+                displayName = "Opet, Kocaeli",
+                point = GeoPoint(40.76, 29.92),
+                resultType = AddressResultType.POI,
+                provider = fakePrimaryProvider.name
+            )
+        )
+
+        val response = chain.executeSearch("opet")
+
+        assertTrue(response is SearchResponse.Success)
+        assertEquals(2, (response as SearchResponse.Success).results.size)
+    }
+
+    @Test
     fun testFallbackToAlternativeProviderWhenPrimaryFails() = runBlocking {
         fakePrimaryProvider.shouldThrow = true
 
