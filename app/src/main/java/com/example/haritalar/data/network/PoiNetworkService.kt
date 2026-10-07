@@ -72,6 +72,12 @@ class PoiNetworkService(
                     }
 
                     val body = response.body?.string().orEmpty()
+                    if (!isValidOverpassPayload(body)) {
+                        lastError = "Geçersiz Overpass yanıtı"
+                        Log.w(TAG, "POI endpoint returned invalid JSON payload: $endpoint")
+                        return@use
+                    }
+
                     val parsed = parseOverpassResponse(body, selectedCategory, center)
                     Log.i(TAG, "POI endpoint $endpoint returned ${parsed.size} usable places")
                     return@withContext PoiFetchResult.Success(
@@ -129,6 +135,11 @@ class PoiNetworkService(
             );
             out center 120;
         """.trimIndent()
+    }
+
+    internal fun isValidOverpassPayload(jsonString: String): Boolean {
+        val root = runCatching { JSONObject(jsonString) }.getOrNull() ?: return false
+        return root.optJSONArray("elements") != null
     }
 
     internal fun parseOverpassResponse(
