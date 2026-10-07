@@ -91,8 +91,10 @@ class WeatherRepository(
         val weatherCodes = hourly.optJSONArray("weather_code") ?: return null
         if (timesArray.length() == 0 || weatherCodes.length() == 0) return null
 
-        val times = List(timesArray.length()) { index -> timesArray.optLong(index, Long.MIN_VALUE) }
-            .filter { it != Long.MIN_VALUE }
+        val times = List(timesArray.length()) { index ->
+            timesArray.optLong(index, Long.MIN_VALUE)
+        }
+        if (times.any { it == Long.MIN_VALUE }) return null
         val selectedIndex = RouteWeatherForecastPolicy.nearestForecastIndex(
             timesEpochSeconds = times,
             targetEpochSeconds = targetEpochSeconds
