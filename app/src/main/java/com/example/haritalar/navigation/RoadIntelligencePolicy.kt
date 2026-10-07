@@ -1,6 +1,8 @@
 package com.example.haritalar.navigation
 
+import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.TrafficLevel
+import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
 import com.example.haritalar.model.WeatherType
@@ -13,6 +15,7 @@ enum class RoadIntelligencePriority(val rank: Int) {
 }
 
 enum class RoadIntelligenceType {
+    ROAD_CLOSURE,
     CAMERA,
     WEATHER,
     TRAFFIC
@@ -38,9 +41,49 @@ object RoadIntelligencePolicy {
     fun build(
         cameraWarning: SafetyCameraWarningPolicy.ProximityWarning?,
         weather: WeatherCondition?,
-        traffic: TrafficStatus?
+        traffic: TrafficStatus?,
+        trafficSegments: List<TrafficSegment> = emptyList(),
+        userPoint: GeoPoint? = null
     ): List<RoadIntelligenceEvent> {
         val events = mutableListOf<RoadIntelligenceEvent>()
+
+        val verifiedClosures = if (traffic?.verified == true) {
+            trafficSegments.filter { it.roadClosure }
+        } else {
+            emptyList()
+        }
+
+        if (verifiedClosures.isNotEmpty()) {
+            val nearestClosurePoint = if (userPoint != null) {
+                verifiedClosures
+                    .asSequence()
+                    .flatMap { it.coordinates.asSequence() }
+                    .minByOrNull { it.distanceTo(userPoint) }
+            } else {
+                verifiedClosures.firstNotNullOfOrNull { it.coordinates.firstOrNull() }
+            }
+            val closureDistance = if (userPoint != null && nearestClosurePoint != null) {
+                userPoint.distanceTo(nearestClosurePoint)
+            } else {
+                null
+            }
+
+            events += RoadIntelligenceEvent(
+                type = RoadIntelligenceType.ROAD_CLOSURE,
+                priority = RoadIntelligencePriority.P0,
+                title = if (verifiedClosures.size == 1) {
+                    "Yol kapanışı"
+                } else {
+                    "${verifiedClosures.size} yol kapanışı"
+                },
+                detail = closureDistance?.let {
+                    "${formatDistance(it)} ileride • doğrulanmış kapanış"
+                } ?: "Seçili rota üzerinde doğrulanmış kapanış",
+                source = traffic?.sourceName ?: "Trafik sağlayıcısı",
+                distanceMeters = closureDistance,
+                updatedAtMillis = traffic?.lastCheckTimestamp?.takeIf { it > 0L }
+            )
+        }
 
         cameraWarning?.let { warning ->
             events += RoadIntelligenceEvent(
