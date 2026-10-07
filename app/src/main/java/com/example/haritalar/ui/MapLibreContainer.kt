@@ -456,21 +456,50 @@ private fun createEmptyFeatureCollection(): String = "{\"type\":\"FeatureCollect
 
 fun createSafetyCameraBitmap(context: Context): Bitmap {
     val d = context.resources.displayMetrics.density
-    val size = (58 * d).toInt().coerceAtLeast(64)
+    val size = (54 * d).toInt().coerceAtLeast(60)
     val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val cx = size / 2f
     val cy = size / 2f
-    val shadow = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(80, 0, 0, 0) }
-    canvas.drawCircle(cx, cy + 2 * d, 24 * d, shadow)
-    val outer = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-    canvas.drawCircle(cx, cy, 24 * d, outer)
-    val red = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#DC2626") }
-    canvas.drawCircle(cx, cy, 20 * d, red)
-    val dark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#111827"); style = Paint.Style.STROKE; strokeWidth = 2 * d }
-    canvas.drawCircle(cx, cy, 20 * d, dark)
-    val lens = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
-    canvas.drawCircle(cx, cy, 6 * d, lens)
+
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.argb(70, 0, 0, 0)
+        canvas.drawCircle(cx, cy + 2.5f * d, 22f * d, it)
+    }
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.WHITE
+        canvas.drawCircle(cx, cy, 22f * d, it)
+    }
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.parseColor("#DC2626")
+        canvas.drawCircle(cx, cy, 18.5f * d, it)
+    }
+
+    val cameraPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    val body = android.graphics.RectF(
+        cx - 11.5f * d,
+        cy - 7f * d,
+        cx + 11.5f * d,
+        cy + 8.5f * d
+    )
+    canvas.drawRoundRect(body, 3.5f * d, 3.5f * d, cameraPaint)
+
+    val top = android.graphics.RectF(
+        cx - 7.5f * d,
+        cy - 11f * d,
+        cx + 1.5f * d,
+        cy - 5.5f * d
+    )
+    canvas.drawRoundRect(top, 2f * d, 2f * d, cameraPaint)
+
+    val lens = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#DC2626") }
+    canvas.drawCircle(cx, cy + 0.5f * d, 5f * d, lens)
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.WHITE
+        it.style = Paint.Style.STROKE
+        it.strokeWidth = 1.4f * d
+        canvas.drawCircle(cx, cy + 0.5f * d, 5f * d, it)
+    }
     return bitmap
 }
 
