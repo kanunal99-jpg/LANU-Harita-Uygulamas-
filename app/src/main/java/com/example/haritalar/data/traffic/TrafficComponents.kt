@@ -342,7 +342,8 @@ object TrafficRouteCostModel {
         httpStatusCode: Int? = null,
         lastCheckTimestamp: Long = System.currentTimeMillis()
     ): TrafficStatus {
-        if (!hasProvider || segments.isEmpty()) {
+        val uniqueSegments = deduplicateSegments(segments)
+        if (!hasProvider || uniqueSegments.isEmpty()) {
             return TrafficStatus(
                 verified = false,
                 message = "Canlı trafik doğrulanamadı • temel ETA korunuyor",
@@ -351,7 +352,7 @@ object TrafficRouteCostModel {
                 sourceName = if (!hasProvider) "OSRM / Valhalla Statik Yol Profili" else providerName,
                 isLiveApi = false,
                 httpStatusCode = httpStatusCode,
-                segmentCount = segments.size,
+                segmentCount = uniqueSegments.size,
                 lastCheckTimestamp = lastCheckTimestamp
             )
         }
@@ -361,7 +362,7 @@ object TrafficRouteCostModel {
         var totalSpeed = 0.0
         var count = 0
 
-        for (s in segments) {
+        for (s in uniqueSegments) {
             totalDelay += s.delaySeconds
             totalSpeed += s.currentSpeed
             if (s.freeFlowSpeed > 0) {
@@ -379,7 +380,7 @@ object TrafficRouteCostModel {
                 sourceName = providerName,
                 isLiveApi = false,
                 httpStatusCode = httpStatusCode,
-                segmentCount = segments.size,
+                segmentCount = uniqueSegments.size,
                 lastCheckTimestamp = lastCheckTimestamp
             )
         }
@@ -408,10 +409,25 @@ object TrafficRouteCostModel {
             sourceName = providerName,
             isLiveApi = true,
             httpStatusCode = httpStatusCode ?: 200,
-            segmentCount = segments.size,
+            segmentCount = uniqueSegments.size,
             lastCheckTimestamp = lastCheckTimestamp,
             averageSpeedKmh = avgSpeed,
             rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed.toInt()} km/h"
         )
     }
+
+    private fun deduplicateSegments(segments: List<TrafficSegment>): List<TrafficSegment> =
+        segments.distinctBy { segment ->
+            val first = segment.coordinates.firstOrNull()
+            val last = segment.coordinates.lastOrNull()
+            if (first == null || last == null) {
+                "empty:${segment.currentSpeed}:${segment.freeFlowSpeed}:${segment.delaySeconds}"
+            } else {
+                val aLat = kotlin.math.round(first.latitude * 100_000).toLong()
+                val aLon = kotlin.math.round(first.longitude * 100_000).toLong()
+                val bLat = kotlin.math.round(last.latitude * 100_000).toLong()
+                val bLon = kotlin.math.round(last.longitude * 100_000).toLong()
+                "$aLat,$aLon:$bLat,$bLon"
+            }
+        }
 }

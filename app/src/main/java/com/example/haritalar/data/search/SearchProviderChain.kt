@@ -1,5 +1,6 @@
 package com.example.haritalar.data.search
 
+import androidx.collection.LruCache
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.HouseNumberStatus
 import com.example.haritalar.model.SearchResponse
@@ -10,8 +11,8 @@ import kotlin.math.abs
 
 /**
  * Resilient multi-provider search chain:
- * Primary Provider (Nominatim OSM)
- * -> Alternative Provider (Komoot Photon)
+ * Live typeahead provider (Komoot Photon)
+ * -> Explicit committed fallback (Nominatim OSM)
  * -> Cache / Recent Searches
  * -> Safe Fallback / Error State
  *
@@ -20,16 +21,28 @@ import kotlin.math.abs
  * relevance ranking.
  */
 class SearchProviderChain(
-    val primaryProvider: SearchProvider = NominatimSearchProvider(),
-    val alternativeProvider: SearchProvider = PhotonSearchProvider(),
+    val primaryProvider: SearchProvider = PhotonSearchProvider(),
+    val alternativeProvider: SearchProvider = NominatimSearchProvider(),
     val cacheProvider: CacheSearchProvider = CacheSearchProvider(),
     val businessProvider: SearchProvider = OverpassBusinessSearchProvider()
 ) {
+    private val committedForwardCache = LruCache<String, List<SearchResult>>(50)
 
-    suspend fun executeSearch(query: String, focusPoint: GeoPoint? = null): SearchResponse = withContext(Dispatchers.IO) {
+    suspend fun executeSearch(
+        query: String,
+        focusPoint: GeoPoint? = null,
+        allowAlternativeForwardGeocoder: Boolean = false
+    ): SearchResponse = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.length < 2) {
             return@withContext SearchResponse.Empty(query)
+        }
+
+        val committedCacheKey = TurkishAddressHelper.normalizeTurkish(trimmed)
+        if (allowAlternativeForwardGeocoder) {
+            committedForwardCache.get(committedCacheKey)?.let { cached ->
+                return@withContext SearchResponse.Success(cached, "Önbellek • Kesin Arama")
+            }
         }
 
         val parsedQuery = TurkishAddressHelper.parseAddressQuery(trimmed)
@@ -43,7 +56,7 @@ class SearchProviderChain(
 
         val verifiedEntries = VerifiedPlaceDirectory.findMatches(trimmed)
         for (entry in verifiedEntries) {
-            val resolved = resolveVerifiedPlace(entry)
+            val resolved = resolveVerifiedPlace(entry, allowAlternativeForwardGeocoder)
             if (resolved != null) {
                 collectedResults += resolved
                 usedVerifiedDirectory = true
@@ -72,10 +85,12 @@ class SearchProviderChain(
             }
         }
 
-        val shouldQueryAlternative = primaryExceptionOccurred ||
+        val shouldQueryAlternative = allowAlternativeForwardGeocoder && (
+                primaryExceptionOccurred ||
                 collectedResults.isEmpty() ||
                 businessIntent ||
                 (parsedQuery.isBuildingLevelRequested && !hasVerifiedBuildingInPrimary)
+            )
 
         if (shouldQueryAlternative) {
             for (q in queryVariations) {
@@ -99,7 +114,9 @@ class SearchProviderChain(
             }
         }
 
-        if (businessIntent && focusPoint != null && collectedResults.size < 12) {
+        if (allowAlternativeForwardGeocoder &&
+            businessIntent && focusPoint != null && collectedResults.size < 12
+        ) {
             try {
                 val businessResults = businessProvider.search(trimmed, focusPoint)
                 if (businessResults.isNotEmpty()) {
@@ -122,6 +139,9 @@ class SearchProviderChain(
             val deduplicated = deduplicateResults(collectedResults)
             val ranked = SearchRankingEvaluator.rankAndEvaluateResults(deduplicated, parsedQuery, focusPoint)
             cacheProvider.put(trimmed, ranked)
+            if (allowAlternativeForwardGeocoder) {
+                committedForwardCache.put(committedCacheKey, ranked)
+            }
             return@withContext SearchResponse.Success(ranked, activeProviderName)
         }
 
@@ -172,14 +192,17 @@ class SearchProviderChain(
         null
     }
 
-    private suspend fun resolveVerifiedPlace(entry: VerifiedPlaceEntry): SearchResult? {
+    private suspend fun resolveVerifiedPlace(
+        entry: VerifiedPlaceEntry,
+        allowAlternativeForwardGeocoder: Boolean
+    ): SearchResult? {
         val candidates = mutableListOf<SearchResult>()
         try {
             candidates += primaryProvider.search(entry.address, null)
         } catch (_: Exception) {
             // Continue with alternative.
         }
-        if (candidates.isEmpty()) {
+        if (candidates.isEmpty() && allowAlternativeForwardGeocoder) {
             try {
                 candidates += alternativeProvider.search(entry.address, null)
             } catch (_: Exception) {
@@ -219,8 +242,10 @@ class SearchProviderChain(
             val isDuplicate = unique.any { existing ->
                 val closeCoordinates = abs(existing.point.latitude - item.point.latitude) < 0.0002 &&
                         abs(existing.point.longitude - item.point.longitude) < 0.0002
-                val sameName = existing.name.equals(item.name, ignoreCase = true)
-                closeCoordinates || sameName
+                val sameName = TurkishAddressHelper.normalizeTurkish(existing.name) ==
+                    TurkishAddressHelper.normalizeTurkish(item.name)
+                val sameNamedNearbyPlace = sameName && existing.point.distanceTo(item.point) <= 150.0
+                closeCoordinates || sameNamedNearbyPlace
             }
             if (!isDuplicate) {
                 unique.add(item)

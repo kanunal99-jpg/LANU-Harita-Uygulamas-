@@ -6,7 +6,6 @@ import com.example.haritalar.data.cache.TrafficSignalCache
 import com.example.haritalar.data.db.AppDatabase
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
-import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.haritalar.data.network.OsrmRoutingProvider
 import com.example.haritalar.data.network.PoiNetworkService
 import com.example.haritalar.data.network.TrafficSignalService
@@ -55,12 +54,12 @@ class NavigationRepository(context: Context) {
 
     val cacheSearchProvider = CacheSearchProvider(searchHistoryDao)
     val searchProviderChain = SearchProviderChain(
-        primaryProvider = NominatimSearchProvider(),
-        alternativeProvider = PhotonSearchProvider(),
+        // Photon explicitly supports search-as-you-type. Public Nominatim does not.
+        primaryProvider = PhotonSearchProvider(),
+        alternativeProvider = NominatimSearchProvider(),
         cacheProvider = cacheSearchProvider
     )
 
-    private val geocodingService = NominatimGeocodingService()
     private val poiService = PoiNetworkService()
     private val valhallaProvider = ValhallaRoutingProvider()
     private val osrmProvider = OsrmRoutingProvider()
@@ -90,32 +89,45 @@ class NavigationRepository(context: Context) {
     val favorites: Flow<List<FavoritePlace>> = favoriteDao.getAllFavorites()
     val recentSearches: Flow<List<SearchHistoryItem>> = searchHistoryDao.getRecentSearches()
 
-    suspend fun searchPlacesResponse(query: String, focusPoint: GeoPoint?): com.example.haritalar.model.SearchResponse {
-        val response = searchProviderChain.executeSearch(query, focusPoint)
-        if (response is com.example.haritalar.model.SearchResponse.Success && response.results.isNotEmpty()) {
-            val top = response.results.first()
-            searchHistoryDao.insertSearch(
-                SearchHistoryItem(
-                    query = query,
-                    displayName = top.displayName,
-                    latitude = top.point.latitude,
-                    longitude = top.point.longitude
-                )
+    suspend fun searchPlacesResponse(
+        query: String,
+        focusPoint: GeoPoint?,
+        committed: Boolean = false
+    ): com.example.haritalar.model.SearchResponse =
+        searchProviderChain.executeSearch(
+            query = query,
+            focusPoint = focusPoint,
+            allowAlternativeForwardGeocoder = committed
+        )
+
+    suspend fun recordSearchSelection(query: String, result: SearchResult) {
+        val normalizedQuery = query.trim().takeIf { it.isNotBlank() } ?: result.name
+        searchHistoryDao.insertSearch(
+            SearchHistoryItem(
+                query = normalizedQuery,
+                displayName = result.displayName,
+                latitude = result.point.latitude,
+                longitude = result.point.longitude
             )
-        }
-        return response
+        )
+        searchHistoryDao.trimHistory()
     }
 
     suspend fun searchPlaces(query: String, focusPoint: GeoPoint?): List<SearchResult> {
-        val response = searchPlacesResponse(query, focusPoint)
+        val response = searchPlacesResponse(query, focusPoint, committed = true)
         return if (response is com.example.haritalar.model.SearchResponse.Success) response.results else emptyList()
     }
 
     suspend fun reverseGeocode(point: GeoPoint): String? =
-        searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
+        searchProviderChain.reverseGeocode(point)
 
-    suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> {
-        val primary = poiService.fetchPoisAround(center, radiusMeters = 8_000, selectedCategory = category)
+    suspend fun fetchPois(
+        center: GeoPoint,
+        category: PoiCategory?,
+        radiusMeters: Int = 8_000
+    ): List<PoiItem> {
+        val safeRadius = radiusMeters.coerceIn(2_500, 20_000)
+        val primary = poiService.fetchPoisAround(center, radiusMeters = safeRadius, selectedCategory = category)
         if (primary.isNotEmpty()) return primary
 
         if (category == null) return emptyList()
@@ -134,8 +146,9 @@ class NavigationRepository(context: Context) {
         for (query in fallbackQueries) {
             val response = searchProviderChain.executeSearch(query, center)
             if (response is com.example.haritalar.model.SearchResponse.Success) {
+                val fallbackDistance = (safeRadius + 5_000).coerceAtMost(25_000).toDouble()
                 val fallback = response.results
-                    .filter { it.point.distanceTo(center) <= 20_000.0 }
+                    .filter { it.point.distanceTo(center) <= fallbackDistance }
                     .take(40)
                     .map {
                         PoiItem(

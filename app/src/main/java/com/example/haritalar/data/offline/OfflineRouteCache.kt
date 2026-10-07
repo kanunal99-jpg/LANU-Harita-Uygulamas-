@@ -74,6 +74,7 @@ class OfflineRouteCache(context: Context) {
         .put("durationSeconds", route.durationSeconds)
         .put("distanceMeters", route.distanceMeters)
         .put("hasTolls", route.hasTolls)
+        .put("tollStatusVerified", route.tollStatusVerified)
         .put("hasFerry", route.hasFerry)
         .put("routeType", route.routeType.name)
         .put("trafficDelaySeconds", route.trafficDelaySeconds)
@@ -129,6 +130,7 @@ class OfflineRouteCache(context: Context) {
             geometry = points,
             maneuvers = maneuvers,
             hasTolls = json.optBoolean("hasTolls"),
+            tollStatusVerified = json.optBoolean("tollStatusVerified", false),
             hasFerry = json.optBoolean("hasFerry"),
             routeType = routeType,
             trafficDelaySeconds = 0L,

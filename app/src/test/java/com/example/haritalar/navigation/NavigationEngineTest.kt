@@ -3,6 +3,7 @@ package com.example.haritalar.navigation
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.ManeuverType
 import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.TripSummary
 import com.example.haritalar.model.TurnManeuver
 import com.example.haritalar.voice.NavigationVoice
 import org.junit.Assert.assertEquals
@@ -16,6 +17,7 @@ class NavigationEngineTest {
     private lateinit var voice: FakeNavigationVoice
     private var offRouteCount = 0
     private var arrivalCount = 0
+    private var lastSummary: TripSummary? = null
     private var now = 1_000_000L
     private lateinit var engine: NavigationEngine
 
@@ -28,11 +30,15 @@ class NavigationEngineTest {
         voice = FakeNavigationVoice()
         offRouteCount = 0
         arrivalCount = 0
+        lastSummary = null
         now = 1_000_000L
         engine = NavigationEngine(
             voice = voice,
             onOffRouteDetected = { offRouteCount++ },
-            onArrivalDetected = { arrivalCount++ },
+            onArrivalDetected = {
+                arrivalCount++
+                lastSummary = it
+            },
             nowMs = { now }
         )
     }
@@ -80,6 +86,19 @@ class NavigationEngineTest {
     }
 
     @Test
+    fun inaccurateGpsExpandsOffRouteToleranceInsteadOfFalseReroute() {
+        engine.startNavigation(route())
+        val aboutEightyMetersOff = GeoPoint(41.00072, 29.0010)
+
+        repeat(3) {
+            engine.processLocationUpdate(location(aboutEightyMetersOff, accuracy = 80f))
+        }
+
+        assertEquals(0, offRouteCount)
+        assertFalse(engine.processLocationUpdate(location(aboutEightyMetersOff, accuracy = 80f)).isOffRoute)
+    }
+
+    @Test
     fun offRoute_afterCooldown_triggersRerouteCallbackAndVoice() {
         engine.startNavigation(route())
         val farAway = GeoPoint(41.0020, 29.0000)
@@ -115,6 +134,22 @@ class NavigationEngineTest {
         assertTrue(third.hasArrived)
         assertEquals(1, arrivalCount)
         assertEquals(1, voice.arrivalCount)
+    }
+
+    @Test
+    fun tripSummaryAverageSpeedUsesDistanceOverElapsedTime() {
+        engine.startNavigation(route())
+        engine.processLocationUpdate(location(start))
+        now += 60_000L
+        engine.processLocationUpdate(location(middle))
+        now += 60_000L
+        engine.processLocationUpdate(location(destination, accuracy = 5f))
+
+        val summary = lastSummary
+        assertTrue(summary != null)
+        assertTrue(summary!!.totalDistanceMeters > 100.0)
+        val expected = (summary.totalDistanceMeters / 1000.0) / (summary.totalDurationSeconds / 3600.0)
+        assertEquals(expected, summary.averageSpeedKmh, 0.001)
     }
 
     @Test

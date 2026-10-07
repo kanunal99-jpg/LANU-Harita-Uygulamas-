@@ -33,6 +33,15 @@ class PoiSearchCenterPolicyTest {
     }
 
     @Test
+    fun viewportRadiusExpandsCoverageButStaysWithinOverpassLimit() {
+        val radius = PoiSearchCenterPolicy.radiusMeters(viewport)
+        org.junit.Assert.assertTrue(radius in 8_000..12_000)
+
+        val hugeViewport = TrafficSignalBoundingBox(39.0, 26.0, 42.0, 31.0)
+        assertEquals(20_000, PoiSearchCenterPolicy.radiusMeters(hugeViewport))
+    }
+
+    @Test
     fun returnsNullOnlyWhenNeitherMapNorGpsCanProvideCenter() {
         assertNull(PoiSearchCenterPolicy.resolve(MapTrackingMode.FREE, null, null))
     }

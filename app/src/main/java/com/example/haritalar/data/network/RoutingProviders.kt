@@ -17,6 +17,13 @@ import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 
+internal object OsrmRouteMetadataPolicy {
+    fun routeTypeForIndex(index: Int): RouteType =
+        if (index == 0) RouteType.FASTEST else RouteType.ALTERNATIVE
+
+    const val TOLL_STATUS_VERIFIED: Boolean = false
+}
+
 interface RoutingProvider {
     suspend fun calculateRoutes(
         start: GeoPoint,
@@ -128,6 +135,7 @@ class ValhallaRoutingProvider(
                 val totalLengthKm = summary.optDouble("length", 0.0)
                 val distanceMeters = totalLengthKm * 1000.0
                 val hasToll = summary.optBoolean("has_toll", false)
+                val tollStatusVerified = summary.has("has_toll")
                 val hasFerry = summary.optBoolean("has_ferry", false)
                 val legs = trip.optJSONArray("legs") ?: return null
                 if (legs.length() == 0) return null
@@ -178,6 +186,7 @@ class ValhallaRoutingProvider(
                     geometry = decodedGeometry,
                     maneuvers = maneuvers,
                     hasTolls = hasToll,
+                    tollStatusVerified = tollStatusVerified,
                     hasFerry = hasFerry,
                     routeType = routeType,
                     generationId = generationId
@@ -232,16 +241,6 @@ class OsrmRoutingProvider(
                 val root = JSONObject(body)
                 val routesArray = root.optJSONArray("routes") ?: return@withContext emptyList()
                 val results = mutableListOf<RouteOption>()
-                val routeTypes = listOf(
-                    RouteType.FASTEST,
-                    RouteType.SHORTEST,
-                    RouteType.TOLL_FREE,
-                    RouteType.FASTEST_TOLL,
-                    RouteType.NO_FERRY,
-                    RouteType.WITH_FERRY,
-                    RouteType.TOLL_AND_FERRY_FREE
-                )
-
                 for (i in 0 until routesArray.length()) {
                     val r = routesArray.getJSONObject(i)
                     val duration = r.optDouble("duration", 0.0).toLong()
@@ -300,7 +299,7 @@ class OsrmRoutingProvider(
                         }
                     }
 
-                    val assignedType = routeTypes.getOrElse(i) { RouteType.FASTEST }
+                    val assignedType = OsrmRouteMetadataPolicy.routeTypeForIndex(i)
                     val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                     results.add(RouteOption(
                         routeId = routeId,
@@ -311,6 +310,7 @@ class OsrmRoutingProvider(
                         geometry = geometryPoints,
                         maneuvers = maneuvers,
                         hasTolls = hasToll,
+                        tollStatusVerified = OsrmRouteMetadataPolicy.TOLL_STATUS_VERIFIED,
                         hasFerry = hasFerry,
                         routeType = assignedType,
                         generationId = generationId

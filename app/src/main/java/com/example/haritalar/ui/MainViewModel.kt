@@ -136,6 +136,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
+    private var weatherJob: Job? = null
     private var liveShareJob: Job? = null
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
@@ -151,7 +152,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             locationManager.userLocation.collect { loc ->
                 if (loc != null) {
                     val headingState = vehicleHeadingManager.processLocation(loc)
-                    if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+                    if (_uiState.value.navigationState == NavigationState.NAVIGATING &&
+                        NavigationLocationPolicy.isUsableForRouting(loc)
+                    ) {
                         val progress = navigationEngine.processLocationUpdate(loc)
                         val wrongWay = vehicleHeadingManager.evaluateWrongWay(
                             currentHeading = headingState.heading,
@@ -176,6 +179,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             navigationProgress = progress,
                             departureGuidance = currentDep,
                             isWrongWay = wrongWay
+                        )
+                    } else if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+                        // Keep showing the raw weak fix, but never feed an unusable fix into
+                        // snapping/off-route/wrong-way logic.
+                        _uiState.value = _uiState.value.copy(
+                            userLocation = loc.copy(bearing = headingState.heading),
+                            vehicleHeadingState = headingState,
+                            isWrongWay = false
                         )
                     } else {
                         _uiState.value = _uiState.value.copy(
@@ -237,7 +248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             NavigationLocationPolicy.Readiness.INACCURATE -> {
                 val accuracy = location?.accuracyMeters?.takeIf { it.isFinite() }?.toInt()
                 val accuracyText = accuracy?.let { " (±${it} m)" }.orEmpty()
-                "GPS doğruluğu navigasyon için yetersiz$accuracyText. Açık alanda yeni konum bekleniyor. $action"
+                "GPS doğruluğu navigasyon için yetersiz$accuracyText. Kesin konum iznini ve GPS'i kontrol edin; açık alanda yeni konum bekleniyor. $action"
             }
             NavigationLocationPolicy.Readiness.READY -> action
         }
@@ -268,6 +279,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             trafficStatusMap = emptyMap(),
+            routeWeather = emptyList(),
+            approachingWeather = null,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -321,44 +334,74 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 searchErrorMessage = null
             )
             delay(300L)
-            val focus = _uiState.value.userLocation?.point
+            val focus = PoiSearchCenterPolicy.resolve(
+                trackingMode = _uiState.value.mapTrackingMode,
+                liveLocation = currentRoutingLocation()?.point,
+                viewport = _uiState.value.currentViewportBbox
+            )
             val response = repository.searchPlacesResponse(query, focus)
 
             if (currentGen == searchGenerationId) {
-                when (response) {
-                    is com.example.haritalar.model.SearchResponse.Success -> {
-                        _uiState.value = _uiState.value.copy(
-                            searchResults = response.results,
-                            isSearching = false,
-                            searchStatus = com.example.haritalar.model.SearchUiStatus.SUCCESS,
-                            searchActiveProvider = response.provider,
-                            searchErrorMessage = null
-                        )
-                    }
-                    is com.example.haritalar.model.SearchResponse.Empty -> {
-                        _uiState.value = _uiState.value.copy(
-                            searchResults = emptyList(),
-                            isSearching = false,
-                            searchStatus = com.example.haritalar.model.SearchUiStatus.EMPTY,
-                            searchErrorMessage = null
-                        )
-                    }
-                    is com.example.haritalar.model.SearchResponse.Error -> {
-                        _uiState.value = _uiState.value.copy(
-                            searchResults = emptyList(),
-                            isSearching = false,
-                            searchStatus = com.example.haritalar.model.SearchUiStatus.ERROR,
-                            searchErrorMessage = response.message
-                        )
-                    }
-                }
+                applySearchResponse(response)
+            }
+        }
+    }
+
+    fun submitSearch() {
+        val query = _uiState.value.searchQuery.trim()
+        if (query.length < 2) return
+
+        searchJob?.cancel()
+        val currentGen = ++searchGenerationId
+        searchJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isSearching = true,
+                searchStatus = com.example.haritalar.model.SearchUiStatus.SEARCHING,
+                searchErrorMessage = null
+            )
+            val focus = PoiSearchCenterPolicy.resolve(
+                trackingMode = _uiState.value.mapTrackingMode,
+                liveLocation = currentRoutingLocation()?.point,
+                viewport = _uiState.value.currentViewportBbox
+            )
+            val response = repository.searchPlacesResponse(query, focus, committed = true)
+            if (currentGen != searchGenerationId) return@launch
+            applySearchResponse(response)
+        }
+    }
+
+    private fun applySearchResponse(response: com.example.haritalar.model.SearchResponse) {
+        when (response) {
+            is com.example.haritalar.model.SearchResponse.Success -> {
+                _uiState.value = _uiState.value.copy(
+                    searchResults = response.results,
+                    isSearching = false,
+                    searchStatus = com.example.haritalar.model.SearchUiStatus.SUCCESS,
+                    searchActiveProvider = response.provider,
+                    searchErrorMessage = null
+                )
+            }
+            is com.example.haritalar.model.SearchResponse.Empty -> {
+                _uiState.value = _uiState.value.copy(
+                    searchResults = emptyList(),
+                    isSearching = false,
+                    searchStatus = com.example.haritalar.model.SearchUiStatus.EMPTY,
+                    searchErrorMessage = null
+                )
+            }
+            is com.example.haritalar.model.SearchResponse.Error -> {
+                _uiState.value = _uiState.value.copy(
+                    searchResults = emptyList(),
+                    isSearching = false,
+                    searchStatus = com.example.haritalar.model.SearchUiStatus.ERROR,
+                    searchErrorMessage = response.message
+                )
             }
         }
     }
 
     fun retrySearch() {
-        val q = _uiState.value.searchQuery
-        if (q.isNotBlank()) onSearchQueryChanged(q)
+        submitSearch()
     }
 
     fun dismissDestinationCard() {
@@ -374,6 +417,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSearchResult(result: SearchResult) {
+        val submittedQuery = _uiState.value.searchQuery.takeIf { it.isNotBlank() } ?: result.name
+        viewModelScope.launch {
+            runCatching { repository.recordSearchSelection(submittedQuery, result) }
+        }
         routeCalculationJob?.cancel()
         val invalidateGeneration = ++generationCounter
         _uiState.value = _uiState.value.copy(
@@ -388,6 +435,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             trafficStatusMap = emptyMap(),
+            routeWeather = emptyList(),
+            approachingWeather = null,
             navigationState = NavigationState.IDLE,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
@@ -469,6 +518,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
+                primaryRoute?.let(::fetchWeatherForRoute)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -519,6 +569,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.ROUTE_SELECTION,
                         statusMessage = routingLocationFailureMessage("Navigasyon başlatılmadı.")
                     )
+                    fetchWeatherForRoute(route)
                     return@launch
                 }
                 _uiState.value = _uiState.value.copy(
@@ -546,8 +597,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
-        viewModelScope.launch {
+        weatherJob?.cancel()
+        weatherJob = viewModelScope.launch {
             val weather = weatherRepository.getRouteWeather(route)
+            if (_uiState.value.selectedRoute?.routeId != route.routeId) return@launch
             _uiState.value = _uiState.value.copy(routeWeather = weather)
             checkWeatherProximity()
         }
@@ -595,6 +648,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = null
         )
         navigationEngine.startNavigation(route)
+        fetchWeatherForRoute(route)
         NavigationForegroundService.start(
             getApplication(),
             _uiState.value.selectedDestination?.displayName
@@ -611,6 +665,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
+        weatherJob?.cancel()
+        lastAnnouncedWeatherId = null
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
@@ -620,7 +676,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
-            isWrongWay = false, isLoadingRoutes = false
+            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(),
+            approachingWeather = null
         )
     }
 
@@ -644,6 +701,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
+                    startPeriodicTrafficRefresh()
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -666,8 +725,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun handleArrival(summary: TripSummary) {
         NavigationForegroundService.stop(getApplication())
+        val correctedSummary = summary.copy(
+            startAddress = "Başlangıç konumu",
+            destinationAddress = _uiState.value.selectedDestination?.displayName
+                ?.takeIf { it.isNotBlank() }
+                ?: summary.destinationAddress
+        )
         _uiState.value = _uiState.value.copy(
-            navigationState = NavigationState.ARRIVED, tripSummary = summary, statusMessage = "Hedefinize ulaştınız!"
+            navigationState = NavigationState.ARRIVED,
+            tripSummary = correctedSummary,
+            statusMessage = "Hedefinize ulaştınız!"
         )
     }
 
@@ -967,7 +1034,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 poiList = emptyList(),
                 statusMessage = "İlgi noktaları yükleniyor..."
             )
-            val pois = repository.fetchPois(center, category)
+            val radius = PoiSearchCenterPolicy.radiusMeters(_uiState.value.currentViewportBbox)
+            val pois = repository.fetchPois(center, category, radiusMeters = radius)
             if (generation != poiGeneration || _uiState.value.selectedPoiCategory != category) {
                 return@launch
             }
@@ -1207,6 +1275,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCalculationJob?.cancel()
         poiLoadJob?.cancel()
         poiViewportRefreshJob?.cancel()
+        weatherJob?.cancel()
         trafficSignalJob?.cancel()
         liveShareJob?.cancel()
         liveShareSession = null

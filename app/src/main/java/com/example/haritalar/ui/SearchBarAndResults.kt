@@ -29,6 +29,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -52,6 +55,7 @@ fun SearchHeader(
     searchActiveProvider: String? = null,
     isSearchFocused: Boolean = false,
     onSearchFocusChanged: (Boolean) -> Unit = {},
+    onSubmitSearch: () -> Unit = {},
     onRetrySearch: () -> Unit = {},
     searchResults: List<SearchResult>,
     onSelectResult: (SearchResult) -> Unit,
@@ -94,14 +98,19 @@ fun SearchHeader(
                     .padding(horizontal = 16.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Icon(
-                    imageVector = Icons.Default.Search,
-                    contentDescription = "Ara",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(24.dp)
-                )
+                IconButton(
+                    onClick = onSubmitSearch,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Search,
+                        contentDescription = "Ara",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(6.dp))
 
                 TextField(
                     value = searchQuery,
@@ -114,6 +123,8 @@ fun SearchHeader(
                         )
                     },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                    keyboardActions = KeyboardActions(onSearch = { onSubmitSearch() }),
                     colors = TextFieldDefaults.colors(
                         focusedContainerColor = Color.Transparent,
                         unfocusedContainerColor = Color.Transparent,

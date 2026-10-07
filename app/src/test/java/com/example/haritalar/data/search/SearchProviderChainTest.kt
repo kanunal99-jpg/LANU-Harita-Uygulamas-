@@ -77,6 +77,51 @@ class SearchProviderChainTest {
     }
 
     @Test
+    fun sameNameResultsFarApartAreNotDeduplicated() = runBlocking {
+        fakePrimaryProvider.returnResults = listOf(
+            SearchResult(
+                id = "opet_istanbul",
+                name = "Opet",
+                displayName = "Opet, İstanbul",
+                point = GeoPoint(41.01, 29.01),
+                resultType = AddressResultType.POI,
+                provider = fakePrimaryProvider.name
+            ),
+            SearchResult(
+                id = "opet_kocaeli",
+                name = "Opet",
+                displayName = "Opet, Kocaeli",
+                point = GeoPoint(40.76, 29.92),
+                resultType = AddressResultType.POI,
+                provider = fakePrimaryProvider.name
+            )
+        )
+
+        val response = chain.executeSearch("opet")
+
+        assertTrue(response is SearchResponse.Success)
+        assertEquals(2, (response as SearchResponse.Success).results.size)
+    }
+
+    @Test
+    fun liveTypeaheadDoesNotCallCommittedOnlyAlternativeProvider() = runBlocking {
+        fakePrimaryProvider.returnResults = emptyList()
+        fakeAlternativeProvider.returnResults = listOf(
+            SearchResult(
+                id = "restricted_1",
+                name = "Alternative",
+                displayName = "Alternative",
+                point = GeoPoint(41.0, 29.0)
+            )
+        )
+
+        val response = chain.executeSearch("istanbul")
+
+        assertTrue(response is SearchResponse.Empty)
+        assertEquals(0, fakeAlternativeProvider.searchCallCount)
+    }
+
+    @Test
     fun testFallbackToAlternativeProviderWhenPrimaryFails() = runBlocking {
         fakePrimaryProvider.shouldThrow = true
 
@@ -91,13 +136,43 @@ class SearchProviderChainTest {
         )
         fakeAlternativeProvider.returnResults = listOf(photonResult)
 
-        val response = chain.executeSearch("Ankara Çankaya Atatürk Bulvarı")
+        val response = chain.executeSearch(
+            "Ankara Çankaya Atatürk Bulvarı",
+            allowAlternativeForwardGeocoder = true
+        )
 
         assertTrue(response is SearchResponse.Success)
         val success = response as SearchResponse.Success
         assertEquals("FakePhoton", success.provider)
         assertEquals(1, success.results.size)
         assertEquals("Atatürk Bulvarı No:14", success.results.first().name)
+    }
+
+    @Test
+    fun committedSearchCachesAlternativeResultAndAvoidsRepeatedProviderCall() = runBlocking {
+        fakePrimaryProvider.returnResults = emptyList()
+        fakeAlternativeProvider.returnResults = listOf(
+            SearchResult(
+                id = "precise_1",
+                name = "Kesin Sonuç",
+                displayName = "Kesin Sonuç, İstanbul",
+                point = GeoPoint(41.0, 29.0)
+            )
+        )
+
+        val first = chain.executeSearch(
+            "kesin adres",
+            allowAlternativeForwardGeocoder = true
+        )
+        val callsAfterFirst = fakeAlternativeProvider.searchCallCount
+        val second = chain.executeSearch(
+            "kesin adres",
+            allowAlternativeForwardGeocoder = true
+        )
+
+        assertTrue(first is SearchResponse.Success)
+        assertTrue(second is SearchResponse.Success)
+        assertEquals(callsAfterFirst, fakeAlternativeProvider.searchCallCount)
     }
 
     @Test
@@ -116,7 +191,7 @@ class SearchProviderChainTest {
         fakePrimaryProvider.shouldThrow = true
         fakeAlternativeProvider.shouldThrow = true
 
-        val response = chain.executeSearch("kadıköy")
+        val response = chain.executeSearch("kadıköy", allowAlternativeForwardGeocoder = true)
 
         assertTrue(response is SearchResponse.Success)
         val success = response as SearchResponse.Success
@@ -129,7 +204,10 @@ class SearchProviderChainTest {
         fakePrimaryProvider.shouldThrow = true
         fakeAlternativeProvider.shouldThrow = true
 
-        val response = chain.executeSearch("Herhangi bir adres")
+        val response = chain.executeSearch(
+            "Herhangi bir adres",
+            allowAlternativeForwardGeocoder = true
+        )
 
         assertTrue(response is SearchResponse.Error)
         val error = response as SearchResponse.Error
