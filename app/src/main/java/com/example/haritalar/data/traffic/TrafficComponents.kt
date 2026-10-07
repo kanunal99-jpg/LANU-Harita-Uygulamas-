@@ -342,7 +342,7 @@ object TrafficRouteCostModel {
         httpStatusCode: Int? = null,
         lastCheckTimestamp: Long = System.currentTimeMillis()
     ): TrafficStatus {
-        if (!hasProvider || segments.isEmpty()) {
+        if (segments.isEmpty()) {
             return TrafficStatus(
                 verified = false,
                 message = "Canlı trafik doğrulanamadı • temel ETA korunuyor",
@@ -351,7 +351,7 @@ object TrafficRouteCostModel {
                 sourceName = if (!hasProvider) "OSRM / Valhalla Statik Yol Profili" else providerName,
                 isLiveApi = false,
                 httpStatusCode = httpStatusCode,
-                segmentCount = segments.size,
+                segmentCount = 0,
                 lastCheckTimestamp = lastCheckTimestamp
             )
         }
@@ -367,6 +367,20 @@ object TrafficRouteCostModel {
                 isLiveApi = false,
                 httpStatusCode = httpStatusCode,
                 segmentCount = segments.size,
+                lastCheckTimestamp = lastCheckTimestamp
+            )
+        }
+
+        if (!hasProvider) {
+            return TrafficStatus(
+                verified = false,
+                message = "Canlı trafik sağlayıcısı kullanılamıyor • temel ETA korunuyor",
+                delaySeconds = 0,
+                trafficLevel = TrafficLevel.UNKNOWN,
+                sourceName = providerName,
+                isLiveApi = false,
+                httpStatusCode = httpStatusCode,
+                segmentCount = liveSegments.size,
                 lastCheckTimestamp = lastCheckTimestamp
             )
         }
