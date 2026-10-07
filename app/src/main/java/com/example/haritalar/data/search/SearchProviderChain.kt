@@ -26,7 +26,11 @@ class SearchProviderChain(
     val businessProvider: SearchProvider = OverpassBusinessSearchProvider()
 ) {
 
-    suspend fun executeSearch(query: String, focusPoint: GeoPoint? = null): SearchResponse = withContext(Dispatchers.IO) {
+    suspend fun executeSearch(
+        query: String,
+        focusPoint: GeoPoint? = null,
+        allowAlternativeForwardGeocoder: Boolean = false
+    ): SearchResponse = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.length < 2) {
             return@withContext SearchResponse.Empty(query)
@@ -172,14 +176,17 @@ class SearchProviderChain(
         null
     }
 
-    private suspend fun resolveVerifiedPlace(entry: VerifiedPlaceEntry): SearchResult? {
+    private suspend fun resolveVerifiedPlace(
+        entry: VerifiedPlaceEntry,
+        allowAlternativeForwardGeocoder: Boolean
+    ): SearchResult? {
         val candidates = mutableListOf<SearchResult>()
         try {
             candidates += primaryProvider.search(entry.address, null)
         } catch (_: Exception) {
             // Continue with alternative.
         }
-        if (candidates.isEmpty()) {
+        if (candidates.isEmpty() && allowAlternativeForwardGeocoder) {
             try {
                 candidates += alternativeProvider.search(entry.address, null)
             } catch (_: Exception) {
