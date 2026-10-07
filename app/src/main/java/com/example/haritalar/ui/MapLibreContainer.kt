@@ -58,8 +58,15 @@ private const val LAYER_TRAFFIC_SIGNALS = "layer_traffic_signals"
 private const val ICON_TRAFFIC_SIGNAL = "icon_traffic_signal"
 private const val SRC_POIS = "src_pois"
 private const val LAYER_POIS = "layer_pois"
-private const val ICON_POI_GENERIC = "icon_poi_generic"
-private const val ICON_POI_BRAND = "icon_poi_brand"
+private const val ICON_POI_RESTAURANT = "icon_poi_restaurant"
+private const val ICON_POI_FUEL = "icon_poi_fuel"
+private const val ICON_POI_HOSPITAL = "icon_poi_hospital"
+private const val ICON_POI_PHARMACY = "icon_poi_pharmacy"
+private const val ICON_POI_MARKET = "icon_poi_market"
+private const val ICON_POI_PARKING = "icon_poi_parking"
+private const val ICON_POI_ATM = "icon_poi_atm"
+private const val ICON_POI_CAFE = "icon_poi_cafe"
+private const val ICON_POI_CHARGING = "icon_poi_charging"
 private const val SRC_WEATHER = "src_weather"
 private const val LAYER_WEATHER = "layer_weather"
 private const val ICON_WEATHER_RAIN = "icon_weather_rain"
@@ -344,10 +351,24 @@ private fun setupLayers(style: Style, context: Context) {
 
     val poiSrc = GeoJsonSource(SRC_POIS, createEmptyFeatureCollection())
     style.addSource(poiSrc)
-    style.addImage(ICON_POI_GENERIC, createPoiBitmap(context, Color.parseColor("#5856D6"), "POI", 56))
-    style.addImage(ICON_POI_BRAND, createPoiBitmap(context, Color.WHITE, "★", 64))
+    style.addImage(ICON_POI_RESTAURANT, createPoiBitmap(context, Color.parseColor("#EA580C"), "R", 52))
+    style.addImage(ICON_POI_FUEL, createPoiBitmap(context, Color.parseColor("#2563EB"), "B", 52))
+    style.addImage(ICON_POI_HOSPITAL, createPoiBitmap(context, Color.parseColor("#DC2626"), "H", 52))
+    style.addImage(ICON_POI_PHARMACY, createPoiBitmap(context, Color.parseColor("#059669"), "+", 52))
+    style.addImage(ICON_POI_MARKET, createPoiBitmap(context, Color.parseColor("#7C3AED"), "M", 52))
+    style.addImage(ICON_POI_PARKING, createPoiBitmap(context, Color.parseColor("#0369A1"), "P", 52))
+    style.addImage(ICON_POI_ATM, createPoiBitmap(context, Color.parseColor("#334155"), "ATM", 52))
+    style.addImage(ICON_POI_CAFE, createPoiBitmap(context, Color.parseColor("#92400E"), "K", 52))
+    style.addImage(ICON_POI_CHARGING, createPoiBitmap(context, Color.parseColor("#0F766E"), "Ş", 52))
     style.addLayer(SymbolLayer(LAYER_POIS, SRC_POIS).apply {
-        setProperties(iconImage(org.maplibre.android.style.expressions.Expression.switchCase(org.maplibre.android.style.expressions.Expression.eq(get("hasBrand"), org.maplibre.android.style.expressions.Expression.literal(true)), org.maplibre.android.style.expressions.Expression.literal(ICON_POI_BRAND), org.maplibre.android.style.expressions.Expression.literal(ICON_POI_GENERIC))), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(0.8f), iconAnchor(Property.ICON_ANCHOR_CENTER), visibility(Property.VISIBLE))
+        setProperties(
+            iconImage(get("icon")),
+            iconAllowOverlap(false),
+            iconIgnorePlacement(false),
+            iconSize(0.9f),
+            iconAnchor(Property.ICON_ANCHOR_CENTER),
+            visibility(Property.VISIBLE)
+        )
     })
 
     style.addImage(ICON_SAFETY_CAMERA, createSafetyCameraBitmap(context))
@@ -363,7 +384,16 @@ private fun setupLayers(style: Style, context: Context) {
 
     style.addImage(ICON_TRAFFIC_SIGNAL, createTrafficSignalBitmap(context))
     style.addSource(GeoJsonSource(SRC_TRAFFIC_SIGNALS, createEmptyFeatureCollection()))
-    style.addLayer(SymbolLayer(LAYER_TRAFFIC_SIGNALS, SRC_TRAFFIC_SIGNALS).apply { setProperties(iconImage(ICON_TRAFFIC_SIGNAL), iconAllowOverlap(true), iconIgnorePlacement(true), iconSize(0.7f), iconAnchor(Property.ICON_ANCHOR_CENTER), visibility(Property.VISIBLE)) })
+    style.addLayer(SymbolLayer(LAYER_TRAFFIC_SIGNALS, SRC_TRAFFIC_SIGNALS).apply {
+        setProperties(
+            iconImage(ICON_TRAFFIC_SIGNAL),
+            iconAllowOverlap(false),
+            iconIgnorePlacement(false),
+            iconSize(0.7f),
+            iconAnchor(Property.ICON_ANCHOR_CENTER),
+            visibility(Property.VISIBLE)
+        )
+    })
 
     style.addSource(GeoJsonSource(SRC_USER_LOC, createEmptyFeatureCollection()))
     style.addLayer(CircleLayer(LAYER_USER_LOC_PULSE, SRC_USER_LOC).apply { setProperties(circleRadius(18f), circleColor(Color.parseColor("#007AFF")), circleOpacity(0.2f)) })
@@ -416,11 +446,28 @@ private fun createPoisGeoJson(pois: List<PoiItem>): String {
     pois.forEach { poi ->
         val brand = (poi.brand ?: poi.operator)?.trim()?.takeIf { it.isNotEmpty() }
         features.put(feature(JSONObject().apply {
-            put("properties", JSONObject().apply { put("name", poi.name); put("category", poi.category.displayName); put("brand", brand ?: ""); put("hasBrand", brand != null) })
+            put("properties", JSONObject().apply {
+                put("name", poi.name)
+                put("category", poi.category.displayName)
+                put("brand", brand ?: "")
+                put("icon", poiIconName(poi.category))
+            })
             put("geometry", pointGeometry(poi.point))
         }))
     }
     return featureCollection(features)
+}
+
+private fun poiIconName(category: PoiCategory): String = when (category) {
+    PoiCategory.RESTAURANT -> ICON_POI_RESTAURANT
+    PoiCategory.FUEL -> ICON_POI_FUEL
+    PoiCategory.HOSPITAL -> ICON_POI_HOSPITAL
+    PoiCategory.PHARMACY -> ICON_POI_PHARMACY
+    PoiCategory.MARKET -> ICON_POI_MARKET
+    PoiCategory.PARKING -> ICON_POI_PARKING
+    PoiCategory.ATM -> ICON_POI_ATM
+    PoiCategory.CAFE -> ICON_POI_CAFE
+    PoiCategory.CHARGING_STATION -> ICON_POI_CHARGING
 }
 
 private fun createSafetyCamerasGeoJson(cameras: List<SafetyCamera>): String {
