@@ -228,7 +228,7 @@ object LanuBriefPolicy {
         return LanuBriefItem(
             type = LanuBriefItemType.CRITICAL_POI,
             title = if (total > 0) "$total kritik nokta rota koridorunda" else "Doğrulanan koridorda kritik POI bulunmadı",
-            detail = "$summary • ${coverage.sampleCount} rota örneği • maks. örnek aralığı $gapKm km. ${coverage.note}",
+            detail = "$summary • ${coverage.sampleCount} rota örneği • maks. örnek aralığı $gapKm km • güncellendi ${briefTime(coverage.fetchedAtMillis)}. ${coverage.note}",
             source = coverage.source,
             status = when (coverage.status) {
                 RouteDataCoverage.VERIFIED -> LanuBriefStatus.VERIFIED
@@ -282,7 +282,7 @@ object LanuBriefPolicy {
                 }
                 append(
                     "${routeCoverage.successfulSampleCount}/${routeCoverage.sampleCount} kamera örneği • " +
-                        "maks. örnek aralığı $gapKm km. ${routeCoverage.note}"
+                        "maks. örnek aralığı $gapKm km • güncellendi ${briefTime(routeCoverage.fetchedAtMillis)}. ${routeCoverage.note}"
                 )
             }
             return LanuBriefItem(
@@ -345,6 +345,10 @@ object LanuBriefPolicy {
             severity = if (onRoute.isNotEmpty()) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
         )
     }
+
+    private fun briefTime(timestampMillis: Long): String =
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(timestampMillis))
 
     private fun weatherRiskRank(type: WeatherType): Int = when (type) {
         WeatherType.CLEAR -> 0
