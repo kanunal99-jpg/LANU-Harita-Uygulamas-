@@ -241,6 +241,8 @@ fun HaritalarNavigationApp(
         uiState.routeWeather,
         uiState.routeRoadFeatures,
         uiState.roadFeatureDataState,
+        uiState.routeCriticalPois,
+        uiState.routeCriticalPoiDataState,
         safetyCameras
     ) {
         uiState.selectedRoute?.let { route ->
@@ -251,7 +253,9 @@ fun HaritalarNavigationApp(
                 loadedSafetyCameras = safetyCameras,
                 trafficSegments = currentTrafficSegments,
                 roadFeatures = uiState.routeRoadFeatures,
-                roadFeatureDataState = uiState.roadFeatureDataState
+                roadFeatureDataState = uiState.roadFeatureDataState,
+                routeCriticalPois = uiState.routeCriticalPois,
+                routeCriticalPoiDataState = uiState.routeCriticalPoiDataState
             )
         }
     }
