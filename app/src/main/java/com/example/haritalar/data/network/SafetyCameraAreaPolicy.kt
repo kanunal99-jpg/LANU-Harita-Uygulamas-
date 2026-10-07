@@ -33,6 +33,9 @@ object SafetyCameraAreaPolicy {
         )
     }
 
+    fun shouldLoadViewport(bbox: SafetyCameraBoundingBox, zoomLevel: Float): Boolean =
+        bbox.isValid() && zoomLevel >= 12f
+
     fun shouldRefresh(previousCenter: GeoPoint?, currentCenter: GeoPoint): Boolean {
         if (previousCenter == null) return true
         return previousCenter.distanceTo(currentCenter) >= NAVIGATION_REFRESH_DISTANCE_METERS
