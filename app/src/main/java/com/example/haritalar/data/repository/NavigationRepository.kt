@@ -114,8 +114,13 @@ class NavigationRepository(context: Context) {
     suspend fun reverseGeocode(point: GeoPoint): String? =
         searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
 
-    suspend fun fetchPois(center: GeoPoint, category: PoiCategory?): List<PoiItem> {
-        val primary = poiService.fetchPoisAround(center, radiusMeters = 8_000, selectedCategory = category)
+    suspend fun fetchPois(
+        center: GeoPoint,
+        category: PoiCategory?,
+        radiusMeters: Int = 8_000
+    ): List<PoiItem> {
+        val safeRadius = radiusMeters.coerceIn(2_500, 20_000)
+        val primary = poiService.fetchPoisAround(center, radiusMeters = safeRadius, selectedCategory = category)
         if (primary.isNotEmpty()) return primary
 
         if (category == null) return emptyList()
@@ -134,8 +139,9 @@ class NavigationRepository(context: Context) {
         for (query in fallbackQueries) {
             val response = searchProviderChain.executeSearch(query, center)
             if (response is com.example.haritalar.model.SearchResponse.Success) {
+                val fallbackDistance = (safeRadius + 5_000).coerceAtMost(25_000).toDouble()
                 val fallback = response.results
-                    .filter { it.point.distanceTo(center) <= 20_000.0 }
+                    .filter { it.point.distanceTo(center) <= fallbackDistance }
                     .take(40)
                     .map {
                         PoiItem(
