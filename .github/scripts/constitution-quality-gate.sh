@@ -7,6 +7,7 @@ fail() {
 }
 
 test -s ANAYASA.md || fail "ANAYASA.md eksik veya boş"
+grep -q 'Her anlamlı geliştirmede APK yayın zorunluluğu' ANAYASA.md || fail "anlamlı geliştirmelerde APK yayın kuralı Anayasa'da eksik"
 test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
@@ -49,7 +50,8 @@ if grep -i -E 'gemini|firebase[._-]?ai' metadata.json .env.example app/build.gra
   fail "kullanılmayan AI yeteneği ürün/build metadata'sında tekrar göründü"
 fi
 
-echo "LANU constitution quality gate: PASS"
-
 test -s app/src/main/java/com/example/haritalar/navigation/PoiViewportPolicy.kt || fail "premium POI viewport/density policy eksik"
 test -s app/src/test/java/com/example/haritalar/navigation/PoiViewportPolicyTest.kt || fail "premium POI viewport regresyon testi eksik"
+
+echo "LANU constitution quality gate: PASS"
+
