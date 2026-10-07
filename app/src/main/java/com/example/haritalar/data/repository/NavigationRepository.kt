@@ -33,6 +33,7 @@ import com.example.haritalar.model.TrafficTestResult
 import com.example.haritalar.navigation.RouteCriticalPoiCoverage
 import com.example.haritalar.navigation.RouteCriticalPoiPolicy
 import com.example.haritalar.navigation.RouteDataCoverage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 
 enum class SavedPlaceResult {
@@ -219,17 +220,23 @@ class NavigationRepository(context: Context) {
                 )
 
                 for ((category, query) in fallbackQueries) {
-                    val response = searchProviderChain.executeSearch(query, midpoint)
-                    if (response is com.example.haritalar.model.SearchResponse.Success) {
-                        fallbackPois += response.results.take(25).map {
-                            PoiItem(
-                                id = "route_fallback_${category.name}_${it.id}",
-                                name = it.name,
-                                category = category,
-                                point = it.point,
-                                address = it.shortAddress.ifBlank { it.displayName }
-                            )
+                    try {
+                        val response = searchProviderChain.executeSearch(query, midpoint)
+                        if (response is com.example.haritalar.model.SearchResponse.Success) {
+                            fallbackPois += response.results.take(25).map {
+                                PoiItem(
+                                    id = "route_fallback_${category.name}_${it.id}",
+                                    name = it.name,
+                                    category = category,
+                                    point = it.point,
+                                    address = it.shortAddress.ifBlank { it.displayName }
+                                )
+                            }
                         }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Continue to the remaining real fallback queries.
                     }
                 }
 
