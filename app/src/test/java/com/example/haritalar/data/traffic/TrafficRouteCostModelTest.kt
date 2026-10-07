@@ -50,6 +50,28 @@ class TrafficRouteCostModelTest {
         )
     }
 
+
+    @Test
+    fun cachedSegments_keepCacheProvenanceWhenProviderUnavailable() {
+        val cached = TrafficSegment(
+            coordinates = listOf(GeoPoint(41.0, 29.0)),
+            currentSpeed = 10.0,
+            freeFlowSpeed = 60.0,
+            delaySeconds = 300L,
+            fromCache = true
+        )
+
+        val status = TrafficRouteCostModel.calculateTrafficStatus(
+            segments = listOf(cached),
+            hasProvider = false
+        )
+
+        assertFalse(status.verified)
+        assertFalse(status.isLiveApi)
+        assertEquals("TomTom Traffic Flow API v4 • cache", status.sourceName)
+        assertEquals(0L, status.delaySeconds)
+    }
+
     @Test
     fun verifiedSegments_reportLiveTraffic() {
         val segment = TrafficSegment(
