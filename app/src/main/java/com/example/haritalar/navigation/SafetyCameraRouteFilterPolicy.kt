@@ -35,7 +35,7 @@ object SafetyCameraRouteFilterPolicy {
      * Projects a point to the nearest route segment and returns cumulative distance
      * from route start. This avoids treating an entire previous segment as "ahead".
      */
-    private fun routeProgressMeters(point: GeoPoint, route: List<GeoPoint>): Double? {
+    fun routeProgressMeters(point: GeoPoint, route: List<GeoPoint>): Double? {
         if (route.size < 2) return null
 
         var cumulative = 0.0
