@@ -130,6 +130,13 @@ object TurkeyAdministrativeDirectory {
     fun containsDistrict(province: String, district: String): Boolean =
         resolveDistrict(province, district) != null
 
+    fun allDistricts(): List<String> = districtsByProvince.values.flatten()
+
+    fun uniqueProvinceForDistrict(district: String): Pair<String, String>? {
+        val matches = findDistricts(district)
+        return matches.singleOrNull()
+    }
+
     fun districtCount(): Int = districtsByProvince.values.sumOf { it.size }
 
     private fun normalize(value: String): String =
