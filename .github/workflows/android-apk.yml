@@ -117,17 +117,48 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
         env:
           CI: true
+      - name: Detect production signing secrets
+        id: signing
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+          if [ -n "${KEYSTORE_B64}" ] && [ -n "${STORE_PASSWORD}" ] && [ -n "${KEY_PASSWORD}" ]; then
+            printf '%s' "${KEYSTORE_B64}" | base64 --decode > release-upload.jks
+            echo "ready=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "ready=false" >> "${GITHUB_OUTPUT}"
+            echo "Production signing secrets are not configured; debug APK will still be published."
+          fi
+      - name: Build production-signed release APK
+        if: steps.signing.outputs.ready == 'true'
+        run: gradle :app:assembleRelease --stacktrace
+        env:
+          CI: true
+          KEYSTORE_PATH: ${{ github.workspace }}/release-upload.jks
+          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       - name: Verify APK SHA-256
         run: |
           set -euo pipefail
           sha256sum app/build/outputs/apk/debug/*.apk | tee apk-sha256.txt
+          if [ -d app/build/outputs/apk/release ] && compgen -G "app/build/outputs/apk/release/*.apk" > /dev/null; then
+            sha256sum app/build/outputs/apk/release/*.apk | tee release-apk-sha256.txt
+          fi
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7.0.1
         with:
           name: lanu-harita-debug-apk
           path: |
             app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
             apk-sha256.txt
+            release-apk-sha256.txt
           if-no-files-found: error
           retention-days: 14
       - name: Remove previous latest Release APK
@@ -142,6 +173,11 @@ jobs:
           else
             echo 'No previous app-debug.apk release asset found.'
           fi
+          release_asset_id="$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/latest" --jq '.assets[] | select(.name == "app-release.apk") | .id' | head -n 1)"
+          if [ -n "${release_asset_id}" ]; then
+            gh api --method DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${release_asset_id}"
+            echo "Removed previous app-release.apk release asset: ${release_asset_id}"
+          fi
       - name: Publish APK to latest GitHub Release
         uses: softprops/action-gh-release@v3.0.3
         with:
@@ -150,11 +186,25 @@ jobs:
           body: |
             Bu yayın her başarılı Android APK derlemesinde güncellenir.
 
-            **Güncel APK:** `app-debug.apk`
-            **Checksum:** `apk-sha256.txt`
+            **Test/cihaz APK:** `app-debug.apk`
+            **Debug checksum:** `apk-sha256.txt`
+
+            Production signing secrets yapılandırılmışsa aynı yayına ayrıca
+            `app-release.apk` ve `release-apk-sha256.txt` eklenir.
           files: |
             app/build/outputs/apk/debug/*.apk
             apk-sha256.txt
+          make_latest: true
+          prerelease: false
+          draft: false
+      - name: Publish production-signed APK to latest GitHub Release
+        if: steps.signing.outputs.ready == 'true'
+        uses: softprops/action-gh-release@v3.0.3
+        with:
+          tag_name: latest
+          files: |
+            app/build/outputs/apk/release/*.apk
+            release-apk-sha256.txt
           make_latest: true
           prerelease: false
           draft: false
