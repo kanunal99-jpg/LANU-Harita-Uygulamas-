@@ -35,6 +35,7 @@ import com.example.haritalar.navigation.CompassHeadingSensor
 import com.example.haritalar.navigation.DestinationSnapPolicy
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
+import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
@@ -133,6 +134,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var routeCalculationJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
+    private var poiJob: Job? = null
+    private var poiViewportJob: Job? = null
+    private var lastPoiQueryCenter: GeoPoint? = null
+    private var poiRequestGeneration: Long = 0L
+    private var trafficSignalGeneration: Long = 0L
     private var liveShareJob: Job? = null
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
@@ -895,26 +901,99 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun togglePoiLayer() {
-        val newVis = !_uiState.value.isPoiLayerVisible
-        _uiState.value = _uiState.value.copy(isPoiLayerVisible = newVis)
-        if (newVis && _uiState.value.poiList.isEmpty()) loadPois(_uiState.value.selectedPoiCategory)
+        val newVisible = !_uiState.value.isPoiLayerVisible
+        if (!newVisible) {
+            poiJob?.cancel()
+            poiViewportJob?.cancel()
+            _uiState.value = _uiState.value.copy(
+                isPoiLayerVisible = false,
+                poiList = emptyList()
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(isPoiLayerVisible = true, poiList = emptyList())
+        loadPois(_uiState.value.selectedPoiCategory)
     }
 
     fun selectPoiCategory(category: PoiCategory?) {
-        _uiState.value = _uiState.value.copy(selectedPoiCategory = category, isPoiLayerVisible = true)
+        poiJob?.cancel()
+        poiViewportJob?.cancel()
+        lastPoiQueryCenter = null
+        _uiState.value = _uiState.value.copy(
+            selectedPoiCategory = category,
+            isPoiLayerVisible = true,
+            poiList = emptyList(),
+            statusMessage = null
+        )
         loadPois(category)
     }
 
+    private fun resolvePoiSearchCenter(): GeoPoint? {
+        val state = _uiState.value
+        return PoiSearchCenterPolicy.resolve(
+            trackingMode = state.mapTrackingMode,
+            freshRoutingLocation = currentRoutingLocation(),
+            lastKnownLocation = state.userLocation,
+            viewport = state.currentViewportBbox
+        )
+    }
+
     fun loadPois(category: PoiCategory?) {
-        val center = currentRoutingLocation()?.point ?: run {
-            _uiState.value = _uiState.value.copy(statusMessage = "İlgi noktalarını yüklemek için gerçek konum gerekli.")
+        val center = resolvePoiSearchCenter() ?: run {
+            _uiState.value = _uiState.value.copy(
+                poiList = emptyList(),
+                statusMessage = "POI araması için konum veya görünür harita alanı henüz hazır değil."
+            )
             return
         }
-        viewModelScope.launch {
-            _uiState.value = _uiState.value.copy(statusMessage = "İlgi noktaları yükleniyor...")
+
+        val generation = ++poiRequestGeneration
+        poiJob?.cancel()
+        poiJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                poiList = emptyList(),
+                statusMessage = "${category?.displayName ?: "İlgi noktaları"} yükleniyor..."
+            )
             val pois = repository.fetchPois(center, category)
-            _uiState.value = _uiState.value.copy(poiList = pois, statusMessage = if (pois.isEmpty()) "Bu bölgede ilgi noktası bulunamadı." else null)
+            if (generation != poiRequestGeneration ||
+                category != _uiState.value.selectedPoiCategory ||
+                !_uiState.value.isPoiLayerVisible
+            ) {
+                return@launch
+            }
+
+            lastPoiQueryCenter = center
+            _uiState.value = _uiState.value.copy(
+                poiList = pois,
+                statusMessage = if (pois.isEmpty()) {
+                    "${category?.displayName ?: "İlgi noktası"} bu bölgede bulunamadı."
+                } else {
+                    null
+                }
+            )
         }
+    }
+
+    fun selectPoi(poi: PoiItem) {
+        poiJob?.cancel()
+        poiViewportJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            isPoiLayerVisible = false,
+            poiList = emptyList()
+        )
+        selectSearchResult(
+            SearchResult(
+                id = poi.id,
+                name = poi.name,
+                displayName = poi.address ?: poi.name,
+                shortAddress = poi.address.orEmpty(),
+                point = poi.point,
+                type = "poi",
+                resultType = com.example.haritalar.model.AddressResultType.POI,
+                provider = "OpenStreetMap"
+            )
+        )
     }
 
     fun toggleMute() {
@@ -1048,29 +1127,83 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun onViewportChanged(bbox: TrafficSignalBoundingBox, zoomLevel: Float) {
-        _uiState.value = _uiState.value.copy(currentViewportBbox = bbox, currentZoomLevel = zoomLevel)
-        if (!_uiState.value.isTrafficSignalsLayerVisible) return
-        if (zoomLevel < TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS) return
-        trafficSignalJob?.cancel()
-        trafficSignalJob = viewModelScope.launch {
-            delay(500L)
-            _uiState.value = _uiState.value.copy(isLoadingTrafficSignals = true)
-            val result = trafficSignalRepository.getTrafficSignalsForViewport(bbox, zoomLevel)
-            when (result) {
-                is TrafficSignalFetchResult.Success -> {
-                    val merged = trafficSignalRepository.deduplicateSignals(_uiState.value.trafficSignals + result.signals)
-                    _uiState.value = _uiState.value.copy(trafficSignals = merged, isLoadingTrafficSignals = false)
-                }
-                is TrafficSignalFetchResult.Error -> {
-                    val merged = trafficSignalRepository.deduplicateSignals(_uiState.value.trafficSignals + result.fallbackSignals)
-                    _uiState.value = _uiState.value.copy(trafficSignals = merged, isLoadingTrafficSignals = false)
+        _uiState.value = _uiState.value.copy(
+            currentViewportBbox = bbox,
+            currentZoomLevel = zoomLevel
+        )
+
+        if (zoomLevel < TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS) {
+            trafficSignalJob?.cancel()
+            trafficSignalGeneration += 1
+            _uiState.value = _uiState.value.copy(
+                trafficSignals = emptyList(),
+                selectedTrafficSignal = null,
+                isLoadingTrafficSignals = false
+            )
+        } else if (_uiState.value.isTrafficSignalsLayerVisible) {
+            val generation = ++trafficSignalGeneration
+            trafficSignalJob?.cancel()
+            trafficSignalJob = viewModelScope.launch {
+                delay(350L)
+                if (generation != trafficSignalGeneration) return@launch
+                _uiState.value = _uiState.value.copy(isLoadingTrafficSignals = true)
+                val result = trafficSignalRepository.getTrafficSignalsForViewport(bbox, zoomLevel)
+                if (generation != trafficSignalGeneration) return@launch
+
+                val viewportSignals = when (result) {
+                    is TrafficSignalFetchResult.Success -> result.signals
+                    is TrafficSignalFetchResult.Error -> result.fallbackSignals
+                }.filter { bbox.contains(it.point) }
+
+                _uiState.value = _uiState.value.copy(
+                    trafficSignals = trafficSignalRepository.deduplicateSignals(viewportSignals),
+                    isLoadingTrafficSignals = false
+                )
+            }
+        }
+
+        val state = _uiState.value
+        val category = state.selectedPoiCategory
+        if (state.isPoiLayerVisible &&
+            category != null &&
+            state.mapTrackingMode == MapTrackingMode.FREE &&
+            zoomLevel >= 11f
+        ) {
+            val nextCenter = PoiSearchCenterPolicy.viewportCenter(bbox)
+            if (nextCenter != null &&
+                PoiSearchCenterPolicy.shouldRefresh(lastPoiQueryCenter, nextCenter)
+            ) {
+                poiViewportJob?.cancel()
+                poiViewportJob = viewModelScope.launch {
+                    delay(650L)
+                    if (_uiState.value.isPoiLayerVisible &&
+                        _uiState.value.selectedPoiCategory == category
+                    ) {
+                        loadPois(category)
+                    }
                 }
             }
         }
     }
 
     fun toggleTrafficSignalsLayer() {
-        _uiState.value = _uiState.value.copy(isTrafficSignalsLayerVisible = !_uiState.value.isTrafficSignalsLayerVisible)
+        val newVisible = !_uiState.value.isTrafficSignalsLayerVisible
+        if (!newVisible) {
+            trafficSignalJob?.cancel()
+            trafficSignalGeneration += 1
+            _uiState.value = _uiState.value.copy(
+                isTrafficSignalsLayerVisible = false,
+                trafficSignals = emptyList(),
+                selectedTrafficSignal = null,
+                isLoadingTrafficSignals = false
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(isTrafficSignalsLayerVisible = true)
+        val bbox = _uiState.value.currentViewportBbox
+        val zoom = _uiState.value.currentZoomLevel
+        if (bbox != null) onViewportChanged(bbox, zoom)
     }
     fun selectTrafficSignal(signal: TrafficSignal) { _uiState.value = _uiState.value.copy(selectedTrafficSignal = signal) }
     fun dismissTrafficSignalDetail() { _uiState.value = _uiState.value.copy(selectedTrafficSignal = null) }
@@ -1079,6 +1212,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         routeCalculationJob?.cancel()
+        poiJob?.cancel()
+        poiViewportJob?.cancel()
+        trafficSignalJob?.cancel()
         liveShareJob?.cancel()
         liveShareSession = null
         vehicleHeadingManager.stop()
