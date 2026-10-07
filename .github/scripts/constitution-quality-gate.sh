@@ -12,8 +12,8 @@ test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
 grep -q 'ANA SERVİS.*ALTERNATİF.*GERÇEK FALLBACK' ANAYASA.md || fail "kritik zincir standardı Anayasa'da bulunamadı"
-grep -q 'versionName = "1.1.13"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.13 değil"
-grep -q 'versionCode = 15' app/build.gradle.kts || fail "beklenen Android versionCode 15 değil"
+grep -q 'versionName = "1.1.14"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.14 değil"
+grep -q 'versionCode = 16' app/build.gradle.kts || fail "beklenen Android versionCode 16 değil"
 grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml || fail "uygulama backup güvenlik kuralı kapalı değil"
 grep -q 'android:foregroundServiceType="location"' app/src/main/AndroidManifest.xml || fail "aktif navigasyon location foreground service bildirimi eksik"
 grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' app/src/main/AndroidManifest.xml || fail "foreground location permission eksik"
@@ -103,6 +103,16 @@ grep -q 'ROAD_FEATURE' app/src/main/java/com/example/haritalar/navigation/LanuBr
 grep -q 'fetchRoadFeaturesForRoute(newRoute)' app/src/main/java/com/example/haritalar/ui/MainViewModel.kt || fail "reroute sonrası road feature yenileme eksik"
 grep -q 'RoadFeatureDataState.CACHED' app/src/main/java/com/example/haritalar/navigation/LanuBriefPolicy.kt || fail "road feature cache provenance LANU Brief'te eksik"
 grep -q 'MAX_WARNING_DISTANCE_METERS = 5_000.0' app/src/main/java/com/example/haritalar/navigation/SafetyCameraWarningPolicy.kt || fail "1.1.12 radar son-5-km invariantı geriledi"
+
+test -s app/src/main/java/com/example/haritalar/model/RouteCriticalPoiModels.kt || fail "rota kritik POI modeli eksik"
+test -s app/src/main/java/com/example/haritalar/navigation/RouteCriticalPoiPolicy.kt || fail "rota kritik POI koridor policy eksik"
+test -s app/src/test/java/com/example/haritalar/navigation/RouteCriticalPoiPolicyTest.kt || fail "rota kritik POI regresyon testi eksik"
+grep -q 'fetchPoisAroundResult' app/src/main/java/com/example/haritalar/data/network/PoiNetworkService.kt || fail "POI provider success/error provenance ayrımı eksik"
+grep -q 'fetchCriticalPoisForRoute' app/src/main/java/com/example/haritalar/data/repository/NavigationRepository.kt || fail "tam rota kritik hizmet prefetch eksik"
+grep -q 'fetchCriticalPoisForRoute(newRoute)' app/src/main/java/com/example/haritalar/ui/MainViewModel.kt || fail "reroute sonrası kritik hizmet yenileme eksik"
+grep -q 'CRITICAL_SERVICES' app/src/main/java/com/example/haritalar/navigation/LanuBriefPolicy.kt || fail "kritik hizmet LANU Brief entegrasyonu eksik"
+grep -q 'verifiedCriticalServicesShowCountsRouteKmAndCorridorDistance' app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "kritik hizmet Brief detay testi eksik"
+grep -q 'unavailableCriticalServiceProviderNeverPretendsZeroServicesIsVerified' app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "kritik hizmet safe-unknown testi eksik"
 
 echo "LANU constitution quality gate: PASS"
 
