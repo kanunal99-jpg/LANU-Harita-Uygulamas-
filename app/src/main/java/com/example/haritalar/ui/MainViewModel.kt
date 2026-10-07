@@ -589,15 +589,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun fetchWeatherForRoute(route: RouteOption) {
         val requestGeneration = ++weatherGeneration
         weatherJob?.cancel()
-        roadFeatureJob?.cancel()
-        roadFeatureJob = null
-        roadFeatureGeneration++
         _uiState.value = _uiState.value.copy(
             routeWeather = emptyList(),
-            approachingWeather = null,
-            routeRoadFeatures = emptyList(),
-            roadFeatureDataState = RoadFeatureDataState.IDLE,
-            approachingRoadFeatureWarning = null
+            approachingWeather = null
         )
         weatherJob = viewModelScope.launch {
             val departureEpochMillis = System.currentTimeMillis()
@@ -714,6 +708,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         weatherJob?.cancel()
         weatherJob = null
         weatherGeneration++
+        roadFeatureJob?.cancel()
+        roadFeatureJob = null
+        roadFeatureGeneration++
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
@@ -722,6 +719,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         trafficRefreshJob?.cancel()
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
+        announcedRoadFeatureMilestones.clear()
         lastOverspeedCameraWarningKey = null
         _uiState.value = _uiState.value.copy(
             navigationState = NavigationState.IDLE, navigationProgress = null, selectedRoute = null,
@@ -740,9 +738,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         weatherJob?.cancel()
         weatherJob = null
         weatherGeneration++
+        roadFeatureJob?.cancel()
+        roadFeatureJob = null
+        roadFeatureGeneration++
+        announcedRoadFeatureMilestones.clear()
         _uiState.value = _uiState.value.copy(
             routeWeather = emptyList(),
-            approachingWeather = null
+            approachingWeather = null,
+            routeRoadFeatures = emptyList(),
+            roadFeatureDataState = RoadFeatureDataState.IDLE,
+            approachingRoadFeatureWarning = null
         )
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
