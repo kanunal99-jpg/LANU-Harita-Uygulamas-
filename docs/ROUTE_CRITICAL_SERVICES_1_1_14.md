@@ -72,3 +72,4 @@ Kritik hizmet isteği routeId + generation mantığıyla korunur.
 - LANU Brief rota km + koridor uzaklığı gösterir,
 - provider başarısızsa “0 hizmet” diye doğrulanmış bilgi üretilmez,
 - lint + unit + Android emulator smoke + APK build + SHA-256 + Release zorunludur.
+- Release içindeki APK ve checksum asset'lerinin 1.1.14 main commit'inden üretildiği ve doğrudan indirilebilir olduğu ayrıca doğrulanır.
