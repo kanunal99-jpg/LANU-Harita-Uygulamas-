@@ -11,6 +11,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
+import com.example.haritalar.data.repository.RoadFeatureRepository
 import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.BuildConfig
 import com.example.haritalar.data.repository.TrafficSignalRepository
@@ -23,6 +24,9 @@ import com.example.haritalar.model.NavigationState
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.RoadFeature
+import com.example.haritalar.model.RoadFeatureDataState
+import com.example.haritalar.model.RoadFeatureFetchResult
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
@@ -40,6 +44,8 @@ import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.PoiViewportPolicy
+import com.example.haritalar.navigation.RoadFeatureRoutePolicy
+import com.example.haritalar.navigation.RoadFeatureWarning
 import com.example.haritalar.navigation.SafetyCameraRouteFilterPolicy
 import com.example.haritalar.navigation.SafetyCameraVoicePolicy
 import com.example.haritalar.navigation.SafetyCameraWarningPolicy
@@ -111,7 +117,10 @@ data class MainUiState(
     val currentZoomLevel: Float = 0f,
     val isWeatherLayerVisible: Boolean = true,
     val routeWeather: List<com.example.haritalar.model.WeatherCondition> = emptyList(),
-    val approachingWeather: com.example.haritalar.model.WeatherCondition? = null
+    val approachingWeather: com.example.haritalar.model.WeatherCondition? = null,
+    val routeRoadFeatures: List<RoadFeature> = emptyList(),
+    val roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
+    val approachingRoadFeatureWarning: RoadFeatureWarning? = null
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -119,6 +128,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val locationManager = AppLocationManager(application)
     val offlineMapManager = com.example.haritalar.data.offline.OfflineMapManager(application)
     val weatherRepository = com.example.haritalar.data.weather.WeatherRepository()
+    val roadFeatureRepository = RoadFeatureRepository(application)
     private val geocodingService = NominatimGeocodingService()
     val ttsManager = TurkishTtsManager(application)
     val compassSensor = CompassHeadingSensor(application)
@@ -142,6 +152,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var routeCalculationJob: Job? = null
     private var weatherJob: Job? = null
+    private var roadFeatureJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
@@ -152,6 +163,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
     private var generationCounter = 1L
     private var weatherGeneration = 0L
+    private var roadFeatureGeneration = 0L
     private var trafficSignalGeneration = 0L
     private var poiGeneration = 0L
     private var lastPoiSearchCenter: GeoPoint? = null
@@ -280,6 +292,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         weatherJob?.cancel()
         weatherJob = null
         weatherGeneration++
+        roadFeatureJob?.cancel()
+        roadFeatureJob = null
+        roadFeatureGeneration++
         cameraBriefJob?.cancel()
         cameraBriefJob = null
         lastPreDriveCameraBriefRouteId = null
@@ -292,6 +307,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             trafficStatusMap = emptyMap(),
             routeWeather = emptyList(),
             approachingWeather = null,
+            routeRoadFeatures = emptyList(),
+            roadFeatureDataState = RoadFeatureDataState.IDLE,
+            approachingRoadFeatureWarning = null,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -476,6 +494,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isLoadingRoutes = true,
                 activeGenerationId = genId,
                 routeWeather = emptyList(),
+                routeRoadFeatures = emptyList(),
+                roadFeatureDataState = RoadFeatureDataState.IDLE,
+                approachingRoadFeatureWarning = null,
                 statusMessage = "Rotalar hesaplanıyor..."
             )
 
@@ -496,7 +517,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
-                primaryRoute?.let { fetchWeatherForRoute(it) }
+                primaryRoute?.let {
+                    fetchWeatherForRoute(it)
+                    fetchRoadFeaturesForRoute(it)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -526,6 +550,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 isLoadingRoutes = true, activeGenerationId = genId,
                 routeOptions = emptyList(), selectedRoute = null, routeWeather = emptyList(),
+                routeRoadFeatures = emptyList(), roadFeatureDataState = RoadFeatureDataState.IDLE,
+                approachingRoadFeatureWarning = null,
                 statusMessage = "Rota hesaplanıyor..."
             )
             try {
@@ -558,6 +584,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false, navigationState = NavigationState.ROUTE_SELECTION, statusMessage = null
                 )
                 fetchWeatherForRoute(route)
+                fetchRoadFeaturesForRoute(route)
                 lastPreDriveCameraBriefRouteId = null
                 _uiState.value = _uiState.value.copy(
                     statusMessage = "Rota hazır. Radar güzergâh özeti hazırlanıyor."
@@ -585,6 +612,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = "Rota radar özeti hazırlanıyor."
         )
         fetchWeatherForRoute(route)
+        fetchRoadFeaturesForRoute(route)
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
@@ -611,6 +639,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
             _uiState.value = _uiState.value.copy(routeWeather = weather)
             checkWeatherProximity()
+        }
+    }
+
+    private fun fetchRoadFeaturesForRoute(route: RouteOption) {
+        val requestGeneration = ++roadFeatureGeneration
+        roadFeatureJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            routeRoadFeatures = emptyList(),
+            roadFeatureDataState = RoadFeatureDataState.IDLE,
+            approachingRoadFeatureWarning = null
+        )
+        roadFeatureJob = viewModelScope.launch {
+            val result = roadFeatureRepository.getForRoute(route.geometry)
+            if (requestGeneration != roadFeatureGeneration ||
+                _uiState.value.selectedRoute?.routeId != route.routeId
+            ) {
+                return@launch
+            }
+
+            when (result) {
+                is RoadFeatureFetchResult.Success -> {
+                    _uiState.value = _uiState.value.copy(
+                        routeRoadFeatures = result.features,
+                        roadFeatureDataState = if (result.fromCache) {
+                            RoadFeatureDataState.CACHED
+                        } else {
+                            RoadFeatureDataState.VERIFIED
+                        }
+                    )
+                    checkRoadFeatureProximity()
+                }
+                is RoadFeatureFetchResult.Error -> {
+                    _uiState.value = _uiState.value.copy(
+                        routeRoadFeatures = emptyList(),
+                        roadFeatureDataState = RoadFeatureDataState.UNAVAILABLE,
+                        approachingRoadFeatureWarning = null
+                    )
+                }
+            }
         }
     }
 
@@ -650,6 +717,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
         cameraBriefJob?.cancel()
         announcedCameraWarningMilestones.clear()
+        announcedRoadFeatureMilestones.clear()
         lastOverspeedCameraWarningKey = null
         val currentHeading = _uiState.value.vehicleHeadingState.heading
         val depGuidance = VehicleHeadingManager.buildDepartureGuidance(
@@ -678,6 +746,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         weatherJob?.cancel()
         weatherJob = null
         weatherGeneration++
+        roadFeatureJob?.cancel()
+        roadFeatureJob = null
+        roadFeatureGeneration++
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
@@ -688,6 +759,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         cameraBriefJob = null
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
+        announcedRoadFeatureMilestones.clear()
         lastOverspeedCameraWarningKey = null
         lastPreDriveCameraBriefRouteId = null
         _uiState.value = _uiState.value.copy(
@@ -696,7 +768,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
-            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), approachingWeather = null
+            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), approachingWeather = null,
+            routeRoadFeatures = emptyList(), roadFeatureDataState = RoadFeatureDataState.IDLE,
+            approachingRoadFeatureWarning = null
         )
     }
 
@@ -705,9 +779,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         weatherJob?.cancel()
         weatherJob = null
         weatherGeneration++
+        roadFeatureJob?.cancel()
+        roadFeatureJob = null
+        roadFeatureGeneration++
+        announcedRoadFeatureMilestones.clear()
         _uiState.value = _uiState.value.copy(
             routeWeather = emptyList(),
-            approachingWeather = null
+            approachingWeather = null,
+            routeRoadFeatures = emptyList(),
+            roadFeatureDataState = RoadFeatureDataState.IDLE,
+            approachingRoadFeatureWarning = null
         )
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
@@ -728,6 +809,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                     navigationEngine.updateRoute(newRoute)
                     fetchWeatherForRoute(newRoute)
+                    fetchRoadFeaturesForRoute(newRoute)
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -1049,6 +1131,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             }
         } else if (!warning.overspeed) {
             lastOverspeedCameraWarningKey = null
+        }
+    }
+
+    private val announcedRoadFeatureMilestones = mutableSetOf<String>()
+
+    fun checkRoadFeatureProximity() {
+        val navState = _uiState.value.navigationState
+        val isDriving = navState == NavigationState.NAVIGATING ||
+            navState == NavigationState.OFF_ROUTE_REROUTING
+        val route = _uiState.value.selectedRoute
+        val location = currentRoutingLocation()
+
+        if (!isDriving || route == null || location == null || route.geometry.size < 2) {
+            _uiState.value = _uiState.value.copy(approachingRoadFeatureWarning = null)
+            return
+        }
+
+        val warning = RoadFeatureRoutePolicy.nearestWarning(
+            features = _uiState.value.routeRoadFeatures,
+            route = route.geometry,
+            userPoint = _uiState.value.navigationProgress?.snappedLocation ?: location.point,
+            speedKmh = location.speedKmh
+        )
+
+        _uiState.value = _uiState.value.copy(approachingRoadFeatureWarning = warning)
+        if (warning == null) return
+
+        val milestone = if (warning.distanceMeters <= 300.0) 300 else warning.warningRadiusMeters
+        val key = "${warning.feature.id}:$milestone"
+        if (announcedRoadFeatureMilestones.add(key)) {
+            ttsManager.speak(RoadFeatureRoutePolicy.voiceText(warning))
+            vibrateSafetyWarning(if (milestone <= 300) 220L else 120L)
         }
     }
 

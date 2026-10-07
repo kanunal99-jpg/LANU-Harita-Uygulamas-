@@ -2,6 +2,8 @@ package com.example.haritalar.navigation
 
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
+import com.example.haritalar.model.RoadFeature
+import com.example.haritalar.model.RoadFeatureType
 import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
@@ -216,4 +218,35 @@ class RoadIntelligencePolicyTest {
         assertEquals(RoadIntelligenceType.CAMERA, events.single().type)
         assertTrue(events.single().detail.contains("1.2 km"))
     }
+
+    @Test
+    fun roadFeatureBecomesP1SourceBackedWarning() {
+        val feature = RoadFeature(
+            id = "level",
+            point = GeoPoint(40.901, 29.200),
+            type = RoadFeatureType.LEVEL_CROSSING,
+            title = "Hemzemin geçit",
+            detail = "OSM demiryolu geçişi",
+            source = "OpenStreetMap"
+        )
+        val featureWarning = RoadFeatureWarning(
+            feature = feature,
+            distanceMeters = 850.0,
+            warningRadiusMeters = 1_500
+        )
+
+        val events = RoadIntelligencePolicy.build(
+            cameraWarning = null,
+            weather = null,
+            traffic = null,
+            roadFeatureWarning = featureWarning
+        )
+
+        assertEquals(1, events.size)
+        assertEquals(RoadIntelligenceType.ROAD_FEATURE, events.single().type)
+        assertEquals(RoadIntelligencePriority.P1, events.single().priority)
+        assertEquals("OpenStreetMap", events.single().source)
+        assertTrue(events.single().detail.contains("850 m"))
+    }
+
 }

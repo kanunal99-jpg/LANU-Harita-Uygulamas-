@@ -2,6 +2,9 @@ package com.example.haritalar.navigation
 
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.RoadFeature
+import com.example.haritalar.model.RoadFeatureDataState
+import com.example.haritalar.model.RoadFeatureType
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficLevel
@@ -188,4 +191,57 @@ class LanuBriefPolicyTest {
         assertEquals(LanuBriefStatus.PARTIAL, cameraItem.status)
         assertTrue(cameraItem.title.contains("1 sabit kamera"))
     }
+
+    @Test
+    fun verifiedRoadFeaturesAppearInPreDriveBrief() {
+        val features = listOf(
+            RoadFeature(
+                id = "school",
+                point = route.geometry[1],
+                type = RoadFeatureType.SCHOOL_ZONE,
+                title = "Okul bölgesi",
+                detail = "Örnek Okul"
+            ),
+            RoadFeature(
+                id = "crossing",
+                point = route.geometry[1],
+                type = RoadFeatureType.LEVEL_CROSSING,
+                title = "Hemzemin geçit",
+                detail = "OSM demiryolu geçişi"
+            )
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            roadFeatures = features,
+            roadFeatureDataState = RoadFeatureDataState.VERIFIED
+        )
+
+        val item = brief.items.first { it.type == LanuBriefItemType.ROAD_FEATURE }
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertEquals(LanuBriefSeverity.WARNING, item.severity)
+        assertTrue(item.title.contains("2 yol özelliği"))
+        assertTrue(item.detail.contains("okul"))
+        assertTrue(item.detail.contains("hemzemin geçit"))
+    }
+
+    @Test
+    fun cachedRoadFeaturesAreExplicitlyPartial() {
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            roadFeatures = emptyList(),
+            roadFeatureDataState = RoadFeatureDataState.CACHED
+        )
+
+        val item = brief.items.first { it.type == LanuBriefItemType.ROAD_FEATURE }
+        assertEquals(LanuBriefStatus.PARTIAL, item.status)
+        assertTrue(item.source.contains("önbelle"))
+    }
+
 }
