@@ -13,7 +13,7 @@ LANU yalnızca toplam sayı göstermez; ilk bulunan hizmetin rota üzerinde yakl
 
 ## Veri akışı
 
-Rota 16 km aralıklarla örneklenir. Her örnek çevresinde yaklaşık 9 km'lik alan sorgulanır.
+Rota 16 km aralıklarla örneklenir. **Başlangıç ve hedef her zaman ayrı sorgu merkezi olarak korunur.** Her örnek çevresinde yaklaşık 9 km'lik alan sorgulanır.
 
 **OSM Overpass primary → Overpass mirrors → Nominatim/Photon arama fallback → safe unknown**
 
