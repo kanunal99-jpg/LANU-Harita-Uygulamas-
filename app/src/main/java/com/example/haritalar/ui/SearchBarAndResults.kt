@@ -26,6 +26,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -63,6 +64,15 @@ fun SearchHeader(
     onSelectRecentSearch: (SearchHistoryItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    val focusManager = LocalFocusManager.current
+    val providerLabel = searchActiveProvider?.let {
+        when {
+            it.contains("Nominatim", ignoreCase = true) || it.contains("Photon", ignoreCase = true) -> "OSM Harita"
+            it.contains("LANU", ignoreCase = true) -> it
+            else -> "Harita Araması"
+        }
+    }
+
     Column(
         modifier = modifier
             .fillMaxWidth()
@@ -165,7 +175,7 @@ fun SearchHeader(
                     // 1. Success State with Results
                     searchResults.isNotEmpty() -> {
                         Column {
-                            if (searchActiveProvider != null) {
+                            if (providerLabel != null) {
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -184,7 +194,7 @@ fun SearchHeader(
                                         color = Color(0xFFF1F5F9)
                                     ) {
                                         Text(
-                                            text = searchActiveProvider,
+                                            text = providerLabel,
                                             fontSize = 10.sp,
                                             fontWeight = FontWeight.SemiBold,
                                             color = Color(0xFF475569),
@@ -199,7 +209,10 @@ fun SearchHeader(
                                 items(searchResults, key = { it.id }) { result ->
                                     SearchResultRow(
                                         result = result,
-                                        onClick = { onSelectResult(result) }
+                                        onClick = {
+                                            focusManager.clearFocus()
+                                            onSelectResult(result)
+                                        }
                                     )
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
                                 }
@@ -368,7 +381,10 @@ fun SearchHeader(
                                 items(favorites.take(500), key = { "fav_${it.id}" }) { fav ->
                                     SavedPlaceRow(
                                         favorite = fav,
-                                        onClick = { onSelectFavorite(fav) },
+                                        onClick = {
+                                            focusManager.clearFocus()
+                                            onSelectFavorite(fav)
+                                        },
                                         onDelete = { onDeleteFavorite(fav) }
                                     )
                                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f))
@@ -403,8 +419,8 @@ fun SearchHeader(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clickable {
+                                                focusManager.clearFocus()
                                                 onSelectRecentSearch(item)
-                                                onQueryChanged(item.query)
                                             }
                                             .padding(horizontal = 16.dp, vertical = 10.dp)
                                             .testTag("recent_search_item_${item.id}"),
