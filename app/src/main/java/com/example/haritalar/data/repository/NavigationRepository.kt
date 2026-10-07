@@ -55,8 +55,9 @@ class NavigationRepository(context: Context) {
 
     val cacheSearchProvider = CacheSearchProvider(searchHistoryDao)
     val searchProviderChain = SearchProviderChain(
-        primaryProvider = NominatimSearchProvider(),
-        alternativeProvider = PhotonSearchProvider(),
+        // Photon explicitly supports search-as-you-type. Public Nominatim does not.
+        primaryProvider = PhotonSearchProvider(),
+        alternativeProvider = NominatimSearchProvider(),
         cacheProvider = cacheSearchProvider
     )
 
@@ -90,8 +91,16 @@ class NavigationRepository(context: Context) {
     val favorites: Flow<List<FavoritePlace>> = favoriteDao.getAllFavorites()
     val recentSearches: Flow<List<SearchHistoryItem>> = searchHistoryDao.getRecentSearches()
 
-    suspend fun searchPlacesResponse(query: String, focusPoint: GeoPoint?): com.example.haritalar.model.SearchResponse =
-        searchProviderChain.executeSearch(query, focusPoint)
+    suspend fun searchPlacesResponse(
+        query: String,
+        focusPoint: GeoPoint?,
+        committed: Boolean = false
+    ): com.example.haritalar.model.SearchResponse =
+        searchProviderChain.executeSearch(
+            query = query,
+            focusPoint = focusPoint,
+            allowAlternativeForwardGeocoder = committed
+        )
 
     suspend fun recordSearchSelection(query: String, result: SearchResult) {
         val normalizedQuery = query.trim().takeIf { it.isNotBlank() } ?: result.name
@@ -106,12 +115,12 @@ class NavigationRepository(context: Context) {
     }
 
     suspend fun searchPlaces(query: String, focusPoint: GeoPoint?): List<SearchResult> {
-        val response = searchPlacesResponse(query, focusPoint)
+        val response = searchPlacesResponse(query, focusPoint, committed = true)
         return if (response is com.example.haritalar.model.SearchResponse.Success) response.results else emptyList()
     }
 
     suspend fun reverseGeocode(point: GeoPoint): String? =
-        searchProviderChain.reverseGeocode(point) ?: geocodingService.reverseGeocode(point)
+        searchProviderChain.reverseGeocode(point)
 
     suspend fun fetchPois(
         center: GeoPoint,
