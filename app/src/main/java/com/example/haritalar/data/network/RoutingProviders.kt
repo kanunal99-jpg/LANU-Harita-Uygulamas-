@@ -1,5 +1,6 @@
 package com.example.haritalar.data.network
 
+import com.example.haritalar.data.repository.RouteTruthPolicy
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.ManeuverType
 import com.example.haritalar.model.RouteAttributeStatus
@@ -171,10 +172,21 @@ class ValhallaRoutingProvider(
                     }
                 }
 
-                val routeId = "valhalla_${routeType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
+                val tollStatus = when {
+                    !hasTollField -> RouteAttributeStatus.UNKNOWN
+                    hasToll -> RouteAttributeStatus.PRESENT
+                    else -> RouteAttributeStatus.ABSENT
+                }
+                val ferryStatus = when {
+                    !hasFerryField -> RouteAttributeStatus.UNKNOWN
+                    hasFerry -> RouteAttributeStatus.PRESENT
+                    else -> RouteAttributeStatus.ABSENT
+                }
+                val verifiedType = RouteTruthPolicy.verifiedRouteType(routeType, tollStatus, ferryStatus)
+                val routeId = "valhalla_${verifiedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                 return RouteOption(
                     routeId = routeId,
-                    title = routeType.displayName,
+                    title = verifiedType.displayName,
                     summary = maneuvers.firstOrNull { it.roadName.isNotEmpty() }?.roadName ?: "En uygun rota",
                     durationSeconds = totalTime,
                     distanceMeters = distanceMeters,
@@ -182,17 +194,9 @@ class ValhallaRoutingProvider(
                     maneuvers = maneuvers,
                     hasTolls = hasToll,
                     hasFerry = hasFerry,
-                    tollStatus = when {
-                        !hasTollField -> RouteAttributeStatus.UNKNOWN
-                        hasToll -> RouteAttributeStatus.PRESENT
-                        else -> RouteAttributeStatus.ABSENT
-                    },
-                    ferryStatus = when {
-                        !hasFerryField -> RouteAttributeStatus.UNKNOWN
-                        hasFerry -> RouteAttributeStatus.PRESENT
-                        else -> RouteAttributeStatus.ABSENT
-                    },
-                    routeType = routeType,
+                    tollStatus = tollStatus,
+                    ferryStatus = ferryStatus,
+                    routeType = verifiedType,
                     generationId = generationId
                 )
             }
@@ -305,11 +309,11 @@ class OsrmRoutingProvider(
 
                     // OSRM alternatives do not certify "shortest", "toll-free" or
                     // "ferry-free" semantics merely by response order. Keep labels neutral.
-                    val assignedType = if (i == 0) RouteType.RECOMMENDED else RouteType.ALTERNATIVE
+                    val assignedType = RouteTruthPolicy.osrmType(i)
                     val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                     results.add(RouteOption(
                         routeId = routeId,
-                        title = if (i == 0) "Önerilen Rota" else "Alternatif Rota ${i + 1}",
+                        title = RouteTruthPolicy.osrmTitle(i),
                         summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
                         durationSeconds = duration,
                         distanceMeters = distance,
@@ -317,8 +321,8 @@ class OsrmRoutingProvider(
                         maneuvers = maneuvers,
                         hasTolls = hasToll,
                         hasFerry = hasFerry,
-                        tollStatus = if (hasToll) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN,
-                        ferryStatus = if (hasFerry) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN,
+                        tollStatus = RouteTruthPolicy.positiveOnlyStatus(hasToll),
+                        ferryStatus = RouteTruthPolicy.positiveOnlyStatus(hasFerry),
                         routeType = assignedType,
                         generationId = generationId
                     ))
