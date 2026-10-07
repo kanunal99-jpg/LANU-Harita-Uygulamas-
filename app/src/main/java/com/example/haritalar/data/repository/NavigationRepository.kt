@@ -40,7 +40,7 @@ enum class SavedPlaceResult {
 
 class NavigationRepository(context: Context) {
     companion object {
-        const val MAX_SAVED_PLACES = 500
+        const val MAX_SAVED_PLACES = SavedPlacePolicy.MAX_SAVED_PLACES
     }
     val db = AppDatabase.getInstance(context)
     private val favoriteDao = db.favoriteDao()
@@ -181,21 +181,26 @@ class NavigationRepository(context: Context) {
 
     suspend fun addFavorite(title: String, address: String, point: GeoPoint, category: String): SavedPlaceResult {
         val cleanedTitle = title.trim().take(80)
-        val cleanedCategory = category.uppercase().takeIf { it in setOf("HOME", "WORK", "CUSTOM") } ?: return SavedPlaceResult.INVALID
+        val cleanedCategory = SavedPlacePolicy.normalizeCategory(category) ?: return SavedPlaceResult.INVALID
         if (cleanedTitle.isBlank() || point.latitude !in -90.0..90.0 || point.longitude !in -180.0..180.0) {
             return SavedPlaceResult.INVALID
         }
 
-        if (favoriteDao.findExact(cleanedTitle, point.latitude, point.longitude) != null) {
-            return SavedPlaceResult.DUPLICATE
-        }
-
+        val exactDuplicate = favoriteDao.findExact(cleanedTitle, point.latitude, point.longitude) != null
         val existingCategory = if (cleanedCategory == "HOME" || cleanedCategory == "WORK") {
             favoriteDao.getFavoriteByCategory(cleanedCategory)
         } else null
-        val count = favoriteDao.getFavoriteCount()
-        if (count >= MAX_SAVED_PLACES && existingCategory == null) {
-            return SavedPlaceResult.CAPACITY_REACHED
+        val decision = SavedPlacePolicy.decision(
+            currentCount = favoriteDao.getFavoriteCount(),
+            category = cleanedCategory,
+            hasExistingSingleCategory = existingCategory != null,
+            exactDuplicate = exactDuplicate
+        )
+        if (decision == SavedPlaceResult.DUPLICATE ||
+            decision == SavedPlaceResult.CAPACITY_REACHED ||
+            decision == SavedPlaceResult.INVALID
+        ) {
+            return decision
         }
 
         if (existingCategory != null) {
@@ -211,7 +216,7 @@ class NavigationRepository(context: Context) {
                 category = cleanedCategory
             )
         )
-        return if (existingCategory != null) SavedPlaceResult.REPLACED else SavedPlaceResult.SAVED
+        return decision
     }
 
     suspend fun deleteFavorite(favorite: FavoritePlace) = favoriteDao.deleteFavorite(favorite)
