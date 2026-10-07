@@ -15,6 +15,11 @@ object SafetyCameraRouteFilterPolicy {
         val distanceAheadMeters: Double
     )
 
+    data class RouteCamera(
+        val camera: SafetyCamera,
+        val routeDistanceMeters: Double
+    )
+
     const val DEFAULT_ROUTE_CORRIDOR_METERS = 180.0
     private const val BACKTRACK_TOLERANCE_METERS = 120.0
 
@@ -34,6 +39,25 @@ object SafetyCameraRouteFilterPolicy {
             val cameraProgress = routeProgressMeters(camera.point, route) ?: return@filter false
             cameraProgress + BACKTRACK_TOLERANCE_METERS >= userProgress
         }
+    }
+
+    fun camerasAlongRoute(
+        cameras: List<SafetyCamera>,
+        route: List<GeoPoint>,
+        corridorMeters: Double = DEFAULT_ROUTE_CORRIDOR_METERS
+    ): List<RouteCamera> {
+        if (route.size < 2) return emptyList()
+
+        return cameras.mapNotNull { camera ->
+            if (!TrafficRouteMatcher.isPointNearPolyline(camera.point, route, corridorMeters)) {
+                return@mapNotNull null
+            }
+            val routeDistance = routeProgressMeters(camera.point, route) ?: return@mapNotNull null
+            RouteCamera(
+                camera = camera,
+                routeDistanceMeters = routeDistance.coerceAtLeast(0.0)
+            )
+        }.sortedBy { it.routeDistanceMeters }
     }
 
     fun camerasAhead(
