@@ -47,6 +47,21 @@ object RoadFeatureRoutePolicy {
         }
     }
 
+    fun filterNearRoute(
+        features: List<RoadFeature>,
+        route: List<GeoPoint>,
+        corridorMeters: Double = DEFAULT_ROUTE_CORRIDOR_METERS
+    ): List<RoadFeature> {
+        if (route.size < 2) return features
+        return features.filter { feature ->
+            val featureCorridor = when (feature.type) {
+                RoadFeatureType.SCHOOL_ZONE -> 300.0
+                else -> corridorMeters
+            }
+            TrafficRouteMatcher.isPointNearPolyline(feature.point, route, featureCorridor)
+        }
+    }
+
     fun relevantAhead(
         features: List<RoadFeature>,
         route: List<GeoPoint>,
@@ -56,14 +71,7 @@ object RoadFeatureRoutePolicy {
         if (route.size < 2) return features
         val userProgress = routeProgressMeters(userPoint, route) ?: return features
 
-        return features.filter { feature ->
-            val featureCorridor = when (feature.type) {
-                RoadFeatureType.SCHOOL_ZONE -> 300.0
-                else -> corridorMeters
-            }
-            if (!TrafficRouteMatcher.isPointNearPolyline(feature.point, route, featureCorridor)) {
-                return@filter false
-            }
+        return filterNearRoute(features, route, corridorMeters).filter { feature ->
             val featureProgress = routeProgressMeters(feature.point, route) ?: return@filter false
             featureProgress + BACKTRACK_TOLERANCE_METERS >= userProgress
         }
