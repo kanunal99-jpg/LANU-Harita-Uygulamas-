@@ -8,6 +8,7 @@ import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
+import com.example.haritalar.model.WeatherDataMode
 import com.example.haritalar.model.WeatherType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -60,7 +61,11 @@ class LanuBriefPolicyTest {
                 point = route.geometry[1],
                 type = WeatherType.RAIN,
                 description = "Yoğun yağış",
-                intensity = 0.8f
+                intensity = 0.8f,
+                routeDistanceMeters = 22_000.0,
+                etaSecondsFromStart = 1_560L,
+                forecastEpochMillis = 1_800_000L,
+                dataMode = WeatherDataMode.ARRIVAL_FORECAST
             )
         )
 
@@ -74,6 +79,45 @@ class LanuBriefPolicyTest {
         assertEquals(LanuBriefSeverity.NOTICE, weatherItem.severity)
     }
 
+
+    @Test
+    fun arrivalForecastShowsRoutePositionEtaAndSource() {
+        val forecast = WeatherCondition(
+            point = route.geometry[1],
+            type = WeatherType.FOG,
+            description = "Yoğun sis",
+            routeDistanceMeters = 22_400.0,
+            etaSecondsFromStart = 26 * 60L,
+            forecastEpochMillis = 1_800_000L,
+            dataMode = WeatherDataMode.ARRIVAL_FORECAST
+        )
+
+        val brief = LanuBriefPolicy.build(route, null, listOf(forecast), emptyList())
+        val item = brief.items.first { it.type == LanuBriefItemType.WEATHER }
+
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertEquals("Open-Meteo saatlik tahmin", item.source)
+        assertTrue(item.detail.contains("22.4 km"))
+        assertTrue(item.detail.contains("26 dk sonra"))
+    }
+
+    @Test
+    fun currentWeatherFallbackIsExplicitlyPartial() {
+        val fallback = WeatherCondition(
+            point = route.geometry[1],
+            type = WeatherType.RAIN,
+            description = "Yağış",
+            routeDistanceMeters = 10_000.0,
+            etaSecondsFromStart = 15 * 60L,
+            dataMode = WeatherDataMode.CURRENT_FALLBACK
+        )
+
+        val brief = LanuBriefPolicy.build(route, null, listOf(fallback), emptyList())
+        val item = brief.items.first { it.type == LanuBriefItemType.WEATHER }
+
+        assertEquals(LanuBriefStatus.PARTIAL, item.status)
+        assertEquals("Open-Meteo mevcut hava (fallback)", item.source)
+    }
 
     @Test
     fun verifiedRoadClosureAppearsAsCriticalPreDriveWarning() {
