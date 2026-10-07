@@ -22,6 +22,24 @@ class TrafficRouteCostModelTest {
     }
 
     @Test
+    fun duplicateTomTomSegmentsDoNotDoubleCountDelay() {
+        val segment = TrafficSegment(
+            coordinates = listOf(GeoPoint(41.0, 29.0), GeoPoint(41.001, 29.001)),
+            currentSpeed = 30.0,
+            freeFlowSpeed = 60.0,
+            delaySeconds = 90L
+        )
+
+        val status = TrafficRouteCostModel.calculateTrafficStatus(
+            segments = listOf(segment, segment.copy()),
+            hasProvider = true
+        )
+
+        assertEquals(90L, status.delaySeconds)
+        assertEquals(1, status.segmentCount)
+    }
+
+    @Test
     fun verifiedSegments_reportLiveTraffic() {
         val segment = TrafficSegment(
             coordinates = listOf(GeoPoint(41.0, 29.0), GeoPoint(41.001, 29.001)),
