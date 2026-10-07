@@ -36,6 +36,7 @@ import com.example.haritalar.navigation.DestinationSnapPolicy
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
+import com.example.haritalar.navigation.NavigationRefreshPolicy
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
@@ -772,16 +773,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         trafficRefreshJob = viewModelScope.launch {
             while (true) {
                 val stateBeforeDelay = _uiState.value.navigationState
-                if (stateBeforeDelay != NavigationState.NAVIGATING &&
-                    stateBeforeDelay != NavigationState.OFF_ROUTE_REROUTING
-                ) break
+                if (!NavigationRefreshPolicy.shouldKeepTrafficLoopAlive(stateBeforeDelay)) break
 
                 delay(60_000L)
 
-                if (_uiState.value.navigationState == NavigationState.OFF_ROUTE_REROUTING) {
-                    continue
-                }
-                if (_uiState.value.navigationState != NavigationState.NAVIGATING) {
+                if (!NavigationRefreshPolicy.shouldRefreshTrafficNow(_uiState.value.navigationState)) {
+                    if (NavigationRefreshPolicy.shouldKeepTrafficLoopAlive(_uiState.value.navigationState)) continue
                     break
                 }
 
