@@ -52,6 +52,21 @@ class RouteCriticalPoiPolicyTest {
     }
 
     @Test
+    fun routeSamplingKeepsStartAndDestinationAcrossLongRoutes() {
+        val longRoute = listOf(
+            GeoPoint(41.0, 29.0),
+            GeoPoint(41.0, 29.5),
+            GeoPoint(41.0, 30.0)
+        )
+
+        val centers = RouteCriticalPoiPolicy.routeSampleCenters(longRoute)
+
+        assertEquals(longRoute.first(), centers.first())
+        assertEquals(longRoute.last(), centers.last())
+        assertTrue(centers.size >= 4)
+    }
+
+    @Test
     fun duplicateOsmItemsAreNotCountedTwice() {
         val poi = PoiItem(
             id = "node_42",
