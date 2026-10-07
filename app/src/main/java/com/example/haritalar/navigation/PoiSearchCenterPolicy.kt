@@ -27,7 +27,7 @@ object PoiSearchCenterPolicy {
         val viewportPoint = viewportCenter(viewport)
         val lastKnownPoint = lastKnownLocation
             ?.takeIf { !it.isSimulated }
-            ?.takeIf { nowMillis - it.timestamp in 0..MAX_LAST_KNOWN_AGE_MS }
+            ?.takeIf { nowMillis - it.timestamp in 0L..MAX_LAST_KNOWN_AGE_MS }
             ?.takeIf {
                 it.accuracyMeters.isFinite() &&
                     it.accuracyMeters in 0f..MAX_LAST_KNOWN_ACCURACY_METERS
