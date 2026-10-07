@@ -248,7 +248,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             NavigationLocationPolicy.Readiness.INACCURATE -> {
                 val accuracy = location?.accuracyMeters?.takeIf { it.isFinite() }?.toInt()
                 val accuracyText = accuracy?.let { " (±${it} m)" }.orEmpty()
-                "GPS doğruluğu navigasyon için yetersiz$accuracyText. Açık alanda yeni konum bekleniyor. $action"
+                "GPS doğruluğu navigasyon için yetersiz$accuracyText. Kesin konum iznini ve GPS'i kontrol edin; açık alanda yeni konum bekleniyor. $action"
             }
             NavigationLocationPolicy.Readiness.READY -> action
         }
@@ -389,6 +389,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectSearchResult(result: SearchResult) {
+        val submittedQuery = _uiState.value.searchQuery.takeIf { it.isNotBlank() } ?: result.name
+        viewModelScope.launch {
+            runCatching { repository.recordSearchSelection(submittedQuery, result) }
+        }
         routeCalculationJob?.cancel()
         val invalidateGeneration = ++generationCounter
         _uiState.value = _uiState.value.copy(
@@ -630,6 +634,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
         weatherJob?.cancel()
+        lastAnnouncedWeatherId = null
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
