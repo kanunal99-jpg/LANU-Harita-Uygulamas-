@@ -1,5 +1,8 @@
 package com.example.haritalar.navigation
 
+import com.example.haritalar.model.PoiCategory
+import com.example.haritalar.model.RouteCriticalPoiDataState
+import com.example.haritalar.model.RouteCriticalPoiMatch
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RoadFeature
 import com.example.haritalar.model.RoadFeatureDataState
@@ -13,7 +16,7 @@ import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
 enum class LanuBriefSeverity { INFO, NOTICE, WARNING, CRITICAL }
-enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, ROAD_FEATURE, WEATHER, TOLL, FERRY, DATA_QUALITY }
+enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, ROAD_FEATURE, CRITICAL_SERVICES, WEATHER, TOLL, FERRY, DATA_QUALITY }
 
 data class LanuBriefItem(
     val type: LanuBriefItemType,
@@ -47,7 +50,9 @@ object LanuBriefPolicy {
         trafficSegments: List<TrafficSegment> = emptyList(),
         roadFeatures: List<RoadFeature> = emptyList(),
         roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
-        cameraRouteScanComplete: Boolean = false
+        cameraRouteScanComplete: Boolean = false,
+        routeCriticalPois: List<RouteCriticalPoiMatch> = emptyList(),
+        routeCriticalPoiDataState: RouteCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
@@ -56,6 +61,7 @@ object LanuBriefPolicy {
         items += weatherItem(routeWeather)
         items += cameraItem(route, loadedSafetyCameras, cameraRouteScanComplete)
         items += roadFeatureItem(roadFeatures, roadFeatureDataState)
+        items += criticalServicesItem(routeCriticalPois, routeCriticalPoiDataState)
 
         items += if (route.hasTolls) {
             LanuBriefItem(
@@ -380,6 +386,80 @@ object LanuBriefPolicy {
             source = source,
             status = status,
             severity = severity
+        )
+    }
+
+    private fun criticalServicesItem(
+        matches: List<RouteCriticalPoiMatch>,
+        dataState: RouteCriticalPoiDataState
+    ): LanuBriefItem {
+        if (dataState == RouteCriticalPoiDataState.UNAVAILABLE) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CRITICAL_SERVICES,
+                title = "Kritik hizmetler doğrulanamadı",
+                detail = "Benzinlik, hastane, eczane ve şarj noktası verisi alınamadı; bilgi uydurulmuyor.",
+                source = "OpenStreetMap / LANU POI zinciri",
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.NOTICE
+            )
+        }
+        if (dataState == RouteCriticalPoiDataState.IDLE ||
+            dataState == RouteCriticalPoiDataState.LOADING
+        ) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CRITICAL_SERVICES,
+                title = "Kritik hizmetler kontrol ediliyor",
+                detail = "Rota çevresindeki benzinlik, hastane, eczane ve şarj noktaları taranıyor.",
+                source = "OpenStreetMap / LANU POI zinciri",
+                status = LanuBriefStatus.PARTIAL
+            )
+        }
+
+        fun categoryLabel(category: PoiCategory): String = when (category) {
+            PoiCategory.FUEL -> "Benzinlik"
+            PoiCategory.HOSPITAL -> "Hastane"
+            PoiCategory.PHARMACY -> "Eczane"
+            PoiCategory.CHARGING_STATION -> "Şarj"
+            else -> category.displayName
+        }
+        fun formatDistance(meters: Double): String =
+            if (meters >= 1000.0) {
+                String.format(java.util.Locale.US, "%.1f km", meters / 1000.0)
+            } else {
+                "${meters.coerceAtLeast(0.0).toInt()} m"
+            }
+
+        val parts = RouteCriticalPoiPolicy.CRITICAL_CATEGORIES.map { category ->
+            val categoryMatches = matches.filter { it.poi.category == category }
+            val first = categoryMatches.minByOrNull { it.routeDistanceMeters }
+            buildString {
+                append(categoryLabel(category))
+                append(" ")
+                append(categoryMatches.size)
+                first?.let {
+                    append(" • ilk ")
+                    append(formatDistance(it.routeDistanceMeters))
+                    append(" • rotadan ~")
+                    append(formatDistance(it.corridorDistanceMeters))
+                }
+            }
+        }
+
+        return LanuBriefItem(
+            type = LanuBriefItemType.CRITICAL_SERVICES,
+            title = if (matches.isEmpty()) {
+                "Yüklü veride kritik hizmet görünmüyor"
+            } else {
+                "${matches.size} kritik hizmet noktası rota çevresinde"
+            },
+            detail = parts.joinToString(" | "),
+            source = "OpenStreetMap / LANU POI zinciri",
+            status = if (dataState == RouteCriticalPoiDataState.VERIFIED) {
+                LanuBriefStatus.VERIFIED
+            } else {
+                LanuBriefStatus.PARTIAL
+            },
+            severity = if (matches.isEmpty()) LanuBriefSeverity.INFO else LanuBriefSeverity.NOTICE
         )
     }
 
