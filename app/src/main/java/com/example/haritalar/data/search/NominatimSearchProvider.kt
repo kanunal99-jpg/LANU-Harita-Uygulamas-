@@ -93,9 +93,7 @@ class NominatimSearchProvider(
         val isPostalCode = trimmed.matches(Regex("^\\d{5}$"))
         val urlBuilder = StringBuilder("https://nominatim.openstreetmap.org/search?")
         if (isPostalCode) {
-            urlBuilder
-                .append("postalcode=").append(encodedQuery)
-                .append("&country=").append(URLEncoder.encode("Türkiye", "UTF-8"))
+            urlBuilder.append("postalcode=").append(encodedQuery)
         } else {
             urlBuilder.append("q=").append(encodedQuery)
         }
