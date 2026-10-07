@@ -47,6 +47,7 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
     private var simulationJob: Job? = null
     private var freshFixWatchdogJob: Job? = null
     private var currentFixTokenSource: CancellationTokenSource? = null
+    private var systemFallbackStarted = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val qualityFilter = LocationQualityFilter()
     @Volatile private var closed = false
@@ -124,7 +125,7 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
 
     @SuppressLint("MissingPermission")
     private fun startSystemLocationFallback() {
-        if (closed || !hasFineLocationPermission) return
+        if (closed || !hasFineLocationPermission || systemFallbackStarted) return
         val manager = systemLocationManager ?: return
         val config = LocationSamplingPolicy.config(samplingMode)
 
@@ -158,6 +159,7 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             }
         }
 
+        systemFallbackStarted = requestedAnyProvider
         if (!requestedAnyProvider) {
             Log.w("AppLocationManager", "No system location provider could be started.")
         }
@@ -246,6 +248,7 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
             systemLocationManager?.removeUpdates(it)
             sysListener = null
         }
+        systemFallbackStarted = false
     }
 
     fun updateLocationManual(point: GeoPoint, bearing: Float, speedKmh: Float) {
