@@ -33,6 +33,7 @@ Her hava isteği generation + routeId ile bağlanır.
 - Geç gelen eski rota cevabı yeni rotanın `routeWeather` state'ini ezemez.
 - Rota/arama temizlendiğinde hava generation invalid edilir.
 - Navigasyon durdurulduğunda aktif hava isteği iptal edilir.
+- Reroute başladığında eski rota havası temizlenir; yeni rota oluşunca ETA forecast yeniden yüklenir.
 
 ## UX örneği
 
