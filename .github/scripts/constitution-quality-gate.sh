@@ -12,8 +12,8 @@ test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
 grep -q 'ANA SERVİS.*ALTERNATİF.*GERÇEK FALLBACK' ANAYASA.md || fail "kritik zincir standardı Anayasa'da bulunamadı"
-grep -q 'versionName = "1.1.9"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.9 değil"
-grep -q 'versionCode = 11' app/build.gradle.kts || fail "beklenen Android versionCode 11 değil"
+grep -q 'versionName = "1.1.10"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.10 değil"
+grep -q 'versionCode = 12' app/build.gradle.kts || fail "beklenen Android versionCode 12 değil"
 grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml || fail "uygulama backup güvenlik kuralı kapalı değil"
 grep -q 'android:foregroundServiceType="location"' app/src/main/AndroidManifest.xml || fail "aktif navigasyon location foreground service bildirimi eksik"
 grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' app/src/main/AndroidManifest.xml || fail "foreground location permission eksik"
@@ -62,6 +62,8 @@ test -s app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.k
 test -s app/src/main/java/com/example/haritalar/navigation/RoadIntelligencePolicy.kt || fail "Road Intelligence öncelik policy eksik"
 test -s app/src/main/java/com/example/haritalar/ui/RoadIntelligenceStrip.kt || fail "Road Intelligence sürüş şeridi eksik"
 test -s app/src/test/java/com/example/haritalar/navigation/RoadIntelligencePolicyTest.kt || fail "Road Intelligence regresyon testi eksik"
+grep -q "ROAD_CLOSURE" app/src/main/java/com/example/haritalar/navigation/RoadIntelligencePolicy.kt || fail "doğrulanmış yol kapanışı Road Intelligence modelinde eksik"
+grep -q "roadClosure" app/src/test/java/com/example/haritalar/navigation/RoadIntelligencePolicyTest.kt || fail "yol kapanışı doğruluk testi eksik"
 
 echo "LANU constitution quality gate: PASS"
 
