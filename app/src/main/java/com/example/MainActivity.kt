@@ -267,6 +267,9 @@ fun HaritalarNavigationApp(
                 onTrafficSignalClick = { signal ->
                     viewModel.selectTrafficSignal(signal)
                 },
+                onPoiClick = { poi ->
+                    viewModel.selectPoi(poi)
+                },
                 modifier = Modifier.fillMaxSize()
             )
 
