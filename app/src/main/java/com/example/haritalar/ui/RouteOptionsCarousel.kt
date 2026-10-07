@@ -253,10 +253,13 @@ private fun RouteCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (route.hasTolls) {
-                    Badge(text = "Ücretli", bg = Color(0xFFFEF3C7), fg = Color(0xFFB45309))
-                } else {
-                    Badge(text = "Ücretsiz", bg = Color(0xFFDCFCE7), fg = Color(0xFF15803D))
+                when {
+                    !route.tollStatusVerified ->
+                        Badge(text = "Ücret bilgisi yok", bg = MaterialTheme.colorScheme.surfaceVariant, fg = MaterialTheme.colorScheme.onSurfaceVariant)
+                    route.hasTolls ->
+                        Badge(text = "Ücretli", bg = Color(0xFFFEF3C7), fg = Color(0xFFB45309))
+                    else ->
+                        Badge(text = "Ücretsiz", bg = Color(0xFFDCFCE7), fg = Color(0xFF15803D))
                 }
 
                 if (route.hasFerry) {
