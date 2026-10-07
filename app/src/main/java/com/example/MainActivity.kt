@@ -57,6 +57,8 @@ fun HaritalarNavigationApp(
     val favorites by viewModel.favorites.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val safetyCameras by safetyCameraViewModel.cameras.collectAsState()
+    val routeSafetyCameras by safetyCameraViewModel.routeCameras.collectAsState()
+    val isRouteSafetyCameraPrefetching by safetyCameraViewModel.isRoutePrefetching.collectAsState()
     
     val offlineDownloadProgress by viewModel.offlineMapManager.downloadProgress.collectAsState()
     val offlineDownloadMessage by viewModel.offlineMapManager.downloadMessage.collectAsState()
@@ -153,6 +155,35 @@ fun HaritalarNavigationApp(
             }
             val shareIntent = Intent.createChooser(sendIntent, "Canlı Takibi Paylaş")
             context.startActivity(shareIntent)
+        }
+    }
+
+    LaunchedEffect(
+        uiState.selectedRoute?.routeId,
+        uiState.isSafetyCamerasLayerVisible
+    ) {
+        val route = uiState.selectedRoute
+        if (route != null && uiState.isSafetyCamerasLayerVisible) {
+            safetyCameraViewModel.prefetchForRoute(
+                routeId = route.routeId,
+                route = route.geometry
+            )
+        } else {
+            safetyCameraViewModel.clearRoutePrefetch()
+        }
+    }
+
+    LaunchedEffect(
+        uiState.selectedRoute?.routeId,
+        routeSafetyCameras,
+        isRouteSafetyCameraPrefetching,
+        uiState.navigationState
+    ) {
+        val routeReady = uiState.selectedRoute != null &&
+            !isRouteSafetyCameraPrefetching &&
+            uiState.navigationState == NavigationState.ROUTE_SELECTION
+        if (routeReady) {
+            viewModel.updatePreDriveSafetyCameraData(routeSafetyCameras)
         }
     }
 
