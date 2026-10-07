@@ -28,6 +28,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.haritalar.model.NavigationState
 import com.example.haritalar.data.repository.TrafficSignalRepository
+import com.example.haritalar.navigation.LanuBriefPolicy
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
@@ -177,6 +178,21 @@ fun HaritalarNavigationApp(
     val selectedTrafficPair = uiState.selectedRoute?.let { uiState.trafficStatusMap[it.routeId] }
     val currentTrafficStatus = selectedTrafficPair?.first
     val currentTrafficSegments = selectedTrafficPair?.second ?: emptyList()
+    val preDriveBrief = remember(
+        uiState.selectedRoute,
+        currentTrafficStatus,
+        uiState.routeWeather,
+        safetyCameras
+    ) {
+        uiState.selectedRoute?.let { route ->
+            LanuBriefPolicy.build(
+                route = route,
+                traffic = currentTrafficStatus,
+                routeWeather = uiState.routeWeather,
+                loadedSafetyCameras = safetyCameras
+            )
+        }
+    }
 
     LaunchedEffect(uiState.navigationProgress, uiState.navigationState, currentTrafficStatus) {
         val prefs = context.getSharedPreferences("WidgetPrefs", Context.MODE_PRIVATE)
@@ -402,6 +418,7 @@ fun HaritalarNavigationApp(
                     routes = uiState.routeOptions,
                     selectedRoute = uiState.selectedRoute,
                     trafficMap = uiState.trafficStatusMap,
+                    brief = preDriveBrief,
                     onSelectRoute = { viewModel.selectRoute(it) },
                     onStartNavigation = { viewModel.startNavigation() },
                     onCancel = { viewModel.stopNavigation() }
