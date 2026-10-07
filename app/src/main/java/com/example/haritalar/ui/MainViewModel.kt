@@ -663,6 +663,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun handleOffRoute(currentPoint: GeoPoint) {
         routeCalculationJob?.cancel()
+        weatherJob?.cancel()
+        weatherJob = null
+        weatherGeneration++
+        _uiState.value = _uiState.value.copy(
+            routeWeather = emptyList(),
+            approachingWeather = null
+        )
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
         val genId = ++generationCounter
@@ -681,6 +688,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
