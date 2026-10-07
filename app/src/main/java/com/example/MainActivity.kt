@@ -59,6 +59,8 @@ fun HaritalarNavigationApp(
     val safetyCameras by safetyCameraViewModel.cameras.collectAsState()
     val routeSafetyCameras by safetyCameraViewModel.routeCameras.collectAsState()
     val isRouteSafetyCameraPrefetching by safetyCameraViewModel.isRoutePrefetching.collectAsState()
+    val completedRouteSafetyCameraPrefetchRouteId by
+        safetyCameraViewModel.completedRoutePrefetchRouteId.collectAsState()
     
     val offlineDownloadProgress by viewModel.offlineMapManager.downloadProgress.collectAsState()
     val offlineDownloadMessage by viewModel.offlineMapManager.downloadMessage.collectAsState()
@@ -177,11 +179,17 @@ fun HaritalarNavigationApp(
         uiState.selectedRoute?.routeId,
         routeSafetyCameras,
         isRouteSafetyCameraPrefetching,
+        completedRouteSafetyCameraPrefetchRouteId,
         uiState.navigationState
     ) {
-        val routeReady = uiState.selectedRoute != null &&
+        val selectedRouteId = uiState.selectedRoute?.routeId
+        val routeReady = selectedRouteId != null &&
             !isRouteSafetyCameraPrefetching &&
-            uiState.navigationState == NavigationState.ROUTE_SELECTION
+            completedRouteSafetyCameraPrefetchRouteId == selectedRouteId &&
+            (
+                uiState.navigationState == NavigationState.ROUTE_SELECTION ||
+                    uiState.navigationState == NavigationState.NAVIGATING
+            )
         if (routeReady) {
             viewModel.updatePreDriveSafetyCameraData(routeSafetyCameras)
         }
