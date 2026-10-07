@@ -22,7 +22,7 @@ class TrafficSignalRepository(
 ) {
     companion object {
         private const val TAG = "TrafficSignalRepository"
-        const val MIN_ZOOM_FOR_SIGNALS = 14.0f
+        const val MIN_ZOOM_FOR_SIGNALS = 15.0f
     }
 
     private val mutex = Mutex()

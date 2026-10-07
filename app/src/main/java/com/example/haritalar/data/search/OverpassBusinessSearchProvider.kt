@@ -88,7 +88,7 @@ class OverpassBusinessSearchProvider(
                 val request = Request.Builder()
                     .url(endpoint)
                     .post(overpass.toRequestBody("text/plain".toMediaType()))
-                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.3")
+                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.7")
                     .build()
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {

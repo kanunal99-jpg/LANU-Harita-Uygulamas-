@@ -37,6 +37,7 @@ import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
+import com.example.haritalar.navigation.PoiViewportPolicy
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
@@ -81,6 +82,7 @@ data class MainUiState(
     val isPoiLayerVisible: Boolean = false,
     val selectedPoiCategory: PoiCategory? = null,
     val poiList: List<PoiItem> = emptyList(),
+    val isLoadingPois: Boolean = false,
     val isMuted: Boolean = false,
     val isSimulationActive: Boolean = false,
     val activeGenerationId: Long = 0L,
@@ -143,6 +145,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var trafficSignalGeneration = 0L
     private var poiGeneration = 0L
     private var lastPoiSearchCenter: GeoPoint? = null
+    private var lastPoiSearchRadiusMeters: Int = 0
 
     private val trafficSignalRepository = repository.trafficSignalRepository
 
@@ -922,6 +925,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(
                 isPoiLayerVisible = false,
                 poiList = emptyList(),
+                isLoadingPois = false,
                 statusMessage = null
             )
             return
@@ -941,38 +945,63 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             selectedPoiCategory = category,
             isPoiLayerVisible = true,
             poiList = emptyList(),
+            isLoadingPois = false,
             statusMessage = null
         )
         loadPois(category)
     }
 
     fun loadPois(category: PoiCategory?) {
-        val center = PoiSearchCenterPolicy.resolve(
-            trackingMode = _uiState.value.mapTrackingMode,
-            liveLocation = currentRoutingLocation()?.point,
-            viewport = _uiState.value.currentViewportBbox
-        ) ?: run {
-            _uiState.value = _uiState.value.copy(
+        val state = _uiState.value
+        val viewport = state.currentViewportBbox
+        val zoomLevel = state.currentZoomLevel
+
+        if (viewport != null && !PoiViewportPolicy.canQuery(zoomLevel, category)) {
+            poiGeneration++
+            poiLoadJob?.cancel()
+            lastPoiSearchCenter = null
+            lastPoiSearchRadiusMeters = 0
+            _uiState.value = state.copy(
                 poiList = emptyList(),
+                isLoadingPois = false,
+                statusMessage = category?.let {
+                    "${it.displayName} noktalarını görmek için haritayı biraz yakınlaştırın."
+                }
+            )
+            return
+        }
+
+        val center = PoiSearchCenterPolicy.resolve(
+            trackingMode = state.mapTrackingMode,
+            liveLocation = currentRoutingLocation()?.point,
+            viewport = viewport
+        ) ?: run {
+            _uiState.value = state.copy(
+                poiList = emptyList(),
+                isLoadingPois = false,
                 statusMessage = "İlgi noktası aramak için harita görünümü henüz hazır değil."
             )
             return
         }
 
+        val searchRadius = PoiViewportPolicy.searchRadiusMeters(viewport, zoomLevel)
         val generation = ++poiGeneration
         lastPoiSearchCenter = center
+        lastPoiSearchRadiusMeters = searchRadius
         poiLoadJob?.cancel()
         poiLoadJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 poiList = emptyList(),
-                statusMessage = "İlgi noktaları yükleniyor..."
+                isLoadingPois = true,
+                statusMessage = null
             )
-            val pois = repository.fetchPois(center, category)
+            val pois = repository.fetchPois(center, category, searchRadius)
             if (generation != poiGeneration || _uiState.value.selectedPoiCategory != category) {
                 return@launch
             }
             _uiState.value = _uiState.value.copy(
                 poiList = pois,
+                isLoadingPois = false,
                 statusMessage = if (pois.isEmpty()) {
                     "Bu harita alanında ${category?.displayName?.lowercase() ?: "ilgi noktası"} bulunamadı."
                 } else null
@@ -1123,21 +1152,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onViewportChanged(bbox: TrafficSignalBoundingBox, zoomLevel: Float) {
         _uiState.value = _uiState.value.copy(currentViewportBbox = bbox, currentZoomLevel = zoomLevel)
 
-        // POI category search follows the visible map while browsing freely.
-        if (_uiState.value.isPoiLayerVisible && _uiState.value.selectedPoiCategory != null) {
-            val candidateCenter = PoiSearchCenterPolicy.resolve(
-                trackingMode = _uiState.value.mapTrackingMode,
-                liveLocation = currentRoutingLocation()?.point,
-                viewport = bbox
-            )
-            val previousCenter = lastPoiSearchCenter
-            if (candidateCenter != null &&
-                (previousCenter == null || previousCenter.distanceTo(candidateCenter) >= 3_500.0)
-            ) {
+        // Premium POI browsing: visible viewport + zoom determines both query radius and refresh density.
+        if (_uiState.value.isPoiLayerVisible) {
+            val category = _uiState.value.selectedPoiCategory
+            if (!PoiViewportPolicy.canQuery(zoomLevel, category)) {
+                poiGeneration++
+                poiLoadJob?.cancel()
                 poiViewportRefreshJob?.cancel()
-                poiViewportRefreshJob = viewModelScope.launch {
-                    delay(900L)
-                    loadPois(_uiState.value.selectedPoiCategory)
+                lastPoiSearchCenter = null
+                lastPoiSearchRadiusMeters = 0
+                _uiState.value = _uiState.value.copy(
+                    poiList = emptyList(),
+                    isLoadingPois = false
+                )
+            } else {
+                val candidateCenter = PoiSearchCenterPolicy.resolve(
+                    trackingMode = _uiState.value.mapTrackingMode,
+                    liveLocation = currentRoutingLocation()?.point,
+                    viewport = bbox
+                )
+                val candidateRadius = PoiViewportPolicy.searchRadiusMeters(bbox, zoomLevel)
+                val previousCenter = lastPoiSearchCenter
+                val refreshDistance = PoiViewportPolicy.refreshDistanceMeters(zoomLevel)
+                val radiusChanged = lastPoiSearchRadiusMeters == 0 ||
+                    kotlin.math.abs(candidateRadius - lastPoiSearchRadiusMeters) >=
+                    kotlin.math.max(1_500, (lastPoiSearchRadiusMeters * 0.30).toInt())
+
+                if (candidateCenter != null &&
+                    (previousCenter == null ||
+                        previousCenter.distanceTo(candidateCenter) >= refreshDistance ||
+                        radiusChanged)
+                ) {
+                    poiViewportRefreshJob?.cancel()
+                    poiViewportRefreshJob = viewModelScope.launch {
+                        delay(650L)
+                        loadPois(_uiState.value.selectedPoiCategory)
+                    }
                 }
             }
         }

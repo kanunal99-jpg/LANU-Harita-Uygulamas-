@@ -7,12 +7,13 @@ fail() {
 }
 
 test -s ANAYASA.md || fail "ANAYASA.md eksik veya boş"
+grep -q 'Her anlamlı geliştirmede APK yayın zorunluluğu' ANAYASA.md || fail "anlamlı geliştirmelerde APK yayın kuralı Anayasa'da eksik"
 test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
 grep -q 'ANA SERVİS.*ALTERNATİF.*GERÇEK FALLBACK' ANAYASA.md || fail "kritik zincir standardı Anayasa'da bulunamadı"
-grep -q 'versionName = "1.1.6"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.6 değil"
-grep -q 'versionCode = 8' app/build.gradle.kts || fail "beklenen Android versionCode 8 değil"
+grep -q 'versionName = "1.1.7"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.7 değil"
+grep -q 'versionCode = 9' app/build.gradle.kts || fail "beklenen Android versionCode 9 değil"
 grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml || fail "uygulama backup güvenlik kuralı kapalı değil"
 grep -q 'android:foregroundServiceType="location"' app/src/main/AndroidManifest.xml || fail "aktif navigasyon location foreground service bildirimi eksik"
 grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' app/src/main/AndroidManifest.xml || fail "foreground location permission eksik"
@@ -49,4 +50,8 @@ if grep -i -E 'gemini|firebase[._-]?ai' metadata.json .env.example app/build.gra
   fail "kullanılmayan AI yeteneği ürün/build metadata'sında tekrar göründü"
 fi
 
+test -s app/src/main/java/com/example/haritalar/navigation/PoiViewportPolicy.kt || fail "premium POI viewport/density policy eksik"
+test -s app/src/test/java/com/example/haritalar/navigation/PoiViewportPolicyTest.kt || fail "premium POI viewport regresyon testi eksik"
+
 echo "LANU constitution quality gate: PASS"
+
