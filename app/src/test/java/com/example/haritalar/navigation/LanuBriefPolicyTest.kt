@@ -180,9 +180,45 @@ class LanuBriefPolicyTest {
     }
 
     @Test
+    fun cameraItemShowsScanningUntilSelectedRouteScanCompletes() {
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            cameraRouteScanComplete = false
+        )
+
+        val cameraItem = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+        assertEquals(LanuBriefStatus.PARTIAL, cameraItem.status)
+        assertEquals("Rota radar/kamera taraması sürüyor", cameraItem.title)
+    }
+
+    @Test
+    fun completedEmptyScanDoesNotClaimRealWorldHasNoCameras() {
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            cameraRouteScanComplete = true
+        )
+
+        val cameraItem = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+        assertTrue(cameraItem.title.contains("OSM tam rota taramasında"))
+        assertTrue(cameraItem.detail.contains("kesinlikle kamera olmadığı anlamına gelmez"))
+    }
+
+    @Test
     fun longRouteCameraCountIsExplicitlyPartial() {
         val camera = SafetyCamera(id = 42L, point = GeoPoint(40.91, 29.25))
-        val brief = LanuBriefPolicy.build(route, null, emptyList(), listOf(camera))
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = listOf(camera),
+            cameraRouteScanComplete = true
+        )
         val cameraItem = brief.items.first { it.type == LanuBriefItemType.CAMERA }
 
         assertEquals(LanuBriefStatus.PARTIAL, cameraItem.status)
