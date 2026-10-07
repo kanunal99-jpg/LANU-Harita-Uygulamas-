@@ -280,6 +280,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         weatherJob?.cancel()
         weatherJob = null
         weatherGeneration++
+        cameraBriefJob?.cancel()
+        cameraBriefJob = null
+        lastPreDriveCameraBriefRouteId = null
         val invalidateGeneration = ++generationCounter
         _uiState.value = _uiState.value.copy(
             selectedDestination = null,
@@ -482,6 +485,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
                 val primaryRoute = routes.firstOrNull()
                 val snappedDestination = destinationSnappedToRouteEndpoint(primaryRoute)
+                cameraBriefJob?.cancel()
+                lastPreDriveCameraBriefRouteId = null
                 _uiState.value = _uiState.value.copy(
                     routeOptions = routes,
                     selectedRoute = primaryRoute,
@@ -535,6 +540,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return@launch
                 }
                 val snappedDestination = destinationSnappedToRouteEndpoint(route)
+                cameraBriefJob?.cancel()
+                lastPreDriveCameraBriefRouteId = null
                 val latestLocation = currentRoutingLocation()
                 if (latestLocation == null) {
                     _uiState.value = _uiState.value.copy(
