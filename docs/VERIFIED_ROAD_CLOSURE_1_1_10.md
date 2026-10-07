@@ -26,3 +26,11 @@ Canlı trafik sağlayıcısının seçili rota için doğruladığı yol kapanı
 - doğrulanmamış kapanış segmenti uyarı üretmez;
 - mevcut kamera, hava ve trafik öncelik regresyonları korunur;
 - lint + unit + Android cold-start smoke + APK + SHA-256 + Release zorunludur.
+
+
+## Cache provenance
+
+- Trafik segmenti artık `fromCache` provenance alanını taşır.
+- Cache’den dönen segment canlı trafik olarak doğrulanmaz.
+- Cache trafik harita sürekliliği için korunabilir ancak ETA’ya canlı gecikme olarak eklenmez.
+- Cache’deki `roadClosure=true` değeri P0 canlı kapanış uyarısı üretmez.
