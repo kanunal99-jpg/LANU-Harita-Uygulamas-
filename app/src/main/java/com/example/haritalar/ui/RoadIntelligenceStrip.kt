@@ -10,6 +10,7 @@ import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Traffic
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -124,6 +125,7 @@ fun RoadIntelligenceStrip(
 private fun iconFor(type: RoadIntelligenceType): ImageVector = when (type) {
     RoadIntelligenceType.ROAD_CLOSURE -> Icons.Default.Block
     RoadIntelligenceType.CAMERA -> Icons.Default.PhotoCamera
+    RoadIntelligenceType.ROAD_FEATURE -> Icons.Default.Warning
     RoadIntelligenceType.WEATHER -> Icons.Default.Cloud
     RoadIntelligenceType.TRAFFIC -> Icons.Default.Traffic
 }
