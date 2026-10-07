@@ -6,7 +6,6 @@ import com.example.haritalar.data.cache.TrafficSignalCache
 import com.example.haritalar.data.db.AppDatabase
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
-import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.haritalar.data.network.OsrmRoutingProvider
 import com.example.haritalar.data.network.PoiNetworkService
 import com.example.haritalar.data.network.TrafficSignalService
@@ -61,7 +60,6 @@ class NavigationRepository(context: Context) {
         cacheProvider = cacheSearchProvider
     )
 
-    private val geocodingService = NominatimGeocodingService()
     private val poiService = PoiNetworkService()
     private val valhallaProvider = ValhallaRoutingProvider()
     private val osrmProvider = OsrmRoutingProvider()
