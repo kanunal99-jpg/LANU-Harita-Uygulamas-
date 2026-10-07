@@ -18,6 +18,7 @@ enum class RoadIntelligencePriority(val rank: Int) {
 enum class RoadIntelligenceType {
     ROAD_CLOSURE,
     CAMERA,
+    ROAD_FEATURE,
     WEATHER,
     TRAFFIC
 }
@@ -41,6 +42,7 @@ data class RoadIntelligenceEvent(
 object RoadIntelligencePolicy {
     fun build(
         cameraWarning: SafetyCameraWarningPolicy.ProximityWarning?,
+        roadFeatureWarning: RoadFeatureWarning? = null,
         weather: WeatherCondition?,
         traffic: TrafficStatus?,
         trafficSegments: List<TrafficSegment> = emptyList(),
@@ -101,6 +103,17 @@ object RoadIntelligencePolicy {
                     warning.estimatedSecondsToCamera?.let { append(" • yaklaşık ${formatEta(it)}") }
                 },
                 source = warning.camera.source,
+                distanceMeters = warning.distanceMeters
+            )
+        }
+
+        roadFeatureWarning?.let { warning ->
+            events += RoadIntelligenceEvent(
+                type = RoadIntelligenceType.ROAD_FEATURE,
+                priority = RoadIntelligencePriority.P1,
+                title = warning.feature.title,
+                detail = "${formatDistance(warning.distanceMeters)} • ${warning.feature.detail}",
+                source = warning.feature.source,
                 distanceMeters = warning.distanceMeters
             )
         }
