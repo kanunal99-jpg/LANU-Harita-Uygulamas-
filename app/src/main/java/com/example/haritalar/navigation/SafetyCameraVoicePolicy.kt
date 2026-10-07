@@ -4,10 +4,7 @@ import com.example.haritalar.model.SafetyCamera
 import java.util.Locale
 
 object SafetyCameraVoicePolicy {
-    fun locationContext(
-        camera: SafetyCamera,
-        resolvedAddress: String? = null
-    ): String {
+    fun sourceLocationContext(camera: SafetyCamera): String? {
         val tags = camera.rawTags
         val road = firstNonBlank(
             tags["lanu:nearby_road"],
@@ -25,6 +22,14 @@ object SafetyCameraVoicePolicy {
         if (road != null && place != null) return "$road üzerinde, $place yakınında"
         if (road != null) return "$road üzerinde"
         if (place != null) return "$place yakınında"
+        return null
+    }
+
+    fun locationContext(
+        camera: SafetyCamera,
+        resolvedAddress: String? = null
+    ): String {
+        sourceLocationContext(camera)?.let { return it }
 
         val address = resolvedAddress
             ?.split(',')
