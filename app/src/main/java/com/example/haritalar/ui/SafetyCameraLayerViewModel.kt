@@ -35,23 +35,34 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     private var navigationJob: Job? = null
     private var lastViewportRequest: SafetyCameraBoundingBox? = null
     private var lastNavigationCenter: GeoPoint? = null
+    private var viewportGeneration: Long = 0L
 
     fun onViewportChanged(bbox: SafetyCameraBoundingBox, zoomLevel: Float) {
-        if (!bbox.isValid() || zoomLevel < 12f) return
+        val generation = ++viewportGeneration
+        viewportJob?.cancel()
+
+        if (!bbox.isValid() || zoomLevel < MIN_VIEWPORT_ZOOM) {
+            lastViewportRequest = null
+            viewportCameras = emptyList()
+            publishMerged()
+            return
+        }
         if (lastViewportRequest?.let { sameArea(it, bbox) } == true) return
 
-        viewportJob?.cancel()
         viewportJob = viewModelScope.launch {
             delay(400)
-            when (val result = repository.get(bbox, maxCameras = 500)) {
+            val result = repository.get(bbox, maxCameras = 500)
+            if (generation != viewportGeneration) return@launch
+
+            when (result) {
                 is SafetyCameraFetchResult.Success -> {
                     lastViewportRequest = bbox
-                    viewportCameras = result.cameras
+                    viewportCameras = result.cameras.filter { bbox.contains(it.point) }
                     publishMerged()
                 }
                 is SafetyCameraFetchResult.Error -> {
                     if (result.fallbackCameras.isNotEmpty()) {
-                        viewportCameras = result.fallbackCameras
+                        viewportCameras = result.fallbackCameras.filter { bbox.contains(it.point) }
                         publishMerged()
                     }
                 }
@@ -106,6 +117,10 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             kotlin.math.abs(a.west - b.west) < 0.002 &&
             kotlin.math.abs(a.north - b.north) < 0.002 &&
             kotlin.math.abs(a.east - b.east) < 0.002
+
+    companion object {
+        const val MIN_VIEWPORT_ZOOM = 12f
+    }
 
     override fun onCleared() {
         viewportJob?.cancel()
