@@ -2,13 +2,14 @@ package com.example.haritalar.navigation
 
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SafetyCamera
+import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
 import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
 enum class LanuBriefSeverity { INFO, NOTICE, WARNING, CRITICAL }
-enum class LanuBriefItemType { TRAFFIC, CAMERA, WEATHER, TOLL, FERRY, DATA_QUALITY }
+enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, WEATHER, TOLL, FERRY, DATA_QUALITY }
 
 data class LanuBriefItem(
     val type: LanuBriefItemType,
@@ -38,10 +39,12 @@ object LanuBriefPolicy {
         route: RouteOption,
         traffic: TrafficStatus?,
         routeWeather: List<WeatherCondition>,
-        loadedSafetyCameras: List<SafetyCamera>
+        loadedSafetyCameras: List<SafetyCamera>,
+        trafficSegments: List<TrafficSegment> = emptyList()
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
+        closureItem(traffic, trafficSegments)?.let { items += it }
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
         items += cameraItem(route, loadedSafetyCameras)
@@ -103,6 +106,24 @@ object LanuBriefPolicy {
             verifiedItemCount = verified,
             partialItemCount = partial,
             unavailableItemCount = unavailable
+        )
+    }
+
+    private fun closureItem(
+        traffic: TrafficStatus?,
+        trafficSegments: List<TrafficSegment>
+    ): LanuBriefItem? {
+        if (traffic?.verified != true) return null
+        val closures = trafficSegments.filter { it.roadClosure && !it.fromCache }
+        if (closures.isEmpty()) return null
+
+        return LanuBriefItem(
+            type = LanuBriefItemType.ROAD_CLOSURE,
+            title = if (closures.size == 1) "Rota üzerinde yol kapanışı" else "${closures.size} yol kapanışı rota üzerinde",
+            detail = "Canlı trafik sağlayıcısı seçili rota üzerinde doğrulanmış kapanış bildirdi. Alternatif rotayı değerlendirin.",
+            source = traffic.sourceName,
+            status = LanuBriefStatus.VERIFIED,
+            severity = LanuBriefSeverity.CRITICAL
         )
     }
 

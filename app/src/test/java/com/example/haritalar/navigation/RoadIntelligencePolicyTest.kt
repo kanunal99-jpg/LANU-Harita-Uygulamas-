@@ -3,6 +3,7 @@ package com.example.haritalar.navigation
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficLevel
+import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
 import com.example.haritalar.model.WeatherType
@@ -71,6 +72,104 @@ class RoadIntelligencePolicyTest {
         )
 
         assertTrue(events.isEmpty())
+    }
+
+
+    @Test
+    fun verifiedRoadClosureBecomesP0WithRealDistance() {
+        val userPoint = GeoPoint(40.9000, 29.2000)
+        val closurePoint = GeoPoint(40.9010, 29.2000)
+        val traffic = TrafficStatus(
+            verified = true,
+            message = "Canlı trafik",
+            trafficLevel = TrafficLevel.MODERATE,
+            sourceName = "Verified Traffic",
+            isLiveApi = true,
+            lastCheckTimestamp = 9876L
+        )
+        val segments = listOf(
+            TrafficSegment(
+                coordinates = listOf(closurePoint),
+                currentSpeed = 0.0,
+                freeFlowSpeed = 50.0,
+                delaySeconds = 300,
+                roadClosure = true
+            )
+        )
+
+        val events = RoadIntelligencePolicy.build(
+            cameraWarning = null,
+            weather = null,
+            traffic = traffic,
+            trafficSegments = segments,
+            userPoint = userPoint
+        )
+
+        assertEquals(1, events.size)
+        assertEquals(RoadIntelligenceType.ROAD_CLOSURE, events.single().type)
+        assertEquals(RoadIntelligencePriority.P0, events.single().priority)
+        assertTrue(events.single().distanceMeters != null)
+        assertTrue(events.single().detail.contains("doğrulanmış kapanış"))
+        assertEquals("Verified Traffic", events.single().source)
+    }
+
+    @Test
+    fun unverifiedClosureSegmentNeverCreatesClosureWarning() {
+        val traffic = TrafficStatus(
+            verified = false,
+            message = "Fallback trafik",
+            trafficLevel = TrafficLevel.SEVERE,
+            sourceName = "Fallback Traffic"
+        )
+        val segments = listOf(
+            TrafficSegment(
+                coordinates = listOf(GeoPoint(40.9010, 29.2000)),
+                currentSpeed = 0.0,
+                freeFlowSpeed = 50.0,
+                delaySeconds = 600,
+                roadClosure = true
+            )
+        )
+
+        val events = RoadIntelligencePolicy.build(
+            cameraWarning = null,
+            weather = null,
+            traffic = traffic,
+            trafficSegments = segments,
+            userPoint = GeoPoint(40.9000, 29.2000)
+        )
+
+        assertTrue(events.none { it.type == RoadIntelligenceType.ROAD_CLOSURE })
+    }
+
+
+    @Test
+    fun cachedClosureNeverBecomesP0EvenWhenTrafficStatusIsVerified() {
+        val traffic = TrafficStatus(
+            verified = true,
+            message = "Canlı trafik",
+            trafficLevel = TrafficLevel.MODERATE,
+            sourceName = "Verified Traffic",
+            isLiveApi = true
+        )
+        val cachedClosure = TrafficSegment(
+            coordinates = listOf(GeoPoint(40.9010, 29.2000)),
+            currentSpeed = 0.0,
+            freeFlowSpeed = 50.0,
+            delaySeconds = 600,
+            roadClosure = true,
+            fromCache = true
+        )
+
+        val events = RoadIntelligencePolicy.build(
+            cameraWarning = null,
+            weather = null,
+            traffic = traffic,
+            trafficSegments = listOf(cachedClosure),
+            userPoint = GeoPoint(40.9000, 29.2000)
+        )
+
+        assertTrue(events.none { it.type == RoadIntelligenceType.ROAD_CLOSURE })
     }
 
     @Test

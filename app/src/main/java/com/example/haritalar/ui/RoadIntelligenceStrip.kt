@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material.icons.filled.Traffic
@@ -121,6 +122,7 @@ fun RoadIntelligenceStrip(
 }
 
 private fun iconFor(type: RoadIntelligenceType): ImageVector = when (type) {
+    RoadIntelligenceType.ROAD_CLOSURE -> Icons.Default.Block
     RoadIntelligenceType.CAMERA -> Icons.Default.PhotoCamera
     RoadIntelligenceType.WEATHER -> Icons.Default.Cloud
     RoadIntelligenceType.TRAFFIC -> Icons.Default.Traffic
