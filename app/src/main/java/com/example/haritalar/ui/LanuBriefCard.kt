@@ -19,6 +19,8 @@ import com.example.haritalar.navigation.LanuBriefItemType
 import com.example.haritalar.navigation.LanuBriefSeverity
 import com.example.haritalar.navigation.LanuBriefStatus
 import com.example.haritalar.navigation.LanuDriveBrief
+import java.text.SimpleDateFormat
+import java.util.Date
 import java.util.Locale
 
 @Composable
@@ -145,7 +147,7 @@ private fun BriefItemRow(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Text(
-                    text = "${statusLabel(item.status)} • ${item.source}",
+                    text = "${statusLabel(item.status)} • ${item.source} • ${freshnessLabel(item.updatedAtMillis)}",
                     fontSize = 9.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.82f)
                 )
@@ -184,6 +186,12 @@ private fun statusLabel(status: LanuBriefStatus): String = when (status) {
     LanuBriefStatus.VERIFIED -> "Doğrulanmış"
     LanuBriefStatus.PARTIAL -> "Kısmi kapsama"
     LanuBriefStatus.UNAVAILABLE -> "Doğrulanamadı"
+}
+
+private fun freshnessLabel(timestampMillis: Long?): String {
+    if (timestampMillis == null || timestampMillis <= 0L) return "Güncellik doğrulanamadı"
+    val formatted = SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(Date(timestampMillis))
+    return "Güncellendi $formatted"
 }
 
 private fun severityRank(severity: LanuBriefSeverity): Int = when (severity) {
