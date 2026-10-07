@@ -9,6 +9,10 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraFetchResult
+import com.example.haritalar.model.RouteOption
+import com.example.haritalar.navigation.RouteDataCoverage
+import com.example.haritalar.navigation.RouteSafetyCameraCoverage
+import com.example.haritalar.navigation.RouteSafetyCameraCoveragePolicy
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -27,14 +31,19 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     private val repository = SafetyCameraRepository(application)
     private val _cameras = MutableStateFlow<List<SafetyCamera>>(emptyList())
     val cameras: StateFlow<List<SafetyCamera>> = _cameras.asStateFlow()
+    private val _routeCoverage = MutableStateFlow<RouteSafetyCameraCoverage?>(null)
+    val routeCoverage: StateFlow<RouteSafetyCameraCoverage?> = _routeCoverage.asStateFlow()
 
     private var viewportCameras: List<SafetyCamera> = emptyList()
     private var navigationCameras: List<SafetyCamera> = emptyList()
+    private var routeCameras: List<SafetyCamera> = emptyList()
 
     private var viewportJob: Job? = null
     private var navigationJob: Job? = null
+    private var routeJob: Job? = null
     private var lastViewportRequest: SafetyCameraBoundingBox? = null
     private var lastNavigationCenter: GeoPoint? = null
+    private var lastRouteId: String? = null
 
     fun onViewportChanged(bbox: SafetyCameraBoundingBox, zoomLevel: Float) {
         if (!bbox.isValid() || zoomLevel < 12f) return
@@ -88,6 +97,116 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
+    fun prefetchForRoute(route: RouteOption) {
+        if (route.geometry.size < 2) {
+            clearRoutePrefetch()
+            _routeCoverage.value = RouteSafetyCameraCoverage(
+                status = RouteDataCoverage.UNAVAILABLE,
+                cameras = emptyList(),
+                source = "Rota geometrisi",
+                fetchedAtMillis = System.currentTimeMillis(),
+                sampleCount = 0,
+                successfulSampleCount = 0,
+                maxSampleGapMeters = 0.0,
+                note = "Rota geometrisi kamera kapsaması için yetersiz."
+            )
+            return
+        }
+        if (lastRouteId == route.routeId && _routeCoverage.value != null) return
+
+        routeJob?.cancel()
+        lastRouteId = route.routeId
+        routeCameras = emptyList()
+        _routeCoverage.value = null
+        publishMerged()
+
+        routeJob = viewModelScope.launch {
+            val plan = RouteSafetyCameraCoveragePolicy.plan(route.geometry)
+            if (plan == null) {
+                _routeCoverage.value = RouteSafetyCameraCoverage(
+                    status = RouteDataCoverage.UNAVAILABLE,
+                    cameras = emptyList(),
+                    source = "Rota geometrisi",
+                    fetchedAtMillis = System.currentTimeMillis(),
+                    sampleCount = 0,
+                    successfulSampleCount = 0,
+                    maxSampleGapMeters = 0.0,
+                    note = "Rota kamera örnekleme planı oluşturulamadı."
+                )
+                return@launch
+            }
+
+            val collected = mutableListOf<SafetyCamera>()
+            var successfulSamples = 0
+            var usedCache = false
+
+            for (point in plan.points) {
+                when (
+                    val result = repository.get(
+                        RouteSafetyCameraCoveragePolicy.boundingBox(point),
+                        maxCameras = 500
+                    )
+                ) {
+                    is SafetyCameraFetchResult.Success -> {
+                        successfulSamples += 1
+                        usedCache = usedCache || result.fromCache
+                        collected += result.cameras
+                    }
+                    is SafetyCameraFetchResult.Error -> {
+                        collected += result.fallbackCameras
+                    }
+                }
+            }
+
+            if (lastRouteId != route.routeId) return@launch
+
+            val filtered = RouteSafetyCameraCoveragePolicy.filterToRoute(
+                route = route.geometry,
+                candidates = collected.distinctBy { it.id }
+            )
+            val status = when {
+                successfulSamples == 0 -> RouteDataCoverage.UNAVAILABLE
+                successfulSamples < plan.points.size || !plan.fullCoverage -> RouteDataCoverage.PARTIAL
+                else -> RouteDataCoverage.VERIFIED
+            }
+            val source = when {
+                successfulSamples == 0 -> "OSM kamera zinciri"
+                usedCache -> "OpenStreetMap + kalıcı LKG cache"
+                else -> "OpenStreetMap / Overpass"
+            }
+            val note = when (status) {
+                RouteDataCoverage.VERIFIED ->
+                    "Rota kamera örneklerinin tamamı doğrulandı."
+                RouteDataCoverage.PARTIAL ->
+                    "$successfulSamples/${plan.points.size} kamera örneği doğrulandı veya uzun rota örnekleme sınırına ulaştı."
+                RouteDataCoverage.UNAVAILABLE ->
+                    "Rota kamera kaynakları doğrulanamadı; kamera sayısı uydurulmuyor."
+            }
+
+            routeCameras = filtered
+            _routeCoverage.value = RouteSafetyCameraCoverage(
+                status = status,
+                cameras = filtered,
+                source = source,
+                fetchedAtMillis = System.currentTimeMillis(),
+                sampleCount = plan.points.size,
+                successfulSampleCount = successfulSamples,
+                maxSampleGapMeters = plan.maxSampleGapMeters,
+                note = note
+            )
+            publishMerged()
+        }
+    }
+
+    fun clearRoutePrefetch() {
+        routeJob?.cancel()
+        routeJob = null
+        lastRouteId = null
+        routeCameras = emptyList()
+        _routeCoverage.value = null
+        publishMerged()
+    }
+
     fun clearNavigationPrefetch() {
         navigationJob?.cancel()
         navigationJob = null
@@ -97,7 +216,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private fun publishMerged() {
-        _cameras.value = (navigationCameras + viewportCameras)
+        _cameras.value = (routeCameras + navigationCameras + viewportCameras)
             .distinctBy { it.id }
     }
 
@@ -110,6 +229,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     override fun onCleared() {
         viewportJob?.cancel()
         navigationJob?.cancel()
+        routeJob?.cancel()
         super.onCleared()
     }
 }
