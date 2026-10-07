@@ -1286,6 +1286,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCalculationJob?.cancel()
         poiLoadJob?.cancel()
         poiViewportRefreshJob?.cancel()
+        routeCriticalPoiJob?.cancel()
         trafficSignalJob?.cancel()
         liveShareJob?.cancel()
         liveShareSession = null
