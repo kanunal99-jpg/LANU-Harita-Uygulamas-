@@ -26,7 +26,15 @@ enum class RouteType(val displayName: String) {
     FASTEST_TOLL("Hızlı Ücretli"),
     WITH_FERRY("Hızlı Feribotlu"),
     NO_FERRY("Feribotsuz"),
-    TOLL_AND_FERRY_FREE("Ücretsiz & Feribotsuz")
+    TOLL_AND_FERRY_FREE("Ücretsiz & Feribotsuz"),
+    RECOMMENDED("Önerilen Rota"),
+    ALTERNATIVE("Alternatif Rota")
+}
+
+enum class RouteAttributeStatus {
+    PRESENT,
+    ABSENT,
+    UNKNOWN
 }
 
 enum class TrafficLevel {
@@ -156,6 +164,8 @@ data class RouteOption(
     val maneuvers: List<TurnManeuver>,
     val hasTolls: Boolean = false,
     val hasFerry: Boolean = false,
+    val tollStatus: RouteAttributeStatus = if (hasTolls) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN,
+    val ferryStatus: RouteAttributeStatus = if (hasFerry) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN,
     val routeType: RouteType = RouteType.FASTEST,
     val trafficDelaySeconds: Long = 0,
     val generationId: Long = 0
