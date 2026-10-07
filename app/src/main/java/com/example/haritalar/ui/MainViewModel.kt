@@ -13,6 +13,7 @@ import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.repository.NavigationRepository
 import com.example.BuildConfig
 import com.example.haritalar.data.repository.TrafficSignalRepository
+import com.example.haritalar.data.repository.TrafficSignalViewportPolicy
 import com.example.haritalar.data.network.LiveSharingClient
 import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.DepartureGuidance
@@ -1150,13 +1151,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val result = trafficSignalRepository.getTrafficSignalsForViewport(bbox, zoomLevel)
                 if (generation != trafficSignalGeneration) return@launch
 
-                val viewportSignals = when (result) {
+                val fetchedSignals = when (result) {
                     is TrafficSignalFetchResult.Success -> result.signals
                     is TrafficSignalFetchResult.Error -> result.fallbackSignals
-                }.filter { bbox.contains(it.point) }
+                }
+                val viewportSignals = TrafficSignalViewportPolicy.visibleSignals(
+                    bbox = bbox,
+                    zoomLevel = zoomLevel,
+                    signals = fetchedSignals
+                )
 
                 _uiState.value = _uiState.value.copy(
-                    trafficSignals = trafficSignalRepository.deduplicateSignals(viewportSignals),
+                    trafficSignals = viewportSignals,
                     isLoadingTrafficSignals = false
                 )
             }
