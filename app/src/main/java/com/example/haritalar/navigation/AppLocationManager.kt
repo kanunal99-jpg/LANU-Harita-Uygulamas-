@@ -198,12 +198,17 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
         freshFixWatchdogJob?.cancel()
         freshFixWatchdogJob = scope.launch {
             delay(8_000L)
-            if (closed || !hasFineLocationPermission) return@launch
-            val current = _userLocation.value
-            if (!NavigationLocationPolicy.isUsableForRouting(current)) {
-                Log.w("AppLocationManager", "No fresh usable fused fix after watchdog; enabling system fallback.")
-                startSystemLocationFallback()
-                requestFreshLocation()
+            while (!closed && hasFineLocationPermission) {
+                val current = _userLocation.value
+                if (!NavigationLocationPolicy.isUsableForRouting(current)) {
+                    Log.w(
+                        "AppLocationManager",
+                        "GPS freshness watchdog detected missing/stale/inaccurate fix; requesting recovery."
+                    )
+                    startSystemLocationFallback()
+                    requestFreshLocation()
+                }
+                delay(15_000L)
             }
         }
     }
@@ -221,10 +226,8 @@ class AppLocationManager(private val context: Context) : AutoCloseable {
         )
         val accepted = qualityFilter.accept(candidate) ?: return
         _userLocation.value = accepted
-        if (NavigationLocationPolicy.isUsableForRouting(accepted)) {
-            freshFixWatchdogJob?.cancel()
-            freshFixWatchdogJob = null
-        }
+        // Keep the watchdog alive after a good fix. If providers stall later,
+        // it can recover freshness without requiring a manual recenter/restart.
 
         val nextMode = LocationSamplingPolicy.nextMode(samplingMode, accepted.speedKmh)
         if (nextMode != samplingMode && hasFineLocationPermission) {
