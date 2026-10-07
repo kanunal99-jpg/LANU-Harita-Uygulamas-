@@ -112,16 +112,20 @@ fun MapLibreContainer(
     onMapDrag: () -> Unit,
     onViewportChanged: (TrafficSignalBoundingBox, Float) -> Unit = { _, _ -> },
     onTrafficSignalClick: (TrafficSignal) -> Unit = {},
+    onPoiClick: (PoiItem) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val currentOnViewportChanged by rememberUpdatedState(onViewportChanged)
     val currentOnTrafficSignalClick by rememberUpdatedState(onTrafficSignalClick)
+    val currentOnPoiClick by rememberUpdatedState(onPoiClick)
     val currentOnMapClick by rememberUpdatedState(onMapClick)
     val currentOnMapDrag by rememberUpdatedState(onMapDrag)
     val currentTrafficSignals by rememberUpdatedState(trafficSignals)
     val currentSignalsVisible by rememberUpdatedState(isTrafficSignalsLayerVisible)
+    val currentPois by rememberUpdatedState(poiList)
+    val currentPoisVisible by rememberUpdatedState(isPoiLayerVisible)
 
     remember { MapLibre.getInstance(context) }
     var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -175,6 +179,13 @@ fun MapLibreContainer(
                 }
                 map.addOnMapClickListener { latLng ->
                     val point = GeoPoint(latLng.latitude, latLng.longitude)
+                    if (currentPoisVisible && currentPois.isNotEmpty()) {
+                        val closestPoi = currentPois.minByOrNull { it.point.distanceTo(point) }
+                        if (closestPoi != null && closestPoi.point.distanceTo(point) <= 80.0) {
+                            currentOnPoiClick(closestPoi)
+                            return@addOnMapClickListener true
+                        }
+                    }
                     if (currentSignalsVisible && currentTrafficSignals.isNotEmpty()) {
                         val closest = currentTrafficSignals.minByOrNull { it.point.distanceTo(point) }
                         if (closest != null && closest.point.distanceTo(point) <= 35.0) {
