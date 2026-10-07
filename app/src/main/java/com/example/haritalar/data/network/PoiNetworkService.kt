@@ -48,7 +48,7 @@ class PoiNetworkService(
                 val request = Request.Builder()
                     .url(endpoint)
                     .post(query.toRequestBody("text/plain".toMediaType()))
-                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.5")
+                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
                     .build()
 
                 client.newCall(request).execute().use { response ->
