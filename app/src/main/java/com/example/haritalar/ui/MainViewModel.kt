@@ -1152,12 +1152,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 return@launch
             }
 
-            val visibleSignals = when (result) {
-                is TrafficSignalFetchResult.Success -> result.signals
-                is TrafficSignalFetchResult.Error -> result.fallbackSignals
-            }
-                .filter { bbox.contains(it.point) }
-                .let { trafficSignalRepository.deduplicateSignals(it) }
+            val visibleSignals = trafficSignalRepository.visibleSignalsForViewport(
+                signals = when (result) {
+                    is TrafficSignalFetchResult.Success -> result.signals
+                    is TrafficSignalFetchResult.Error -> result.fallbackSignals
+                },
+                bbox = bbox,
+                zoomLevel = zoomLevel
+            )
 
             _uiState.value = _uiState.value.copy(
                 trafficSignals = visibleSignals,
