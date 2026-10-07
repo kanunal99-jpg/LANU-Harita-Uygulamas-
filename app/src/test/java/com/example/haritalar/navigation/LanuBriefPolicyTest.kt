@@ -5,6 +5,7 @@ import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficLevel
+import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
 import com.example.haritalar.model.WeatherType
@@ -71,6 +72,67 @@ class LanuBriefPolicyTest {
         assertEquals(LanuBriefStatus.VERIFIED, trafficItem.status)
         assertEquals(LanuBriefStatus.VERIFIED, weatherItem.status)
         assertEquals(LanuBriefSeverity.NOTICE, weatherItem.severity)
+    }
+
+
+    @Test
+    fun verifiedRoadClosureAppearsAsCriticalPreDriveWarning() {
+        val traffic = TrafficStatus(
+            verified = true,
+            message = "Canlı trafik",
+            trafficLevel = TrafficLevel.MODERATE,
+            sourceName = "Verified Traffic",
+            isLiveApi = true
+        )
+        val closure = TrafficSegment(
+            coordinates = listOf(route.geometry[1]),
+            currentSpeed = 0.0,
+            freeFlowSpeed = 50.0,
+            delaySeconds = 300,
+            roadClosure = true
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = traffic,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            trafficSegments = listOf(closure)
+        )
+
+        val closureItem = brief.items.first { it.type == LanuBriefItemType.ROAD_CLOSURE }
+        assertEquals(LanuBriefStatus.VERIFIED, closureItem.status)
+        assertEquals(LanuBriefSeverity.CRITICAL, closureItem.severity)
+        assertEquals("Verified Traffic", closureItem.source)
+    }
+
+    @Test
+    fun cachedRoadClosureIsNotPresentedAsVerifiedPreDriveClosure() {
+        val traffic = TrafficStatus(
+            verified = true,
+            message = "Canlı trafik",
+            trafficLevel = TrafficLevel.MODERATE,
+            sourceName = "Verified Traffic",
+            isLiveApi = true
+        )
+        val cachedClosure = TrafficSegment(
+            coordinates = listOf(route.geometry[1]),
+            currentSpeed = 0.0,
+            freeFlowSpeed = 50.0,
+            delaySeconds = 300,
+            roadClosure = true,
+            fromCache = true
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = traffic,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            trafficSegments = listOf(cachedClosure)
+        )
+
+        assertTrue(brief.items.none { it.type == LanuBriefItemType.ROAD_CLOSURE })
     }
 
     @Test
