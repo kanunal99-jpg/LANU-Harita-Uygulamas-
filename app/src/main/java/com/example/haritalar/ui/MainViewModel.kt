@@ -694,11 +694,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun selectPoi(poi: PoiItem) {
+        selectSearchResult(
+            SearchResult(
+                id = poi.id,
+                name = poi.name,
+                displayName = poi.address ?: poi.name,
+                shortAddress = poi.address ?: "",
+                point = poi.point,
+                type = "poi",
+                resultType = com.example.haritalar.model.AddressResultType.POI,
+                provider = "OSM POI"
+            )
+        )
+    }
+
     fun selectAlongRoutePoi(poi: PoiItem) {
         closeSearchAlongRoute()
-        selectSearchResult(SearchResult(
-            id = poi.id, name = poi.name, displayName = poi.address ?: poi.name, point = poi.point, type = "poi"
-        ))
+        selectPoi(poi)
     }
 
     fun openTrafficInspector() {
