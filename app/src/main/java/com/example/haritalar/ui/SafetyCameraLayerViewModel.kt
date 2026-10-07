@@ -29,8 +29,13 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     private val _cameras = MutableStateFlow<List<SafetyCamera>>(emptyList())
     val cameras: StateFlow<List<SafetyCamera>> = _cameras.asStateFlow()
 
+    private val _routeCameras = MutableStateFlow<List<SafetyCamera>>(emptyList())
+    val routeCameras: StateFlow<List<SafetyCamera>> = _routeCameras.asStateFlow()
+
+    private val _isRoutePrefetching = MutableStateFlow(false)
+    val isRoutePrefetching: StateFlow<Boolean> = _isRoutePrefetching.asStateFlow()
+
     private var viewportCameras: List<SafetyCamera> = emptyList()
-    private var routeCameras: List<SafetyCamera> = emptyList()
     private var navigationCameras: List<SafetyCamera> = emptyList()
 
     private var viewportJob: Job? = null
@@ -63,13 +68,15 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
         }
     }
 
-    fun prefetchForRoute(route: List<GeoPoint>) {
+    fun prefetchForRoute(routeId: String, route: List<GeoPoint>) {
         if (route.size < 2) {
             clearRoutePrefetch()
             return
         }
 
         val fingerprint = buildString {
+            append(routeId)
+            append(':')
             append(route.size)
             append(':')
             append(route.first().latitude)
@@ -80,10 +87,11 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             append(',')
             append(route.last().longitude)
         }
-        if (fingerprint == lastRouteFingerprint && routeCameras.isNotEmpty()) return
+        if (fingerprint == lastRouteFingerprint && _routeCameras.value.isNotEmpty()) return
 
         routeJob?.cancel()
         routeJob = viewModelScope.launch {
+            _isRoutePrefetching.value = true
             val merged = linkedMapOf<Long, SafetyCamera>()
             val centers = SafetyCameraAreaPolicy.routePrefetchCenters(route)
             for (center in centers) {
@@ -101,7 +109,8 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
                 }
             }
             lastRouteFingerprint = fingerprint
-            routeCameras = merged.values.toList()
+            _routeCameras.value = merged.values.toList()
+            _isRoutePrefetching.value = false
             publishMerged()
         }
     }
@@ -110,7 +119,8 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
         routeJob?.cancel()
         routeJob = null
         lastRouteFingerprint = null
-        routeCameras = emptyList()
+        _routeCameras.value = emptyList()
+        _isRoutePrefetching.value = false
         publishMerged()
     }
 
@@ -152,7 +162,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private fun publishMerged() {
-        _cameras.value = (routeCameras + navigationCameras + viewportCameras)
+        _cameras.value = (_routeCameras.value + navigationCameras + viewportCameras)
             .distinctBy { it.id }
     }
 
