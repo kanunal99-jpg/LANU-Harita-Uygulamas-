@@ -18,6 +18,13 @@ class SafetyCameraAreaPolicyTest {
     }
 
     @Test
+    fun viewportLoadingStopsBelowRadarDisplayZoom() {
+        val bbox = SafetyCameraAreaPolicy.boundingBoxAround(GeoPoint(41.015137, 28.979530))
+        assertFalse(SafetyCameraAreaPolicy.shouldLoadViewport(bbox, 11.9f))
+        assertTrue(SafetyCameraAreaPolicy.shouldLoadViewport(bbox, 12.0f))
+    }
+
+    @Test
     fun refreshRequiresMeaningfulMovement() {
         val start = GeoPoint(41.015137, 28.979530)
         val nearby = GeoPoint(41.020000, 28.979530)
