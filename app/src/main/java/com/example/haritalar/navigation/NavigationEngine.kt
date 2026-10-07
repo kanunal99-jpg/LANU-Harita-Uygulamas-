@@ -115,7 +115,11 @@ class NavigationEngine(
             speedKmh = location.speedKmh,
             previousProgressMeters = lastRouteProgressMeters
         )
-        val isNearRoute = snapResult != null && snapResult.distanceMeters <= offRouteThresholdMeters
+        val accuracyAwareOffRouteThreshold = maxOf(
+            offRouteThresholdMeters,
+            location.accuracyMeters.coerceAtLeast(0f).toDouble() * 1.5
+        )
+        val isNearRoute = snapResult != null && snapResult.distanceMeters <= accuracyAwareOffRouteThreshold
         if (!isNearRoute) {
             offRouteConsecutiveCount++
             val now = nowMs()
@@ -147,10 +151,12 @@ class NavigationEngine(
         val isArrivalConfirmed = (arrivalConsecutiveCount >= 2) || (distToDest <= 15.0 && isGpsAccurate)
         if (isArrivalConfirmed) {
             val elapsedSec = maxOf(1L, (nowMs() - tripStartTime) / 1000L)
-            val avgSpeedKmh = if (speedSampleCount > 0) sumSpeedKmh / speedSampleCount
-            else (accumulatedDistanceMeters / 1000.0) / (elapsedSec / 3600.0)
+            val measuredDistanceMeters = accumulatedDistanceMeters
+                .takeIf { it > 5.0 }
+                ?: route.distanceMeters
+            val avgSpeedKmh = (measuredDistanceMeters / 1000.0) / (elapsedSec / 3600.0)
             val summary = TripSummary(
-                totalDistanceMeters = route.distanceMeters,
+                totalDistanceMeters = measuredDistanceMeters,
                 totalDurationSeconds = elapsedSec,
                 averageSpeedKmh = avgSpeedKmh,
                 startAddress = route.summary.ifEmpty { "Başlangıç Noktası" },
