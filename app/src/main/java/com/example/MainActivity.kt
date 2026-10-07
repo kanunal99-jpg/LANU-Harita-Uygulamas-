@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.haritalar.model.NavigationState
+import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
 import com.example.ui.theme.MyApplicationTheme
@@ -105,11 +106,29 @@ fun HaritalarNavigationApp(
         }
     }
 
-    // Observe status messages to display in Snackbar
+    // Observe status messages to display in Snackbar.
+    // GPS failures get an explicit retry action instead of a passive dead-end message.
     LaunchedEffect(uiState.statusMessage) {
         val msg = uiState.statusMessage
         if (msg != null) {
-            snackbarHostState.showSnackbar(msg)
+            val isGpsMessage = msg.contains("GPS", ignoreCase = true) ||
+                msg.contains("konum", ignoreCase = true)
+            val result = snackbarHostState.showSnackbar(
+                message = msg,
+                actionLabel = if (isGpsMessage) "Konumu Yenile" else null,
+                duration = if (isGpsMessage) SnackbarDuration.Long else SnackbarDuration.Short
+            )
+            if (isGpsMessage && result == SnackbarResult.ActionPerformed) {
+                val fine = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_FINE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                val coarse = ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED
+                viewModel.startLocationUpdates(fine || coarse)
+            }
             viewModel.clearStatusMessage()
         }
     }
@@ -190,13 +209,22 @@ fun HaritalarNavigationApp(
             SnackbarHost(
                 hostState = snackbarHostState,
                 modifier = Modifier
-                    .padding(bottom = if (uiState.navigationState == NavigationState.NAVIGATING) 120.dp else 16.dp)
+                    .navigationBarsPadding()
+                    .padding(
+                        bottom = when {
+                            uiState.navigationState == NavigationState.NAVIGATING -> 120.dp
+                            uiState.navigationState == NavigationState.ROUTE_SELECTION -> 330.dp
+                            uiState.isDestinationCardVisible -> 250.dp
+                            else -> 12.dp
+                        }
+                    )
             )
         }
     ) { _ ->
         Box(modifier = Modifier.fillMaxSize()) {
             MapLibreContainer(
                 userLocation = uiState.userLocation,
+                isUserLocationReliable = NavigationLocationPolicy.isUsableForRouting(uiState.userLocation),
                 activeRoute = uiState.selectedRoute,
                 alternativeRoutes = uiState.routeOptions,
                 trafficStatus = currentTrafficStatus,
@@ -248,6 +276,8 @@ fun HaritalarNavigationApp(
                     searchStatus = uiState.searchStatus,
                     searchErrorMessage = uiState.searchErrorMessage,
                     searchActiveProvider = uiState.searchActiveProvider,
+                    isSearchFocused = uiState.isSearchFocused,
+                    onSearchFocusChanged = { viewModel.onSearchFocusChanged(it) },
                     onRetrySearch = { viewModel.retrySearch() },
                     searchResults = uiState.searchResults,
                     onSelectResult = { viewModel.selectSearchResult(it) },
@@ -328,7 +358,8 @@ fun HaritalarNavigationApp(
             )
 
             AnimatedVisibility(
-                visible = uiState.isDestinationCardVisible && uiState.selectedDestination != null &&
+                visible = !uiState.isSearchFocused &&
+                        uiState.isDestinationCardVisible && uiState.selectedDestination != null &&
                         uiState.navigationState != NavigationState.NAVIGATING && uiState.routeOptions.isEmpty(),
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it }),
@@ -350,7 +381,8 @@ fun HaritalarNavigationApp(
             }
 
             AnimatedVisibility(
-                visible = uiState.navigationState == NavigationState.ROUTE_SELECTION && uiState.routeOptions.isNotEmpty(),
+                visible = !uiState.isSearchFocused &&
+                        uiState.navigationState == NavigationState.ROUTE_SELECTION && uiState.routeOptions.isNotEmpty(),
                 enter = slideInVertically(initialOffsetY = { it }),
                 exit = slideOutVertically(targetOffsetY = { it }),
                 modifier = Modifier.align(Alignment.BottomCenter)
