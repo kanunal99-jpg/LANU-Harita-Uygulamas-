@@ -915,8 +915,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun togglePoiLayer() {
         val newVis = !_uiState.value.isPoiLayerVisible
-        _uiState.value = _uiState.value.copy(isPoiLayerVisible = newVis)
-        if (newVis && _uiState.value.poiList.isEmpty()) loadPois(_uiState.value.selectedPoiCategory)
+        if (!newVis) {
+            poiGeneration++
+            poiLoadJob?.cancel()
+            poiViewportRefreshJob?.cancel()
+            _uiState.value = _uiState.value.copy(
+                isPoiLayerVisible = false,
+                poiList = emptyList(),
+                statusMessage = null
+            )
+            return
+        }
+
+        _uiState.value = _uiState.value.copy(
+            isPoiLayerVisible = true,
+            poiList = emptyList()
+        )
+        loadPois(_uiState.value.selectedPoiCategory)
     }
 
     fun selectPoiCategory(category: PoiCategory?) {
