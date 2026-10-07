@@ -155,6 +155,20 @@ class TrafficSignalIntegrationTest {
     }
 
     @Test
+    fun testVisibleTrafficSignals_areClearedWhenZoomedOutAndClippedToViewport() {
+        val repo = TrafficSignalRepository()
+        val bbox = TrafficSignalBoundingBox(south = 41.0, west = 28.9, north = 41.1, east = 29.0)
+        val inside = TrafficSignal(id = 801L, point = GeoPoint(41.05, 28.95))
+        val outside = TrafficSignal(id = 802L, point = GeoPoint(41.20, 29.20))
+
+        assertTrue(repo.visibleSignalsForViewport(listOf(inside, outside), bbox, 10.0f).isEmpty())
+
+        val visible = repo.visibleSignalsForViewport(listOf(inside, outside, inside), bbox, 16.0f)
+        assertEquals(1, visible.size)
+        assertEquals(801L, visible.first().id)
+    }
+
+    @Test
     fun testTrafficSignalBoundingBox_validation() {
         val validBox = TrafficSignalBoundingBox(south = 41.0, west = 28.0, north = 41.2, east = 28.5)
         assertTrue(validBox.isValid())
