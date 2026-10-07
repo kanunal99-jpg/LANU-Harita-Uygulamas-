@@ -202,9 +202,16 @@ fun HaritalarNavigationApp(
         }
     }
 
-    LaunchedEffect(uiState.userLocation, safetyCameras, uiState.selectedRoute, uiState.navigationState) {
+    LaunchedEffect(
+        uiState.userLocation,
+        safetyCameras,
+        uiState.selectedRoute,
+        uiState.navigationState,
+        uiState.routeRoadFeatures
+    ) {
         viewModel.checkSafetyCameraProximity(safetyCameras)
         viewModel.checkWeatherProximity()
+        viewModel.checkRoadFeatureProximity()
     }
 
     val selectedTrafficPair = uiState.selectedRoute?.let { uiState.trafficStatusMap[it.routeId] }
@@ -212,6 +219,7 @@ fun HaritalarNavigationApp(
     val currentTrafficSegments = selectedTrafficPair?.second ?: emptyList()
     val roadIntelligenceEvents = remember(
         uiState.approachingCameraWarning,
+        uiState.approachingRoadFeatureWarning,
         uiState.approachingWeather,
         currentTrafficStatus,
         currentTrafficSegments,
@@ -220,6 +228,7 @@ fun HaritalarNavigationApp(
         RoadIntelligencePolicy.build(
             cameraWarning = uiState.approachingCameraWarning,
             weather = uiState.approachingWeather,
+            roadFeatureWarning = uiState.approachingRoadFeatureWarning,
             traffic = currentTrafficStatus,
             trafficSegments = currentTrafficSegments,
             userPoint = uiState.userLocation?.point
@@ -230,6 +239,8 @@ fun HaritalarNavigationApp(
         currentTrafficStatus,
         currentTrafficSegments,
         uiState.routeWeather,
+        uiState.routeRoadFeatures,
+        uiState.roadFeatureDataState,
         safetyCameras
     ) {
         uiState.selectedRoute?.let { route ->
@@ -238,7 +249,9 @@ fun HaritalarNavigationApp(
                 traffic = currentTrafficStatus,
                 routeWeather = uiState.routeWeather,
                 loadedSafetyCameras = safetyCameras,
-                trafficSegments = currentTrafficSegments
+                trafficSegments = currentTrafficSegments,
+                roadFeatures = uiState.routeRoadFeatures,
+                roadFeatureDataState = uiState.roadFeatureDataState
             )
         }
     }
