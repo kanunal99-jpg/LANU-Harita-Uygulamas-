@@ -18,6 +18,7 @@ import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.MapTrackingMode
 import com.example.haritalar.model.NavigationState
+import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SafetyCamera
