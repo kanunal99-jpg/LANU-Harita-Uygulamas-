@@ -1,6 +1,9 @@
 package com.example.haritalar.navigation
 
 import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.RoadFeature
+import com.example.haritalar.model.RoadFeatureDataState
+import com.example.haritalar.model.RoadFeatureType
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
@@ -10,7 +13,7 @@ import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
 enum class LanuBriefSeverity { INFO, NOTICE, WARNING, CRITICAL }
-enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, WEATHER, TOLL, FERRY, DATA_QUALITY }
+enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, ROAD_FEATURE, WEATHER, TOLL, FERRY, DATA_QUALITY }
 
 data class LanuBriefItem(
     val type: LanuBriefItemType,
@@ -41,7 +44,9 @@ object LanuBriefPolicy {
         traffic: TrafficStatus?,
         routeWeather: List<WeatherCondition>,
         loadedSafetyCameras: List<SafetyCamera>,
-        trafficSegments: List<TrafficSegment> = emptyList()
+        trafficSegments: List<TrafficSegment> = emptyList(),
+        roadFeatures: List<RoadFeature> = emptyList(),
+        roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
@@ -49,6 +54,7 @@ object LanuBriefPolicy {
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
         items += cameraItem(route, loadedSafetyCameras)
+        items += roadFeatureItem(roadFeatures, roadFeatureDataState)
 
         items += if (route.hasTolls) {
             LanuBriefItem(
@@ -289,6 +295,84 @@ object LanuBriefPolicy {
             source = "OpenStreetMap",
             status = coverageStatus,
             severity = if (onRoute.isNotEmpty()) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
+        )
+    }
+
+    private fun roadFeatureItem(
+        features: List<RoadFeature>,
+        dataState: RoadFeatureDataState
+    ): LanuBriefItem {
+        if (dataState == RoadFeatureDataState.UNAVAILABLE) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.ROAD_FEATURE,
+                title = "Yol özellikleri doğrulanamadı",
+                detail = "OSM yol özelliği kaynaklarına ulaşılamadı; bilgi uydurulmuyor.",
+                source = "OpenStreetMap / Overpass",
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.NOTICE
+            )
+        }
+        if (dataState == RoadFeatureDataState.IDLE) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.ROAD_FEATURE,
+                title = "Yol özellikleri yükleniyor",
+                detail = "Rota koridorundaki okul, tümsek, hemzemin geçit ve yol tehlikesi kayıtları kontrol ediliyor.",
+                source = "OpenStreetMap / Overpass",
+                status = LanuBriefStatus.PARTIAL,
+                severity = LanuBriefSeverity.INFO
+            )
+        }
+
+        val status = if (dataState == RoadFeatureDataState.CACHED) {
+            LanuBriefStatus.PARTIAL
+        } else {
+            LanuBriefStatus.VERIFIED
+        }
+        val source = if (dataState == RoadFeatureDataState.CACHED) {
+            "OpenStreetMap (24 saatlik rota önbelleği)"
+        } else {
+            "OpenStreetMap / Overpass"
+        }
+
+        if (features.isEmpty()) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.ROAD_FEATURE,
+                title = "Rota koridorunda yol özelliği görünmüyor",
+                detail = if (status == LanuBriefStatus.PARTIAL) {
+                    "Aynı rota için önbellekte okul/tümsek/geçit/tehlike kaydı bulunmadı."
+                } else {
+                    "Sorgulanan OSM rota koridorunda desteklenen yol özelliği bulunmadı."
+                },
+                source = source,
+                status = status
+            )
+        }
+
+        val counts = features.groupingBy { it.type }.eachCount()
+        val labels = listOf(
+            RoadFeatureType.SPEED_CALMING to "tümsek/yavaşlatma",
+            RoadFeatureType.SCHOOL_ZONE to "okul",
+            RoadFeatureType.LEVEL_CROSSING to "hemzemin geçit",
+            RoadFeatureType.ROAD_HAZARD to "yol tehlikesi"
+        ).mapNotNull { (type, label) ->
+            counts[type]?.takeIf { it > 0 }?.let { "$it× $label" }
+        }
+
+        val severity = when {
+            (counts[RoadFeatureType.LEVEL_CROSSING] ?: 0) > 0 ||
+                (counts[RoadFeatureType.ROAD_HAZARD] ?: 0) > 0 -> LanuBriefSeverity.WARNING
+            (counts[RoadFeatureType.SCHOOL_ZONE] ?: 0) > 0 ||
+                (counts[RoadFeatureType.SPEED_CALMING] ?: 0) > 0 -> LanuBriefSeverity.NOTICE
+            else -> LanuBriefSeverity.INFO
+        }
+
+        return LanuBriefItem(
+            type = LanuBriefItemType.ROAD_FEATURE,
+            title = "${features.size} yol özelliği rota koridorunda",
+            detail = labels.joinToString(" • "),
+            source = source,
+            status = status,
+            severity = severity
         )
     }
 
