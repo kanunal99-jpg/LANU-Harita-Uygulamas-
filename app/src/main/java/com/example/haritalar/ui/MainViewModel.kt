@@ -606,6 +606,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         if (_uiState.value.selectedRoute?.routeId != route.routeId) {
             lastPreDriveCameraBriefRouteId = null
             cameraBriefJob?.cancel()
+            cameraBriefJob = null
+            ttsManager.stop()
         }
         _uiState.value = _uiState.value.copy(
             selectedRoute = route,
@@ -696,14 +698,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _uiState.value = _uiState.value.copy(statusMessage = "Başlatılacak hazır rota bulunamadı.")
             return
         }
-        if (_uiState.value.isSafetyCamerasLayerVisible &&
-            lastPreDriveCameraBriefRouteId != route.routeId
-        ) {
-            _uiState.value = _uiState.value.copy(
-                statusMessage = "Rota radar özeti hazırlanıyor. Özet tamamlanınca navigasyonu başlatın."
-            )
-            return
-        }
         val userLocation = currentRoutingLocation()
         if (userLocation == null) {
             _uiState.value = _uiState.value.copy(
@@ -716,6 +710,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun startNavigationInternal(route: RouteOption, userLocation: UserLocationData) {
         cameraBriefJob?.cancel()
+        cameraBriefJob = null
         announcedCameraWarningMilestones.clear()
         announcedRoadFeatureMilestones.clear()
         lastOverspeedCameraWarningKey = null
@@ -939,7 +934,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         latestSafetyCameras = cameras
         val state = _uiState.value
         val route = state.selectedRoute ?: return
-        if (state.navigationState != NavigationState.ROUTE_SELECTION) return
+        val canBrief = state.navigationState == NavigationState.ROUTE_SELECTION ||
+            state.navigationState == NavigationState.NAVIGATING
+        if (!canBrief) return
         if (!state.isSafetyCamerasLayerVisible) return
         if (lastPreDriveCameraBriefRouteId == route.routeId) return
 
@@ -949,14 +946,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 cameras = cameras,
                 route = route.geometry
             )
+            if (_uiState.value.selectedRoute?.routeId != route.routeId) return@launch
 
-            for (item in routeCameras) {
-                if (_uiState.value.selectedRoute?.routeId != route.routeId ||
-                    _uiState.value.navigationState != NavigationState.ROUTE_SELECTION
-                ) {
-                    return@launch
+            lastPreDriveCameraBriefRouteId = route.routeId
+            _uiState.value = _uiState.value.copy(
+                statusMessage = if (routeCameras.isEmpty()) {
+                    "Rota radar taraması tamamlandı: OSM verisinde sabit kamera bulunamadı."
+                } else {
+                    "Rota radar taraması tamamlandı: ${routeCameras.size} kamera."
                 }
+            )
 
+            SafetyCameraVoicePolicy.preDriveAnnouncements(
+                cameras = routeCameras,
+                resolvedAddresses = resolvedCameraAddresses
+            ).forEach { announcement ->
+                ttsManager.speak(announcement)
+            }
+
+            // Missing address context is enriched only after the voice summary is queued.
+            // This background fallback must never delay route selection or navigation start.
+            for (item in routeCameras.take(5)) {
+                if (_uiState.value.selectedRoute?.routeId != route.routeId) return@launch
                 val camera = item.camera
                 if (SafetyCameraVoicePolicy.sourceLocationContext(camera) == null &&
                     resolvedCameraAddresses[camera.id] == null
@@ -966,28 +977,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                     delay(1_100L)
                 }
-            }
-
-            if (_uiState.value.selectedRoute?.routeId != route.routeId ||
-                _uiState.value.navigationState != NavigationState.ROUTE_SELECTION
-            ) {
-                return@launch
-            }
-
-            val announcements = SafetyCameraVoicePolicy.preDriveAnnouncements(
-                cameras = routeCameras,
-                resolvedAddresses = resolvedCameraAddresses
-            )
-            lastPreDriveCameraBriefRouteId = route.routeId
-            _uiState.value = _uiState.value.copy(
-                statusMessage = if (routeCameras.isEmpty()) {
-                    "Rota radar taraması tamamlandı: doğrulanmış sabit kamera görünmüyor."
-                } else {
-                    "Rota radar taraması tamamlandı: ${routeCameras.size} kamera."
-                }
-            )
-            announcements.forEach { announcement ->
-                ttsManager.speak(announcement)
             }
         }
     }

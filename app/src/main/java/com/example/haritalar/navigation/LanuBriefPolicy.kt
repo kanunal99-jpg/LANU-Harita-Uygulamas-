@@ -46,14 +46,15 @@ object LanuBriefPolicy {
         loadedSafetyCameras: List<SafetyCamera>,
         trafficSegments: List<TrafficSegment> = emptyList(),
         roadFeatures: List<RoadFeature> = emptyList(),
-        roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE
+        roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
+        cameraRouteScanComplete: Boolean = false
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
         closureItem(traffic, trafficSegments)?.let { items += it }
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
-        items += cameraItem(route, loadedSafetyCameras)
+        items += cameraItem(route, loadedSafetyCameras, cameraRouteScanComplete)
         items += roadFeatureItem(roadFeatures, roadFeatureDataState)
 
         items += if (route.hasTolls) {
@@ -254,9 +255,12 @@ object LanuBriefPolicy {
         return parts.joinToString(" • ")
     }
 
-    private fun cameraItem(route: RouteOption, loadedCameras: List<SafetyCamera>): LanuBriefItem {
-        val start = route.geometry.firstOrNull()
-        if (start == null || route.geometry.size < 2) {
+    private fun cameraItem(
+        route: RouteOption,
+        loadedCameras: List<SafetyCamera>,
+        routeScanComplete: Boolean
+    ): LanuBriefItem {
+        if (route.geometry.size < 2) {
             return LanuBriefItem(
                 type = LanuBriefItemType.CAMERA,
                 title = "Kamera rota kontrolü yapılamadı",
@@ -267,33 +271,36 @@ object LanuBriefPolicy {
             )
         }
 
-        val onRoute = SafetyCameraRouteFilterPolicy.relevantForRoute(
-            cameras = loadedCameras,
-            route = route.geometry,
-            userPoint = start
-        )
+        if (!routeScanComplete) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CAMERA,
+                title = "Rota radar/kamera taraması sürüyor",
+                detail = "Seçili güzergâhın tamamı OpenStreetMap radar/kamera verisiyle eşleştiriliyor.",
+                source = "OpenStreetMap",
+                status = LanuBriefStatus.PARTIAL,
+                severity = LanuBriefSeverity.INFO
+            )
+        }
 
-        val coverageStatus = if (route.distanceMeters <= 10_000.0) {
-            LanuBriefStatus.VERIFIED
-        } else {
-            LanuBriefStatus.PARTIAL
-        }
-        val coverageNote = if (coverageStatus == LanuBriefStatus.VERIFIED) {
-            "Yüklü OSM kamera verisi seçili kısa rota koridoruyla eşleştirildi."
-        } else {
-            "Yüklü OSM kamera verisi rota koridoruyla eşleştirildi; uzun rotada tam rota kapsaması henüz garanti edilmiyor."
-        }
+        val onRoute = SafetyCameraRouteFilterPolicy.camerasAlongRoute(
+            cameras = loadedCameras,
+            route = route.geometry
+        )
 
         return LanuBriefItem(
             type = LanuBriefItemType.CAMERA,
             title = if (onRoute.isEmpty()) {
-                "Yüklü veride rota kamerası görünmüyor"
+                "OSM tam rota taramasında sabit kamera bulunamadı"
             } else {
-                "${onRoute.size} sabit kamera rota koridorunda"
+                "${onRoute.size} sabit kamera rota üzerinde"
             },
-            detail = coverageNote,
+            detail = if (onRoute.isEmpty()) {
+                "Tam güzergâh taraması tamamlandı; OpenStreetMap verisinde eşleşen sabit kamera yok. Bu, sahada kesinlikle kamera olmadığı anlamına gelmez."
+            } else {
+                "Tam güzergâh taraması tamamlandı; bilinen sabit kameralar rota kilometresiyle eşleştirildi."
+            },
             source = "OpenStreetMap",
-            status = coverageStatus,
+            status = LanuBriefStatus.PARTIAL,
             severity = if (onRoute.isNotEmpty()) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
         )
     }

@@ -30,6 +30,7 @@ import com.example.haritalar.model.NavigationState
 import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.navigation.LanuBriefPolicy
 import com.example.haritalar.navigation.NavigationLocationPolicy
+import com.example.haritalar.navigation.RadarBriefReadinessPolicy
 import com.example.haritalar.navigation.RoadIntelligencePolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
@@ -59,6 +60,8 @@ fun HaritalarNavigationApp(
     val safetyCameras by safetyCameraViewModel.cameras.collectAsState()
     val routeSafetyCameras by safetyCameraViewModel.routeCameras.collectAsState()
     val isRouteSafetyCameraPrefetching by safetyCameraViewModel.isRoutePrefetching.collectAsState()
+    val completedRouteSafetyCameraPrefetchRouteId by
+        safetyCameraViewModel.completedRoutePrefetchRouteId.collectAsState()
     
     val offlineDownloadProgress by viewModel.offlineMapManager.downloadProgress.collectAsState()
     val offlineDownloadMessage by viewModel.offlineMapManager.downloadMessage.collectAsState()
@@ -177,11 +180,14 @@ fun HaritalarNavigationApp(
         uiState.selectedRoute?.routeId,
         routeSafetyCameras,
         isRouteSafetyCameraPrefetching,
+        completedRouteSafetyCameraPrefetchRouteId,
         uiState.navigationState
     ) {
-        val routeReady = uiState.selectedRoute != null &&
-            !isRouteSafetyCameraPrefetching &&
-            uiState.navigationState == NavigationState.ROUTE_SELECTION
+        val routeReady = RadarBriefReadinessPolicy.isSelectedRouteScanReady(
+            selectedRouteId = uiState.selectedRoute?.routeId,
+            completedRouteId = completedRouteSafetyCameraPrefetchRouteId,
+            isPrefetching = isRouteSafetyCameraPrefetching
+        ) && RadarBriefReadinessPolicy.canDeliverInState(uiState.navigationState)
         if (routeReady) {
             viewModel.updatePreDriveSafetyCameraData(routeSafetyCameras)
         }
@@ -241,17 +247,23 @@ fun HaritalarNavigationApp(
         uiState.routeWeather,
         uiState.routeRoadFeatures,
         uiState.roadFeatureDataState,
-        safetyCameras
+        routeSafetyCameras,
+        completedRouteSafetyCameraPrefetchRouteId,
+        isRouteSafetyCameraPrefetching
     ) {
         uiState.selectedRoute?.let { route ->
+            val cameraScanComplete =
+                !isRouteSafetyCameraPrefetching &&
+                    completedRouteSafetyCameraPrefetchRouteId == route.routeId
             LanuBriefPolicy.build(
                 route = route,
                 traffic = currentTrafficStatus,
                 routeWeather = uiState.routeWeather,
-                loadedSafetyCameras = safetyCameras,
+                loadedSafetyCameras = routeSafetyCameras,
                 trafficSegments = currentTrafficSegments,
                 roadFeatures = uiState.routeRoadFeatures,
-                roadFeatureDataState = uiState.roadFeatureDataState
+                roadFeatureDataState = uiState.roadFeatureDataState,
+                cameraRouteScanComplete = cameraScanComplete
             )
         }
     }
