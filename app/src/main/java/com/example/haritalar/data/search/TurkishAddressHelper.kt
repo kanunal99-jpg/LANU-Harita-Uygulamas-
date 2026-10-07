@@ -146,9 +146,7 @@ object TurkishAddressHelper {
         val districtCandidates = if (detectedProvince != null) {
             TurkeyAdministrativeDirectory.districtsForProvince(detectedProvince)
         } else {
-            TURKISH_DISTRICTS
-                .distinctBy { normalizeTurkish(it) }
-                .filter { TurkeyAdministrativeDirectory.findDistricts(it).size == 1 }
+            TurkeyAdministrativeDirectory.uniqueDistricts()
         }.sortedByDescending { normalizeTurkish(it).length }
 
         val workingNormForDistrict = normalizeTurkish(working)
