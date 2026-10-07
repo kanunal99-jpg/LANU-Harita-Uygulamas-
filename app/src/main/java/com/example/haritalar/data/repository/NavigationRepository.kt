@@ -90,20 +90,19 @@ class NavigationRepository(context: Context) {
     val favorites: Flow<List<FavoritePlace>> = favoriteDao.getAllFavorites()
     val recentSearches: Flow<List<SearchHistoryItem>> = searchHistoryDao.getRecentSearches()
 
-    suspend fun searchPlacesResponse(query: String, focusPoint: GeoPoint?): com.example.haritalar.model.SearchResponse {
-        val response = searchProviderChain.executeSearch(query, focusPoint)
-        if (response is com.example.haritalar.model.SearchResponse.Success && response.results.isNotEmpty()) {
-            val top = response.results.first()
-            searchHistoryDao.insertSearch(
-                SearchHistoryItem(
-                    query = query,
-                    displayName = top.displayName,
-                    latitude = top.point.latitude,
-                    longitude = top.point.longitude
-                )
+    suspend fun searchPlacesResponse(query: String, focusPoint: GeoPoint?): com.example.haritalar.model.SearchResponse =
+        searchProviderChain.executeSearch(query, focusPoint)
+
+    suspend fun recordSearchSelection(query: String, result: SearchResult) {
+        val normalizedQuery = query.trim().takeIf { it.isNotBlank() } ?: result.name
+        searchHistoryDao.insertSearch(
+            SearchHistoryItem(
+                query = normalizedQuery,
+                displayName = result.displayName,
+                latitude = result.point.latitude,
+                longitude = result.point.longitude
             )
-        }
-        return response
+        )
     }
 
     suspend fun searchPlaces(query: String, focusPoint: GeoPoint?): List<SearchResult> {
