@@ -71,6 +71,9 @@ interface SearchHistoryDao {
 
     @Query("DELETE FROM search_history")
     suspend fun clearHistory()
+
+    @Query("DELETE FROM search_history WHERE id NOT IN (SELECT id FROM search_history ORDER BY timestamp DESC LIMIT 100)")
+    suspend fun trimHistory()
 }
 
 @Entity(tableName = "cached_traffic_signals")
