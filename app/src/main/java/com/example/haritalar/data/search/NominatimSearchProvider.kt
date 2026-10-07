@@ -5,6 +5,9 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TurkishAddressDetails
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -15,8 +18,9 @@ import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 /**
- * Primary Geocoding Provider using OpenStreetMap Nominatim.
- * Strictly free, open, and policy compliant with a stable app User-Agent and TR bias.
+ * Explicit-search / reverse-geocoding provider using the public OSM Nominatim endpoint.
+ * It is intentionally not used for live typeahead. Requests are serialized and spaced
+ * to respect the public service's 1 request/second ceiling.
  */
 class NominatimSearchProvider(
     private val client: OkHttpClient = OkHttpClient.Builder()
@@ -26,14 +30,27 @@ class NominatimSearchProvider(
 ) : SearchProvider {
 
     override val name: String = "Nominatim (OSM)"
+    private val publicApiMutex = Mutex()
+    private var lastPublicApiRequestAt: Long = 0L
+
+    private suspend fun awaitPublicApiSlot() {
+        publicApiMutex.withLock {
+            val elapsed = System.currentTimeMillis() - lastPublicApiRequestAt
+            val waitMs = (1_050L - elapsed).coerceAtLeast(0L)
+            if (waitMs > 0L) delay(waitMs)
+            lastPublicApiRequestAt = System.currentTimeMillis()
+        }
+    }
 
     override suspend fun search(query: String, focusPoint: GeoPoint?): List<SearchResult> = withContext(Dispatchers.IO) {
         val trimmed = query.trim()
         if (trimmed.length < 2) return@withContext emptyList()
 
+        awaitPublicApiSlot()
+
         val request = Request.Builder()
             .url(buildSearchUrl(trimmed, focusPoint))
-            .header("User-Agent", "LANUHaritaAndroidNav/1.0")
+            .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
             .build()
 
         client.newCall(request).execute().use { response ->
@@ -117,10 +134,11 @@ class NominatimSearchProvider(
 
     override suspend fun reverseGeocode(point: GeoPoint): String? = withContext(Dispatchers.IO) {
         try {
+            awaitPublicApiSlot()
             val url = "https://nominatim.openstreetmap.org/reverse?format=json&lat=${point.latitude}&lon=${point.longitude}&addressdetails=1&accept-language=tr"
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "LANUHaritaAndroidNav/1.0")
+                .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
                 .build()
 
             client.newCall(request).execute().use { response ->
