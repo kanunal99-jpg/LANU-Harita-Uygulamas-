@@ -30,6 +30,7 @@ import com.example.haritalar.model.NavigationState
 import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.navigation.LanuBriefPolicy
 import com.example.haritalar.navigation.NavigationLocationPolicy
+import com.example.haritalar.navigation.RoadIntelligencePolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
 import com.example.ui.theme.MyApplicationTheme
@@ -178,6 +179,17 @@ fun HaritalarNavigationApp(
     val selectedTrafficPair = uiState.selectedRoute?.let { uiState.trafficStatusMap[it.routeId] }
     val currentTrafficStatus = selectedTrafficPair?.first
     val currentTrafficSegments = selectedTrafficPair?.second ?: emptyList()
+    val roadIntelligenceEvents = remember(
+        uiState.approachingCameraWarning,
+        uiState.approachingWeather,
+        currentTrafficStatus
+    ) {
+        RoadIntelligencePolicy.build(
+            cameraWarning = uiState.approachingCameraWarning,
+            weather = uiState.approachingWeather,
+            traffic = currentTrafficStatus
+        )
+    }
     val preDriveBrief = remember(
         uiState.selectedRoute,
         currentTrafficStatus,
@@ -349,13 +361,8 @@ fun HaritalarNavigationApp(
                         modifier = Modifier.fillMaxWidth()
                     )
 
-                    RadarWarningCard(
-                        warning = uiState.approachingCameraWarning,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    com.example.haritalar.ui.WeatherWarningCard(
-                        weather = uiState.approachingWeather,
+                    RoadIntelligenceStrip(
+                        events = roadIntelligenceEvents,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }
