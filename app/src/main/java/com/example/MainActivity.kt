@@ -157,7 +157,7 @@ fun HaritalarNavigationApp(
         }
     }
 
-    LaunchedEffect(uiState.selectedRoute?.routeId) {
+    LaunchedEffect(uiState.selectedRoute?.routeId, uiState.isSafetyCamerasLayerVisible) {
         val route = uiState.selectedRoute
         if (route != null && uiState.isSafetyCamerasLayerVisible) {
             safetyCameraViewModel.prefetchForRoute(route)
