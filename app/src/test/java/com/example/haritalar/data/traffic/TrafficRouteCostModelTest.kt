@@ -21,6 +21,35 @@ class TrafficRouteCostModelTest {
         assertEquals("Canlı trafik doğrulanamadı • temel ETA korunuyor", status.message)
     }
 
+
+    @Test
+    fun cachedSegments_neverClaimLiveTraffic() {
+        val cached = TrafficSegment(
+            coordinates = listOf(GeoPoint(41.0, 29.0)),
+            currentSpeed = 5.0,
+            freeFlowSpeed = 60.0,
+            delaySeconds = 600L,
+            confidence = 0.9,
+            roadClosure = true,
+            fromCache = true
+        )
+
+        val status = TrafficRouteCostModel.calculateTrafficStatus(
+            segments = listOf(cached),
+            hasProvider = true
+        )
+
+        assertFalse(status.verified)
+        assertFalse(status.isLiveApi)
+        assertEquals(TrafficLevel.UNKNOWN, status.trafficLevel)
+        assertEquals(0L, status.delaySeconds)
+        assertEquals("TomTom Traffic Flow API v4 • cache", status.sourceName)
+        assertEquals(
+            "Canlı trafik yenilenemedi • son bilinen cache yalnız harita için korunuyor",
+            status.message
+        )
+    }
+
     @Test
     fun verifiedSegments_reportLiveTraffic() {
         val segment = TrafficSegment(
