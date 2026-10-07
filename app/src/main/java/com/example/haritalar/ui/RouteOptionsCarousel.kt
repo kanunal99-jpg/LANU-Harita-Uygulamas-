@@ -20,6 +20,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.haritalar.model.RouteAttributeStatus
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
@@ -253,13 +254,16 @@ private fun RouteCard(
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (route.hasTolls) {
-                    Badge(text = "Ücretli", bg = Color(0xFFFEF3C7), fg = Color(0xFFB45309))
-                } else {
-                    Badge(text = "Ücretsiz", bg = Color(0xFFDCFCE7), fg = Color(0xFF15803D))
+                when (route.tollStatus) {
+                    RouteAttributeStatus.PRESENT ->
+                        Badge(text = "Ücretli", bg = Color(0xFFFEF3C7), fg = Color(0xFFB45309))
+                    RouteAttributeStatus.ABSENT ->
+                        Badge(text = "Ücretsiz", bg = Color(0xFFDCFCE7), fg = Color(0xFF15803D))
+                    RouteAttributeStatus.UNKNOWN ->
+                        Badge(text = "Ücret ?", bg = MaterialTheme.colorScheme.surfaceVariant, fg = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
 
-                if (route.hasFerry) {
+                if (route.ferryStatus == RouteAttributeStatus.PRESENT) {
                     Badge(text = "Feribot", bg = Color(0xFFE0E7FF), fg = Color(0xFF4338CA))
                 }
 
