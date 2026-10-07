@@ -340,40 +340,66 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val response = repository.searchPlacesResponse(query, focus)
 
             if (currentGen == searchGenerationId) {
-                when (response) {
-                    is com.example.haritalar.model.SearchResponse.Success -> {
-                        _uiState.value = _uiState.value.copy(
-                            searchResults = response.results,
-                            isSearching = false,
-                            searchStatus = com.example.haritalar.model.SearchUiStatus.SUCCESS,
-                            searchActiveProvider = response.provider,
-                            searchErrorMessage = null
-                        )
-                    }
-                    is com.example.haritalar.model.SearchResponse.Empty -> {
-                        _uiState.value = _uiState.value.copy(
-                            searchResults = emptyList(),
-                            isSearching = false,
-                            searchStatus = com.example.haritalar.model.SearchUiStatus.EMPTY,
-                            searchErrorMessage = null
-                        )
-                    }
-                    is com.example.haritalar.model.SearchResponse.Error -> {
-                        _uiState.value = _uiState.value.copy(
-                            searchResults = emptyList(),
-                            isSearching = false,
-                            searchStatus = com.example.haritalar.model.SearchUiStatus.ERROR,
-                            searchErrorMessage = response.message
-                        )
-                    }
-                }
+                applySearchResponse(response)
+            }
+        }
+    }
+
+    fun submitSearch() {
+        val query = _uiState.value.searchQuery.trim()
+        if (query.length < 2) return
+
+        searchJob?.cancel()
+        val currentGen = ++searchGenerationId
+        searchJob = viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(
+                isSearching = true,
+                searchStatus = com.example.haritalar.model.SearchUiStatus.SEARCHING,
+                searchErrorMessage = null
+            )
+            val focus = PoiSearchCenterPolicy.resolve(
+                trackingMode = _uiState.value.mapTrackingMode,
+                liveLocation = currentRoutingLocation()?.point,
+                viewport = _uiState.value.currentViewportBbox
+            )
+            val response = repository.searchPlacesResponse(query, focus, committed = true)
+            if (currentGen != searchGenerationId) return@launch
+            applySearchResponse(response)
+        }
+    }
+
+    private fun applySearchResponse(response: com.example.haritalar.model.SearchResponse) {
+        when (response) {
+            is com.example.haritalar.model.SearchResponse.Success -> {
+                _uiState.value = _uiState.value.copy(
+                    searchResults = response.results,
+                    isSearching = false,
+                    searchStatus = com.example.haritalar.model.SearchUiStatus.SUCCESS,
+                    searchActiveProvider = response.provider,
+                    searchErrorMessage = null
+                )
+            }
+            is com.example.haritalar.model.SearchResponse.Empty -> {
+                _uiState.value = _uiState.value.copy(
+                    searchResults = emptyList(),
+                    isSearching = false,
+                    searchStatus = com.example.haritalar.model.SearchUiStatus.EMPTY,
+                    searchErrorMessage = null
+                )
+            }
+            is com.example.haritalar.model.SearchResponse.Error -> {
+                _uiState.value = _uiState.value.copy(
+                    searchResults = emptyList(),
+                    isSearching = false,
+                    searchStatus = com.example.haritalar.model.SearchUiStatus.ERROR,
+                    searchErrorMessage = response.message
+                )
             }
         }
     }
 
     fun retrySearch() {
-        val q = _uiState.value.searchQuery
-        if (q.isNotBlank()) onSearchQueryChanged(q)
+        submitSearch()
     }
 
     fun dismissDestinationCard() {
