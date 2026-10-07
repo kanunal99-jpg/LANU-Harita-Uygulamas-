@@ -39,30 +39,12 @@ object TurkishAddressHelper {
         'ü' to 'u', 'Ü' to 'u'
     )
 
-    // Complete list of 81 Turkish provinces (official names)
-    val TURKISH_PROVINCES = listOf(
-        "Adana", "Adıyaman", "Afyonkarahisar", "Ağrı", "Aksaray", "Amasya", "Ankara", "Antalya", "Ardahan",
-        "Artvin", "Aydın", "Balıkesir", "Bartın", "Batman", "Bayburt", "Bilecik", "Bingöl", "Bitlis",
-        "Bolu", "Burdur", "Bursa", "Çanakkale", "Çankırı", "Çorum", "Denizli", "Diyarbakır", "Düzce",
-        "Edirne", "Elazığ", "Erzincan", "Erzurum", "Eskişehir", "Gaziantep", "Giresun", "Gümüşhane",
-        "Hakkari", "Hatay", "Iğdır", "Isparta", "İstanbul", "İzmir", "Kahramanmaraş", "Karabük", "Karaman",
-        "Kars", "Kastamonu", "Kayseri", "Kilis", "Kırıkkale", "Kırklareli", "Kırşehir", "Kocaeli",
-        "Konya", "Kütahya", "Malatya", "Manisa", "Mardin", "Mersin", "Muğla", "Muş", "Nevşehir",
-        "Niğde", "Ordu", "Osmaniye", "Rize", "Sakarya", "Samsun", "Şanlıurfa", "Siirt", "Sinop",
-        "Şırnak", "Sivas", "Tekirdağ", "Tokat", "Trabzon", "Tunceli", "Uşak", "Van", "Yalova",
-        "Yozgat", "Zonguldak"
-    )
+    // Complete local reference data: 81 provinces / 973 districts.
+    val TURKISH_PROVINCES: List<String>
+        get() = TurkeyAdministrativeDirectory.provinces
 
-    // Major / frequent Turkish districts
-    val NOTABLE_DISTRICTS = listOf(
-        "Kadıköy", "Beşiktaş", "Şişli", "Üsküdar", "Beyoğlu", "Fatih", "Bakırköy", "Sarıyer",
-        "Maltepe", "Kartal", "Pendik", "Ataşehir", "Ümraniye", "Beylikdüzü", "Zeytinburnu",
-        "Çankaya", "Keçiören", "Yenimahalle", "Mamak", "Etimesgut", "Sincan", "Altındağ", "Gölbaşı",
-        "Konak", "Bornova", "Karşıyaka", "Buca", "Çiğli", "Gaziemir", "Balçova", "Narlıdere",
-        "Nilüfer", "Osmangazi", "Yıldırım", "Muratpaşa", "Kepez", "Konyaaltı", "Alanya", "Manavgat",
-        "Seyhan", "Çukurova", "Yüreğir", "Selçuklu", "Meram", "Karatay", "Şahinbey", "Şehitkamil",
-        "İzmit", "Gebze", "Melikgazi", "Kocasinan", "Odunpazarı", "Tepebaşı", "Ortahisar"
-    )
+    val TURKISH_DISTRICTS: List<String>
+        get() = TurkeyAdministrativeDirectory.allDistricts()
 
     /**
      * Converts Turkish diacritics to ASCII characters and lowercases cleanly.
@@ -157,15 +139,28 @@ object TurkishAddressHelper {
             }
         }
 
-        // 3. Extract District (İlçe) from known districts
-        for (dist in NOTABLE_DISTRICTS) {
+        // 3. Extract District (İlçe) from the complete 973-district directory.
+        // If a province is present, only its districts are considered. Without a
+        // province, ambiguous names (e.g. Gölbaşı / Merkez) are intentionally not
+        // guessed; the geocoder can still resolve the original free-form query.
+        val districtCandidates = if (detectedProvince != null) {
+            TurkeyAdministrativeDirectory.districtsForProvince(detectedProvince)
+        } else {
+            TURKISH_DISTRICTS
+                .distinctBy { normalizeTurkish(it) }
+                .filter { TurkeyAdministrativeDirectory.findDistricts(it).size == 1 }
+        }.sortedByDescending { normalizeTurkish(it).length }
+
+        val workingNormForDistrict = normalizeTurkish(working)
+        for (dist in districtCandidates) {
             val dNorm = normalizeTurkish(dist)
-            val wNorm = normalizeTurkish(working)
-            val regex = Regex("(?i)\\b$dNorm\\b")
-            if (regex.containsMatchIn(wNorm)) {
+            val regex = Regex("(?<![a-z0-9])${Regex.escape(dNorm)}(?![a-z0-9])")
+            if (regex.containsMatchIn(workingNormForDistrict)) {
                 detectedDistrict = dist
-                working = working.replace(Regex("(?i)\\b$dist\\b"), " ")
-                    .replace(Regex("(?i)\\b$dNorm\\b"), " ")
+                working = working
+                    .replace(Regex("(?i)\\b${Regex.escape(dist)}\\b"), " ")
+                    .replace(Regex("(?i)\\b${Regex.escape(dNorm)}\\b"), " ")
+                    .replace(Regex("\\s+"), " ")
                     .trim()
                 break
             }
