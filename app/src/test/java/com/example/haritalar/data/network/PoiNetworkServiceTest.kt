@@ -50,4 +50,12 @@ class PoiNetworkServiceTest {
         assertEquals(PoiCategory.PHARMACY, result.first().category)
         assertTrue(result.first().address?.contains("Örnek Sokak 7") == true)
     }
+
+    @Test
+    fun validEmptyOverpassPayloadIsDistinguishedFromMalformedPayload() {
+        assertTrue(service.isValidOverpassPayload("""{"elements":[]}"""))
+        assertTrue(!service.isValidOverpassPayload("""{"remark":"temporary failure"}"""))
+        assertTrue(!service.isValidOverpassPayload("not-json"))
+    }
+
 }

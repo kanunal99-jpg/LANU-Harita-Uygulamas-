@@ -8,6 +8,7 @@ import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.haritalar.data.network.OsrmRoutingProvider
+import com.example.haritalar.data.network.PoiFetchResult
 import com.example.haritalar.data.network.PoiNetworkService
 import com.example.haritalar.data.network.TrafficSignalService
 import com.example.haritalar.data.network.ValhallaRoutingProvider
@@ -23,11 +24,14 @@ import com.example.haritalar.data.traffic.TrafficRouteRankingService
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
+import com.example.haritalar.model.RouteCriticalPoiDataState
+import com.example.haritalar.model.RouteCriticalPoiFetchSummary
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
+import com.example.haritalar.navigation.RouteCriticalPoiPolicy
 import kotlinx.coroutines.flow.Flow
 
 enum class SavedPlaceResult {
@@ -126,42 +130,128 @@ class NavigationRepository(context: Context) {
             selectedCategory = category
         )
         if (primary.isNotEmpty()) return primary
-
         if (category == null) return emptyList()
-        val fallbackQueries = when (category) {
-            PoiCategory.RESTAURANT -> listOf("restoran", "restaurant")
-            PoiCategory.FUEL -> listOf("benzinlik", "akaryakıt")
-            PoiCategory.HOSPITAL -> listOf("hastane", "hospital")
-            PoiCategory.PHARMACY -> listOf("eczane", "pharmacy")
-            PoiCategory.MARKET -> listOf("market", "süpermarket")
-            PoiCategory.PARKING -> listOf("otopark", "parking")
-            PoiCategory.ATM -> listOf("ATM", "banka ATM")
-            PoiCategory.CAFE -> listOf("kafe", "cafe")
-            PoiCategory.CHARGING_STATION -> listOf("şarj istasyonu", "elektrikli araç şarj")
+        return searchPoiFallback(center, category, safeRadius).first
+    }
+
+    suspend fun fetchCriticalPoisForRoute(
+        route: List<GeoPoint>
+    ): RouteCriticalPoiFetchSummary {
+        if (route.size < 2) {
+            return RouteCriticalPoiFetchSummary(
+                matches = emptyList(),
+                dataState = RouteCriticalPoiDataState.UNAVAILABLE,
+                queriedCenters = 0,
+                primaryCenterCount = 0,
+                fallbackCenterCount = 0,
+                unavailableCenterCount = 0
+            )
         }
 
-        for (query in fallbackQueries) {
-            val response = searchProviderChain.executeSearch(query, center)
-            if (response is com.example.haritalar.model.SearchResponse.Success) {
-                val fallback = response.results
-                    .filter {
-                        it.point.distanceTo(center) <=
-                            (safeRadius * 1.35).coerceAtMost(25_000.0)
-                    }
-                    .take(80)
-                    .map {
-                        PoiItem(
-                            id = "search_${it.id}",
-                            name = it.name,
+        val centers = RouteCriticalPoiPolicy.routeSampleCenters(route)
+        val merged = linkedMapOf<String, PoiItem>()
+        var primaryCenters = 0
+        var fallbackCenters = 0
+        var unavailableCenters = 0
+
+        for (center in centers) {
+            when (
+                val result = poiService.fetchPoisAroundResult(
+                    center = center,
+                    radiusMeters = RouteCriticalPoiPolicy.ROUTE_QUERY_RADIUS_METERS,
+                    selectedCategory = null
+                )
+            ) {
+                is PoiFetchResult.Success -> {
+                    primaryCenters++
+                    result.pois
+                        .filter { it.category in RouteCriticalPoiPolicy.CRITICAL_CATEGORIES }
+                        .forEach { merged["${it.category}:${it.id}"] = it }
+                }
+                is PoiFetchResult.Error -> {
+                    var fallbackAnswered = false
+                    for (category in RouteCriticalPoiPolicy.CRITICAL_CATEGORIES) {
+                        val (items, answered) = searchPoiFallback(
+                            center = center,
                             category = category,
-                            point = it.point,
-                            address = it.shortAddress.ifBlank { it.displayName }
+                            radiusMeters = RouteCriticalPoiPolicy.ROUTE_QUERY_RADIUS_METERS
                         )
+                        fallbackAnswered = fallbackAnswered || answered
+                        items.forEach { merged["${it.category}:${it.id}"] = it }
                     }
-                if (fallback.isNotEmpty()) return fallback
+                    if (fallbackAnswered) fallbackCenters++ else unavailableCenters++
+                }
             }
         }
-        return emptyList()
+
+        val matches = RouteCriticalPoiPolicy.matchToRoute(
+            pois = merged.values.toList(),
+            route = route
+        )
+
+        val state = when {
+            centers.isEmpty() -> RouteCriticalPoiDataState.UNAVAILABLE
+            unavailableCenters == 0 && fallbackCenters == 0 -> RouteCriticalPoiDataState.VERIFIED
+            primaryCenters + fallbackCenters > 0 -> RouteCriticalPoiDataState.PARTIAL
+            else -> RouteCriticalPoiDataState.UNAVAILABLE
+        }
+
+        return RouteCriticalPoiFetchSummary(
+            matches = matches,
+            dataState = state,
+            queriedCenters = centers.size,
+            primaryCenterCount = primaryCenters,
+            fallbackCenterCount = fallbackCenters,
+            unavailableCenterCount = unavailableCenters
+        )
+    }
+
+    private suspend fun searchPoiFallback(
+        center: GeoPoint,
+        category: PoiCategory,
+        radiusMeters: Int
+    ): Pair<List<PoiItem>, Boolean> {
+        val safeRadius = radiusMeters.coerceIn(3_000, 20_000)
+        var providerAnswered = false
+
+        for (query in fallbackQueriesFor(category)) {
+            when (val response = searchProviderChain.executeSearch(query, center)) {
+                is com.example.haritalar.model.SearchResponse.Success -> {
+                    providerAnswered = true
+                    val fallback = response.results
+                        .filter {
+                            it.point.distanceTo(center) <=
+                                (safeRadius * 1.35).coerceAtMost(25_000.0)
+                        }
+                        .take(80)
+                        .map {
+                            PoiItem(
+                                id = "search_${it.id}",
+                                name = it.name,
+                                category = category,
+                                point = it.point,
+                                address = it.shortAddress.ifBlank { it.displayName }
+                            )
+                        }
+                    if (fallback.isNotEmpty()) return fallback to true
+                }
+                is com.example.haritalar.model.SearchResponse.Empty -> providerAnswered = true
+                is com.example.haritalar.model.SearchResponse.Error -> Unit
+            }
+        }
+        return emptyList<PoiItem>() to providerAnswered
+    }
+
+    private fun fallbackQueriesFor(category: PoiCategory): List<String> = when (category) {
+        PoiCategory.RESTAURANT -> listOf("restoran", "restaurant")
+        PoiCategory.FUEL -> listOf("benzinlik", "akaryakıt")
+        PoiCategory.HOSPITAL -> listOf("hastane", "hospital")
+        PoiCategory.PHARMACY -> listOf("eczane", "pharmacy")
+        PoiCategory.MARKET -> listOf("market", "süpermarket")
+        PoiCategory.PARKING -> listOf("otopark", "parking")
+        PoiCategory.ATM -> listOf("ATM", "banka ATM")
+        PoiCategory.CAFE -> listOf("kafe", "cafe")
+        PoiCategory.CHARGING_STATION -> listOf("şarj istasyonu", "elektrikli araç şarj")
     }
 
     suspend fun calculateRouteAlternatives(

@@ -247,6 +247,8 @@ fun HaritalarNavigationApp(
         uiState.routeWeather,
         uiState.routeRoadFeatures,
         uiState.roadFeatureDataState,
+        uiState.routeCriticalPois,
+        uiState.routeCriticalPoiDataState,
         routeSafetyCameras,
         completedRouteSafetyCameraPrefetchRouteId,
         isRouteSafetyCameraPrefetching
@@ -263,7 +265,9 @@ fun HaritalarNavigationApp(
                 trafficSegments = currentTrafficSegments,
                 roadFeatures = uiState.routeRoadFeatures,
                 roadFeatureDataState = uiState.roadFeatureDataState,
-                cameraRouteScanComplete = cameraScanComplete
+                cameraRouteScanComplete = cameraScanComplete,
+                routeCriticalPois = uiState.routeCriticalPois,
+                routeCriticalPoiDataState = uiState.routeCriticalPoiDataState
             )
         }
     }
