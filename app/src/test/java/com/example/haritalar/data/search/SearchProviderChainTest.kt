@@ -149,6 +149,33 @@ class SearchProviderChainTest {
     }
 
     @Test
+    fun committedSearchCachesAlternativeResultAndAvoidsRepeatedProviderCall() = runBlocking {
+        fakePrimaryProvider.returnResults = emptyList()
+        fakeAlternativeProvider.returnResults = listOf(
+            SearchResult(
+                id = "precise_1",
+                name = "Kesin Sonuç",
+                displayName = "Kesin Sonuç, İstanbul",
+                point = GeoPoint(41.0, 29.0)
+            )
+        )
+
+        val first = chain.executeSearch(
+            "kesin adres",
+            allowAlternativeForwardGeocoder = true
+        )
+        val callsAfterFirst = fakeAlternativeProvider.searchCallCount
+        val second = chain.executeSearch(
+            "kesin adres",
+            allowAlternativeForwardGeocoder = true
+        )
+
+        assertTrue(first is SearchResponse.Success)
+        assertTrue(second is SearchResponse.Success)
+        assertEquals(callsAfterFirst, fakeAlternativeProvider.searchCallCount)
+    }
+
+    @Test
     fun testFallbackToCacheWhenBothExternalProvidersFail() = runBlocking {
         val cachedResult = SearchResult(
             id = "cache_1",
