@@ -1,6 +1,7 @@
 package com.example.haritalar.data.network
 
 import android.util.Log
+import com.example.BuildConfig
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
@@ -48,7 +49,7 @@ class PoiNetworkService(
                 val request = Request.Builder()
                     .url(endpoint)
                     .post(query.toRequestBody("text/plain".toMediaType()))
-                    .header("User-Agent", "LANUHaritaAndroidNav/1.1.7")
+                    .header("User-Agent", "LANUHaritaAndroidNav/${BuildConfig.VERSION_NAME}")
                     .build()
 
                 client.newCall(request).execute().use { response ->

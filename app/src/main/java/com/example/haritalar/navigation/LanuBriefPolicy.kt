@@ -8,7 +8,7 @@ import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
 enum class LanuBriefSeverity { INFO, NOTICE, WARNING, CRITICAL }
-enum class LanuBriefItemType { TRAFFIC, CAMERA, WEATHER, TOLL, FERRY, DATA_QUALITY }
+enum class LanuBriefItemType { TRAFFIC, CAMERA, WEATHER, CRITICAL_POI, TOLL, FERRY, DATA_QUALITY }
 
 data class LanuBriefItem(
     val type: LanuBriefItemType,
@@ -38,13 +38,16 @@ object LanuBriefPolicy {
         route: RouteOption,
         traffic: TrafficStatus?,
         routeWeather: List<WeatherCondition>,
-        loadedSafetyCameras: List<SafetyCamera>
+        loadedSafetyCameras: List<SafetyCamera>,
+        criticalPoiCoverage: RouteCriticalPoiCoverage? = null,
+        routeCameraCoverage: RouteSafetyCameraCoverage? = null
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
-        items += cameraItem(route, loadedSafetyCameras)
+        items += cameraItem(route, loadedSafetyCameras, routeCameraCoverage)
+        items += criticalPoiItem(criticalPoiCoverage)
 
         items += if (route.hasTolls) {
             LanuBriefItem(
@@ -188,7 +191,118 @@ object LanuBriefPolicy {
         )
     }
 
-    private fun cameraItem(route: RouteOption, loadedCameras: List<SafetyCamera>): LanuBriefItem {
+    private fun criticalPoiItem(coverage: RouteCriticalPoiCoverage?): LanuBriefItem {
+        if (coverage == null) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CRITICAL_POI,
+                title = "Kritik POI taraması bekleniyor",
+                detail = "Benzinlik, hastane, eczane ve şarj noktaları rota koridorunda henüz doğrulanmadı.",
+                source = "OSM / rota POI zinciri",
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.INFO
+            )
+        }
+
+        if (coverage.status == RouteDataCoverage.UNAVAILABLE) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CRITICAL_POI,
+                title = "Kritik POI verisi doğrulanamadı",
+                detail = coverage.note,
+                source = coverage.source,
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.NOTICE
+            )
+        }
+
+        val counts = RouteCriticalPoiPolicy.countsByCategory(coverage.pois)
+        val parts = listOf(
+            "Yakıt" to (counts[com.example.haritalar.model.PoiCategory.FUEL] ?: 0),
+            "Hastane" to (counts[com.example.haritalar.model.PoiCategory.HOSPITAL] ?: 0),
+            "Eczane" to (counts[com.example.haritalar.model.PoiCategory.PHARMACY] ?: 0),
+            "Şarj" to (counts[com.example.haritalar.model.PoiCategory.CHARGING_STATION] ?: 0)
+        )
+        val total = parts.sumOf { it.second }
+        val summary = parts.joinToString(" • ") { (label, count) -> "$label $count" }
+        val gapKm = String.format(java.util.Locale.US, "%.1f", coverage.maxSampleGapMeters / 1000.0)
+
+        return LanuBriefItem(
+            type = LanuBriefItemType.CRITICAL_POI,
+            title = if (total > 0) "$total kritik nokta rota koridorunda" else "Doğrulanan koridorda kritik POI bulunmadı",
+            detail = "$summary • ${coverage.sampleCount} rota örneği • maks. örnek aralığı $gapKm km • güncellendi ${briefTime(coverage.fetchedAtMillis)}. ${coverage.note}",
+            source = coverage.source,
+            status = when (coverage.status) {
+                RouteDataCoverage.VERIFIED -> LanuBriefStatus.VERIFIED
+                RouteDataCoverage.PARTIAL -> LanuBriefStatus.PARTIAL
+                RouteDataCoverage.UNAVAILABLE -> LanuBriefStatus.UNAVAILABLE
+            },
+            severity = if (coverage.status == RouteDataCoverage.PARTIAL) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
+        )
+    }
+
+    private fun cameraItem(
+        route: RouteOption,
+        loadedCameras: List<SafetyCamera>,
+        routeCoverage: RouteSafetyCameraCoverage?
+    ): LanuBriefItem {
+        if (routeCoverage != null) {
+            val status = when (routeCoverage.status) {
+                RouteDataCoverage.VERIFIED -> LanuBriefStatus.VERIFIED
+                RouteDataCoverage.PARTIAL -> LanuBriefStatus.PARTIAL
+                RouteDataCoverage.UNAVAILABLE -> LanuBriefStatus.UNAVAILABLE
+            }
+            if (routeCoverage.status == RouteDataCoverage.UNAVAILABLE) {
+                return LanuBriefItem(
+                    type = LanuBriefItemType.CAMERA,
+                    title = "Rota kamera verisi doğrulanamadı",
+                    detail = routeCoverage.note,
+                    source = routeCoverage.source,
+                    status = LanuBriefStatus.UNAVAILABLE,
+                    severity = LanuBriefSeverity.NOTICE
+                )
+            }
+
+            val nearestMeters = routeCoverage.cameras
+                .mapNotNull { SafetyCameraRouteFilterPolicy.routeProgressMeters(it.point, route.geometry) }
+                .minOrNull()
+            val nearestText = nearestMeters?.let {
+                if (it >= 1000.0) {
+                    String.format(java.util.Locale.US, "%.1f km", it / 1000.0)
+                } else {
+                    "${it.toInt()} m"
+                }
+            }
+            val gapKm = String.format(
+                java.util.Locale.US,
+                "%.1f",
+                routeCoverage.maxSampleGapMeters / 1000.0
+            )
+            val detail = buildString {
+                if (nearestText != null) {
+                    append("En yakın kamera rota boyunca yaklaşık $nearestText ileride. ")
+                }
+                append(
+                    "${routeCoverage.successfulSampleCount}/${routeCoverage.sampleCount} kamera örneği • " +
+                        "maks. örnek aralığı $gapKm km • güncellendi ${briefTime(routeCoverage.fetchedAtMillis)}. ${routeCoverage.note}"
+                )
+            }
+            return LanuBriefItem(
+                type = LanuBriefItemType.CAMERA,
+                title = if (routeCoverage.cameras.isEmpty()) {
+                    "Doğrulanan rota koridorunda sabit kamera bulunmadı"
+                } else {
+                    "${routeCoverage.cameras.size} sabit kamera rota koridorunda"
+                },
+                detail = detail,
+                source = routeCoverage.source,
+                status = status,
+                severity = if (routeCoverage.cameras.isNotEmpty()) {
+                    LanuBriefSeverity.NOTICE
+                } else {
+                    LanuBriefSeverity.INFO
+                }
+            )
+        }
+
         val start = route.geometry.firstOrNull()
         if (start == null || route.geometry.size < 2) {
             return LanuBriefItem(
@@ -231,6 +345,10 @@ object LanuBriefPolicy {
             severity = if (onRoute.isNotEmpty()) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
         )
     }
+
+    private fun briefTime(timestampMillis: Long): String =
+        java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault())
+            .format(java.util.Date(timestampMillis))
 
     private fun weatherRiskRank(type: WeatherType): Int = when (type) {
         WeatherType.CLEAR -> 0

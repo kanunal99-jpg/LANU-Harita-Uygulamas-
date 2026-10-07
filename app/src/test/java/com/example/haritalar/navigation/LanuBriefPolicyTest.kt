@@ -2,6 +2,8 @@ package com.example.haritalar.navigation
 
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.RouteOption
+import com.example.haritalar.model.PoiCategory
+import com.example.haritalar.model.PoiItem
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficLevel
@@ -82,4 +84,66 @@ class LanuBriefPolicyTest {
         assertEquals(LanuBriefStatus.PARTIAL, cameraItem.status)
         assertTrue(cameraItem.title.contains("1 sabit kamera"))
     }
+
+    @Test
+    fun summarizesVerifiedCriticalPoisWithoutInventingCoverage() {
+        val coverage = RouteCriticalPoiCoverage(
+            status = RouteDataCoverage.VERIFIED,
+            pois = listOf(
+                PoiItem("fuel", "Yakıt", PoiCategory.FUEL, GeoPoint(40.91, 29.25)),
+                PoiItem("hospital", "Hastane", PoiCategory.HOSPITAL, GeoPoint(40.91, 29.25)),
+                PoiItem("pharmacy", "Eczane", PoiCategory.PHARMACY, GeoPoint(40.91, 29.25))
+            ),
+            source = "OpenStreetMap / Overpass",
+            fetchedAtMillis = 1_000L,
+            sampleCount = 6,
+            maxSampleGapMeters = 8_000.0,
+            note = "Tam rota koridoru örneklendi."
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            criticalPoiCoverage = coverage
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CRITICAL_POI }
+
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertTrue(item.title.contains("3 kritik nokta"))
+        assertTrue(item.detail.contains("Yakıt 1"))
+        assertTrue(item.detail.contains("Şarj 0"))
+    }
+
+
+    @Test
+    fun verifiedRouteCameraCoverageIncludesNearestRouteDistance() {
+        val camera = SafetyCamera(id = 99L, point = GeoPoint(40.91, 29.25))
+        val coverage = RouteSafetyCameraCoverage(
+            status = RouteDataCoverage.VERIFIED,
+            cameras = listOf(camera),
+            source = "OpenStreetMap / Overpass",
+            fetchedAtMillis = 2_000L,
+            sampleCount = 3,
+            successfulSampleCount = 3,
+            maxSampleGapMeters = 8_000.0,
+            note = "Rota kamera örneklerinin tamamı doğrulandı."
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            routeCameraCoverage = coverage
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertTrue(item.title.contains("1 sabit kamera"))
+        assertTrue(item.detail.contains("En yakın kamera rota boyunca yaklaşık"))
+        assertTrue(item.detail.contains("3/3 kamera örneği"))
+    }
+
 }

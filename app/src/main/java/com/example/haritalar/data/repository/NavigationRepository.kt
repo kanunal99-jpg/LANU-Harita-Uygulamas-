@@ -9,6 +9,8 @@ import com.example.haritalar.data.db.SearchHistoryItem
 import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.haritalar.data.network.OsrmRoutingProvider
 import com.example.haritalar.data.network.PoiNetworkService
+import com.example.haritalar.data.network.RouteCriticalPoiFetchResult
+import com.example.haritalar.data.network.RouteCriticalPoiNetworkService
 import com.example.haritalar.data.network.TrafficSignalService
 import com.example.haritalar.data.network.ValhallaRoutingProvider
 import com.example.haritalar.data.offline.OfflineRouteCache
@@ -28,6 +30,10 @@ import com.example.haritalar.model.SearchResult
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.TrafficTestResult
+import com.example.haritalar.navigation.RouteCriticalPoiCoverage
+import com.example.haritalar.navigation.RouteCriticalPoiPolicy
+import com.example.haritalar.navigation.RouteDataCoverage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 
 enum class SavedPlaceResult {
@@ -62,6 +68,7 @@ class NavigationRepository(context: Context) {
 
     private val geocodingService = NominatimGeocodingService()
     private val poiService = PoiNetworkService()
+    private val routeCriticalPoiService = RouteCriticalPoiNetworkService()
     private val valhallaProvider = ValhallaRoutingProvider()
     private val osrmProvider = OsrmRoutingProvider()
 
@@ -162,6 +169,104 @@ class NavigationRepository(context: Context) {
             }
         }
         return emptyList()
+    }
+
+    suspend fun fetchCriticalPoisForRoute(route: RouteOption): RouteCriticalPoiCoverage {
+        val plan = RouteCriticalPoiPolicy.plan(route.geometry)
+            ?: return RouteCriticalPoiCoverage(
+                status = RouteDataCoverage.UNAVAILABLE,
+                pois = emptyList(),
+                source = "Rota geometrisi",
+                fetchedAtMillis = System.currentTimeMillis(),
+                sampleCount = 0,
+                maxSampleGapMeters = 0.0,
+                note = "Rota geometrisi kritik POI koridoru taraması için yetersiz."
+            )
+
+        return when (
+            val result = routeCriticalPoiService.fetch(
+                samplePoints = plan.points,
+                radiusMeters = RouteCriticalPoiPolicy.FETCH_RADIUS_METERS
+            )
+        ) {
+            is RouteCriticalPoiFetchResult.Success -> {
+                val filtered = RouteCriticalPoiPolicy.filterToCriticalRouteCorridor(
+                    route = route.geometry,
+                    candidates = result.pois
+                )
+                RouteCriticalPoiCoverage(
+                    status = if (plan.fullCoverage) RouteDataCoverage.VERIFIED else RouteDataCoverage.PARTIAL,
+                    pois = filtered,
+                    source = "OpenStreetMap / Overpass",
+                    fetchedAtMillis = result.fetchedAtMillis,
+                    sampleCount = plan.points.size,
+                    maxSampleGapMeters = plan.maxSampleGapMeters,
+                    note = if (plan.fullCoverage) {
+                        "Rota koridoru örnek aralıkları tam kapsama sınırı içinde."
+                    } else {
+                        "Uzun rota örnekleme üst sınırına ulaştı; kritik POI kapsamı kısmi."
+                    }
+                )
+            }
+
+            is RouteCriticalPoiFetchResult.Error -> {
+                val midpoint = plan.points[plan.points.size / 2]
+                val fallbackPois = mutableListOf<PoiItem>()
+                val fallbackQueries = listOf(
+                    PoiCategory.FUEL to "benzinlik",
+                    PoiCategory.HOSPITAL to "hastane",
+                    PoiCategory.PHARMACY to "eczane",
+                    PoiCategory.CHARGING_STATION to "şarj istasyonu"
+                )
+
+                for ((category, query) in fallbackQueries) {
+                    try {
+                        val response = searchProviderChain.executeSearch(query, midpoint)
+                        if (response is com.example.haritalar.model.SearchResponse.Success) {
+                            fallbackPois += response.results.take(25).map {
+                                PoiItem(
+                                    id = "route_fallback_${category.name}_${it.id}",
+                                    name = it.name,
+                                    category = category,
+                                    point = it.point,
+                                    address = it.shortAddress.ifBlank { it.displayName }
+                                )
+                            }
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // Continue to the remaining real fallback queries.
+                    }
+                }
+
+                val filteredFallback = RouteCriticalPoiPolicy.filterToCriticalRouteCorridor(
+                    route = route.geometry,
+                    candidates = fallbackPois
+                )
+                if (filteredFallback.isNotEmpty()) {
+                    RouteCriticalPoiCoverage(
+                        status = RouteDataCoverage.PARTIAL,
+                        pois = filteredFallback,
+                        source = "Arama sağlayıcısı fallback",
+                        fetchedAtMillis = System.currentTimeMillis(),
+                        sampleCount = 1,
+                        maxSampleGapMeters = plan.routeLengthMeters,
+                        note = "Overpass zinciri kullanılamadı; rota merkezi çevresindeki gerçek arama sonuçlarıyla kısmi fallback."
+                    )
+                } else {
+                    RouteCriticalPoiCoverage(
+                        status = RouteDataCoverage.UNAVAILABLE,
+                        pois = emptyList(),
+                        source = "OSM + arama fallback zinciri",
+                        fetchedAtMillis = System.currentTimeMillis(),
+                        sampleCount = 0,
+                        maxSampleGapMeters = plan.routeLengthMeters,
+                        note = "Kritik POI kaynakları doğrulanamadı; sıfır POI sonucu uydurulmuyor."
+                    )
+                }
+            }
+        }
     }
 
     suspend fun calculateRouteAlternatives(
