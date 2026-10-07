@@ -117,7 +117,7 @@ class ValhallaRoutingProvider(
             val request = Request.Builder()
                 .url("https://valhalla1.openstreetmap.de/route")
                 .post(requestBody)
-                .header("User-Agent", "HaritalarAndroidNav/1.0")
+                .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -240,7 +240,7 @@ class OsrmRoutingProvider(
                 "?overview=full&geometries=geojson&steps=true&alternatives=true"
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "HaritalarAndroidNav/1.0")
+                .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
                 .build()
 
             client.newCall(request).execute().use { response ->
