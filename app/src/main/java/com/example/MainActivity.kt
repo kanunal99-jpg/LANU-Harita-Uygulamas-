@@ -57,6 +57,7 @@ fun HaritalarNavigationApp(
     val favorites by viewModel.favorites.collectAsState()
     val recentSearches by viewModel.recentSearches.collectAsState()
     val safetyCameras by safetyCameraViewModel.cameras.collectAsState()
+    val routeCameraCoverage by safetyCameraViewModel.routeCoverage.collectAsState()
     
     val offlineDownloadProgress by viewModel.offlineMapManager.downloadProgress.collectAsState()
     val offlineDownloadMessage by viewModel.offlineMapManager.downloadMessage.collectAsState()
@@ -156,6 +157,15 @@ fun HaritalarNavigationApp(
         }
     }
 
+    LaunchedEffect(uiState.selectedRoute?.routeId) {
+        val route = uiState.selectedRoute
+        if (route != null && uiState.isSafetyCamerasLayerVisible) {
+            safetyCameraViewModel.prefetchForRoute(route)
+        } else {
+            safetyCameraViewModel.clearRoutePrefetch()
+        }
+    }
+
     LaunchedEffect(
         uiState.navigationState,
         uiState.userLocation?.point,
@@ -195,7 +205,8 @@ fun HaritalarNavigationApp(
         currentTrafficStatus,
         uiState.routeWeather,
         safetyCameras,
-        uiState.routeCriticalPoiCoverage
+        uiState.routeCriticalPoiCoverage,
+        routeCameraCoverage
     ) {
         uiState.selectedRoute?.let { route ->
             LanuBriefPolicy.build(
@@ -203,7 +214,8 @@ fun HaritalarNavigationApp(
                 traffic = currentTrafficStatus,
                 routeWeather = uiState.routeWeather,
                 loadedSafetyCameras = safetyCameras,
-                criticalPoiCoverage = uiState.routeCriticalPoiCoverage
+                criticalPoiCoverage = uiState.routeCriticalPoiCoverage,
+                routeCameraCoverage = routeCameraCoverage
             )
         }
     }
