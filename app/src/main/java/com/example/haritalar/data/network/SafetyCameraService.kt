@@ -49,11 +49,14 @@ class SafetyCameraService(
 
         val safeLimit = maxCameras.coerceIn(1, 500)
         val overpassQuery = """
-            [out:json][timeout:12];
+            [out:json][timeout:18];
+            node["highway"="speed_camera"](${bbox.south},${bbox.west},${bbox.north},${bbox.east})->.cams;
             (
-              node["highway"="speed_camera"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+              .cams;
+              way(around.cams:100)["highway"]["name"];
+              nwr(around.cams:80)["name"];
             );
-            out body $safeLimit;
+            out center ${safeLimit * 8};
         """.trimIndent()
 
         var lastError = "Bilinmeyen hata"
@@ -110,7 +113,14 @@ class SafetyCameraService(
      */
     @Suppress("UNCHECKED_CAST")
     fun parseOsmResponse(jsonString: String): List<SafetyCamera> {
-        val results = mutableListOf<SafetyCamera>()
+        data class ContextFeature(
+            val point: GeoPoint,
+            val name: String,
+            val isRoad: Boolean
+        )
+
+        val cameras = mutableListOf<SafetyCamera>()
+        val contextFeatures = mutableListOf<ContextFeature>()
         val seenIds = mutableSetOf<Long>()
 
         try {
@@ -119,43 +129,93 @@ class SafetyCameraService(
 
             for (rawElement in elements) {
                 val element = rawElement as? Map<*, *> ?: continue
-                if (element["type"] != "node") continue
+                val tagsObject = element["tags"] as? Map<*, *> ?: emptyMap<Any?, Any?>()
+                val type = element["type"]?.toString()
 
-                val tagsObject = element["tags"] as? Map<*, *> ?: continue
-                if (tagsObject["highway"] != "speed_camera") continue
+                val point = when (type) {
+                    "node" -> {
+                        val lat = numberAsDouble(element["lat"])
+                        val lon = numberAsDouble(element["lon"])
+                        if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
+                            GeoPoint(lat, lon)
+                        } else null
+                    }
+                    "way", "relation" -> {
+                        val center = element["center"] as? Map<*, *>
+                        val lat = numberAsDouble(center?.get("lat"))
+                        val lon = numberAsDouble(center?.get("lon"))
+                        if (lat != null && lon != null && lat in -90.0..90.0 && lon in -180.0..180.0) {
+                            GeoPoint(lat, lon)
+                        } else null
+                    }
+                    else -> null
+                } ?: continue
 
-                val id = numberAsLong(element["id"]) ?: continue
-                if (id <= 0L || !seenIds.add(id)) continue
+                if (type == "node" && tagsObject["highway"] == "speed_camera") {
+                    val id = numberAsLong(element["id"]) ?: continue
+                    if (id <= 0L || !seenIds.add(id)) continue
 
-                val lat = numberAsDouble(element["lat"])
-                val lon = numberAsDouble(element["lon"])
-                if (lat == null || lon == null || lat !in -90.0..90.0 || lon !in -180.0..180.0) {
+                    val tags = tagsObject.entries
+                        .mapNotNull { (key, value) ->
+                            val tagKey = key as? String ?: return@mapNotNull null
+                            val tagValue = value?.toString() ?: return@mapNotNull null
+                            tagKey to tagValue
+                        }
+                        .toMap()
+
+                    cameras += SafetyCamera(
+                        id = id,
+                        point = point,
+                        maxSpeed = tags["maxspeed"]?.takeIf { it.isNotBlank() },
+                        direction = tags["direction"]?.takeIf { it.isNotBlank() },
+                        operator = tags["operator"]?.takeIf { it.isNotBlank() },
+                        reference = (tags["ref"] ?: tags["reference"])?.takeIf { it.isNotBlank() },
+                        rawTags = tags
+                    )
                     continue
                 }
 
-                val tags = tagsObject.entries
-                    .mapNotNull { (key, value) ->
-                        val tagKey = key as? String ?: return@mapNotNull null
-                        val tagValue = value?.toString() ?: return@mapNotNull null
-                        tagKey to tagValue
-                    }
-                    .toMap()
+                val name = tagsObject["name"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: continue
+                val isRoad = tagsObject["highway"] != null
+                contextFeatures += ContextFeature(point = point, name = name, isRoad = isRoad)
+            }
 
-                results += SafetyCamera(
-                    id = id,
-                    point = GeoPoint(lat, lon),
-                    maxSpeed = tags["maxspeed"]?.takeIf { it.isNotBlank() },
-                    direction = tags["direction"]?.takeIf { it.isNotBlank() },
-                    operator = tags["operator"]?.takeIf { it.isNotBlank() },
-                    reference = (tags["ref"] ?: tags["reference"])?.takeIf { it.isNotBlank() },
-                    rawTags = tags
-                )
+            return cameras.map { camera ->
+                val nearestRoad = contextFeatures
+                    .asSequence()
+                    .filter { it.isRoad }
+                    .map { it to it.point.distanceTo(camera.point) }
+                    .filter { it.second <= 120.0 }
+                    .minByOrNull { it.second }
+                    ?.first
+                    ?.name
+
+                val nearestPlace = contextFeatures
+                    .asSequence()
+                    .filterNot { it.isRoad }
+                    .map { it to it.point.distanceTo(camera.point) }
+                    .filter { it.second <= 100.0 }
+                    .minByOrNull { it.second }
+                    ?.first
+                    ?.name
+
+                if (nearestRoad == null && nearestPlace == null) {
+                    camera
+                } else {
+                    camera.copy(
+                        rawTags = camera.rawTags +
+                            listOfNotNull(
+                                nearestRoad?.let { "lanu:nearby_road" to it },
+                                nearestPlace?.let { "lanu:nearby_place" to it }
+                            ).toMap()
+                    )
+                }
             }
         } catch (e: Exception) {
             Log.w(TAG, "Invalid speed-camera OSM response: ${e.message}")
         }
 
-        return results
+        return cameras
     }
 
     private fun numberAsLong(value: Any?): Long? = when (value) {
