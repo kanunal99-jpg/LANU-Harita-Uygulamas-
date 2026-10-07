@@ -960,8 +960,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun recenterMap() {
+        if (currentRoutingLocation() == null) {
+            locationManager.requestFreshLocation()
+            _uiState.value = _uiState.value.copy(
+                statusMessage = "Canlı GPS konumu yenileniyor..."
+            )
+        }
         _uiState.value = _uiState.value.copy(
-            mapTrackingMode = if (_uiState.value.navigationState == NavigationState.NAVIGATING) MapTrackingMode.FOLLOW_BEARING else MapTrackingMode.FOLLOW_USER
+            mapTrackingMode = if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+                MapTrackingMode.FOLLOW_BEARING
+            } else {
+                MapTrackingMode.FOLLOW_USER
+            }
         )
     }
     fun setFreeTrackingMode() { _uiState.value = _uiState.value.copy(mapTrackingMode = MapTrackingMode.FREE) }
