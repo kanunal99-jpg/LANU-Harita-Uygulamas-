@@ -8,7 +8,7 @@ import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
 enum class LanuBriefSeverity { INFO, NOTICE, WARNING, CRITICAL }
-enum class LanuBriefItemType { TRAFFIC, CAMERA, WEATHER, TOLL, FERRY, DATA_QUALITY }
+enum class LanuBriefItemType { TRAFFIC, CAMERA, WEATHER, CRITICAL_POI, TOLL, FERRY, DATA_QUALITY }
 
 data class LanuBriefItem(
     val type: LanuBriefItemType,
@@ -38,13 +38,15 @@ object LanuBriefPolicy {
         route: RouteOption,
         traffic: TrafficStatus?,
         routeWeather: List<WeatherCondition>,
-        loadedSafetyCameras: List<SafetyCamera>
+        loadedSafetyCameras: List<SafetyCamera>,
+        criticalPoiCoverage: RouteCriticalPoiCoverage? = null
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
         items += cameraItem(route, loadedSafetyCameras)
+        items += criticalPoiItem(criticalPoiCoverage)
 
         items += if (route.hasTolls) {
             LanuBriefItem(
@@ -185,6 +187,54 @@ object LanuBriefPolicy {
                 WeatherType.FOG, WeatherType.RAIN -> LanuBriefSeverity.NOTICE
                 WeatherType.CLEAR -> LanuBriefSeverity.INFO
             }
+        )
+    }
+
+    private fun criticalPoiItem(coverage: RouteCriticalPoiCoverage?): LanuBriefItem {
+        if (coverage == null) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CRITICAL_POI,
+                title = "Kritik POI taraması bekleniyor",
+                detail = "Benzinlik, hastane, eczane ve şarj noktaları rota koridorunda henüz doğrulanmadı.",
+                source = "OSM / rota POI zinciri",
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.INFO
+            )
+        }
+
+        if (coverage.status == RouteDataCoverage.UNAVAILABLE) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.CRITICAL_POI,
+                title = "Kritik POI verisi doğrulanamadı",
+                detail = coverage.note,
+                source = coverage.source,
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.NOTICE
+            )
+        }
+
+        val counts = RouteCriticalPoiPolicy.countsByCategory(coverage.pois)
+        val parts = listOf(
+            "Yakıt" to (counts[com.example.haritalar.model.PoiCategory.FUEL] ?: 0),
+            "Hastane" to (counts[com.example.haritalar.model.PoiCategory.HOSPITAL] ?: 0),
+            "Eczane" to (counts[com.example.haritalar.model.PoiCategory.PHARMACY] ?: 0),
+            "Şarj" to (counts[com.example.haritalar.model.PoiCategory.CHARGING_STATION] ?: 0)
+        )
+        val total = parts.sumOf { it.second }
+        val summary = parts.joinToString(" • ") { (label, count) -> "$label $count" }
+        val gapKm = String.format(java.util.Locale.US, "%.1f", coverage.maxSampleGapMeters / 1000.0)
+
+        return LanuBriefItem(
+            type = LanuBriefItemType.CRITICAL_POI,
+            title = if (total > 0) "$total kritik nokta rota koridorunda" else "Doğrulanan koridorda kritik POI bulunmadı",
+            detail = "$summary • ${coverage.sampleCount} rota örneği • maks. örnek aralığı $gapKm km. ${coverage.note}",
+            source = coverage.source,
+            status = when (coverage.status) {
+                RouteDataCoverage.VERIFIED -> LanuBriefStatus.VERIFIED
+                RouteDataCoverage.PARTIAL -> LanuBriefStatus.PARTIAL
+                RouteDataCoverage.UNAVAILABLE -> LanuBriefStatus.UNAVAILABLE
+            },
+            severity = if (coverage.status == RouteDataCoverage.PARTIAL) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
         )
     }
 
