@@ -141,6 +141,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
     private var routeCriticalPoiJob: Job? = null
+    private var routeWeatherJob: Job? = null
     private var liveShareJob: Job? = null
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
@@ -267,6 +268,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         routeCalculationJob?.cancel()
         routeCalculationJob = null
+        routeWeatherJob?.cancel()
+        routeCriticalPoiJob?.cancel()
         val invalidateGeneration = ++generationCounter
         _uiState.value = _uiState.value.copy(
             selectedDestination = null,
@@ -566,8 +569,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
-        viewModelScope.launch {
+        routeWeatherJob?.cancel()
+        routeWeatherJob = viewModelScope.launch {
             val weather = weatherRepository.getRouteWeather(route)
+            if (_uiState.value.selectedRoute?.routeId != route.routeId) return@launch
             _uiState.value = _uiState.value.copy(routeWeather = weather)
             checkWeatherProximity()
         }
@@ -673,6 +678,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
+                    fetchCriticalPoisForRoute(newRoute)
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -1286,6 +1293,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCalculationJob?.cancel()
         poiLoadJob?.cancel()
         poiViewportRefreshJob?.cancel()
+        routeWeatherJob?.cancel()
         routeCriticalPoiJob?.cancel()
         trafficSignalJob?.cancel()
         liveShareJob?.cancel()
