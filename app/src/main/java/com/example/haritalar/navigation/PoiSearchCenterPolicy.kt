@@ -9,6 +9,16 @@ import com.example.haritalar.model.TrafficSignalBoundingBox
  * Free-map browsing follows the visible viewport; follow modes prefer a live GPS point.
  */
 object PoiSearchCenterPolicy {
+    fun radiusMeters(
+        viewport: TrafficSignalBoundingBox?,
+        defaultMeters: Int = 8_000
+    ): Int {
+        val box = viewport?.takeIf { it.isValid() } ?: return defaultMeters
+        val center = GeoPoint((box.south + box.north) / 2.0, (box.west + box.east) / 2.0)
+        val corner = GeoPoint(box.north, box.east)
+        return center.distanceTo(corner).toInt().coerceIn(2_500, 20_000)
+    }
+
     fun resolve(
         trackingMode: MapTrackingMode,
         liveLocation: GeoPoint?,
