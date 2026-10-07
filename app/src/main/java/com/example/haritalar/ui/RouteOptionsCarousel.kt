@@ -73,12 +73,12 @@ fun RouteOptionsCarousel(
                         text = "Rota Alternatifleri (${routes.size})",
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = mainTextColor
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
                         text = "İstediğiniz rotayı seçip navigasyonu başlatın",
                         fontSize = 13.sp,
-                        color = mainTextColorVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
                 IconButton(
@@ -224,7 +224,7 @@ private fun RouteCard(
                 Text(
                     text = "• $km",
                     fontSize = 14.sp,
-                    color = mainTextColorVariant,
+                    color = secondaryTextColor,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
             }
