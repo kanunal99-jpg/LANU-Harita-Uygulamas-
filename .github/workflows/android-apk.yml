@@ -46,10 +46,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "sdkmanager: $(command -v sdkmanager)"
+          SDKMANAGER="${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/cmdline-tools" -type f -name sdkmanager 2>/dev/null | sort -V | tail -n 1)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager executable could not be located under ANDROID_HOME."
+            exit 1
+          fi
+          echo "sdkmanager: $SDKMANAGER"
+
           for attempt in 1 2 3; do
             echo "Android emulator SDK warm-up attempt ${attempt}/3"
-            if sdkmanager --install \
+            if "$SDKMANAGER" --install \
               emulator \
               'system-images;android-34;google_apis;x86_64' \
               --channel=0; then
