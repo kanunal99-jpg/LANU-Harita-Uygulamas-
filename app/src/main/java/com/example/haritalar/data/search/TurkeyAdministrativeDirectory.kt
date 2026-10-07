@@ -100,6 +100,20 @@ object TurkeyAdministrativeDirectory {
         "Zonguldak" to listOf("Alaplı", "Çaycuma", "Devrek", "Ereğli", "Gökçebey", "Kilimli", "Kozlu", "Merkez")
     )
 
+    private val districtIndex: Map<String, List<Pair<String, String>>> by lazy {
+        val index = linkedMapOf<String, MutableList<Pair<String, String>>>()
+        districtsByProvince.forEach { (province, districts) ->
+            districts.forEach { district ->
+                index.getOrPut(normalize(district)) { mutableListOf() }.add(province to district)
+            }
+        }
+        index
+    }
+
+    private val uniqueDistrictNames: List<String> by lazy {
+        districtIndex.values.mapNotNull { matches -> matches.singleOrNull()?.second }
+    }
+
     val provinces: List<String> get() = districtsByProvince.keys.toList()
 
     fun districtsForProvince(province: String): List<String> {
@@ -120,17 +134,15 @@ object TurkeyAdministrativeDirectory {
     fun findDistricts(candidate: String): List<Pair<String, String>> {
         val key = normalize(candidate)
         if (key.isBlank()) return emptyList()
-        return buildList {
-            districtsByProvince.forEach { (province, districts) ->
-                districts.firstOrNull { normalize(it) == key }?.let { add(province to it) }
-            }
-        }
+        return districtIndex[key].orEmpty()
     }
 
     fun containsDistrict(province: String, district: String): Boolean =
         resolveDistrict(province, district) != null
 
     fun allDistricts(): List<String> = districtsByProvince.values.flatten()
+
+    fun uniqueDistricts(): List<String> = uniqueDistrictNames
 
     fun uniqueProvinceForDistrict(district: String): Pair<String, String>? {
         val matches = findDistricts(district)
