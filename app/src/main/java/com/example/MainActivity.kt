@@ -197,6 +197,7 @@ fun HaritalarNavigationApp(
     val preDriveBrief = remember(
         uiState.selectedRoute,
         currentTrafficStatus,
+        currentTrafficSegments,
         uiState.routeWeather,
         safetyCameras
     ) {
@@ -205,7 +206,8 @@ fun HaritalarNavigationApp(
                 route = route,
                 traffic = currentTrafficStatus,
                 routeWeather = uiState.routeWeather,
-                loadedSafetyCameras = safetyCameras
+                loadedSafetyCameras = safetyCameras,
+                trafficSegments = currentTrafficSegments
             )
         }
     }
