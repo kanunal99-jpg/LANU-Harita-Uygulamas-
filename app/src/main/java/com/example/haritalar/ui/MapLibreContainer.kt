@@ -26,6 +26,7 @@ import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficSignal
 import com.example.haritalar.model.TrafficSignalBoundingBox
 import com.example.haritalar.model.TrafficStatus
+import com.example.haritalar.navigation.PoiViewportPolicy
 import com.example.haritalar.navigation.UserLocationData
 import org.json.JSONArray
 import org.json.JSONObject
@@ -100,6 +101,9 @@ fun MapLibreContainer(
     trafficSignals: List<TrafficSignal> = emptyList(),
     isPoiLayerVisible: Boolean,
     poiList: List<PoiItem>,
+    selectedPoiCategory: PoiCategory? = null,
+    currentViewportBbox: TrafficSignalBoundingBox? = null,
+    currentZoomLevel: Float = 0f,
     safetyCameras: List<SafetyCamera> = emptyList(),
     isSafetyCamerasLayerVisible: Boolean = true,
     routeWeather: List<com.example.haritalar.model.WeatherCondition> = emptyList(),
@@ -123,10 +127,30 @@ fun MapLibreContainer(
     val currentOnPoiClick by rememberUpdatedState(onPoiClick)
     val currentOnMapClick by rememberUpdatedState(onMapClick)
     val currentOnMapDrag by rememberUpdatedState(onMapDrag)
+    val visiblePois = remember(
+        poiList,
+        currentViewportBbox,
+        currentZoomLevel,
+        selectedPoiCategory,
+        isPoiLayerVisible
+    ) {
+        if (!isPoiLayerVisible ||
+            !PoiViewportPolicy.canQuery(currentZoomLevel, selectedPoiCategory)
+        ) {
+            emptyList()
+        } else {
+            PoiViewportPolicy.visiblePois(
+                pois = poiList,
+                bbox = currentViewportBbox,
+                zoomLevel = currentZoomLevel
+            )
+        }
+    }
+
     val currentTrafficSignals by rememberUpdatedState(trafficSignals)
     val currentSignalsVisible by rememberUpdatedState(isTrafficSignalsLayerVisible)
-    val currentPois by rememberUpdatedState(poiList)
-    val currentPoisVisible by rememberUpdatedState(isPoiLayerVisible)
+    val currentPois by rememberUpdatedState(visiblePois)
+    val currentPoisVisible by rememberUpdatedState(isPoiLayerVisible && visiblePois.isNotEmpty())
 
     remember { MapLibre.getInstance(context) }
     var mapInstance by remember { mutableStateOf<MapLibreMap?>(null) }
@@ -292,14 +316,25 @@ fun MapLibreContainer(
         }
     }
 
-    LaunchedEffect(isPoiLayerVisible, poiList, mapStyle) {
+    LaunchedEffect(isPoiLayerVisible, visiblePois, currentZoomLevel, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_POIS) ?: return@LaunchedEffect
         val layer = style.getLayer(LAYER_POIS)
-        if (!isPoiLayerVisible || poiList.isEmpty()) {
-            src.setGeoJson(createEmptyFeatureCollection()); layer?.setProperties(visibility(Property.NONE))
+        if (!isPoiLayerVisible || visiblePois.isEmpty()) {
+            src.setGeoJson(createEmptyFeatureCollection())
+            layer?.setProperties(visibility(Property.NONE))
         } else {
-            layer?.setProperties(visibility(Property.VISIBLE)); src.setGeoJson(createPoisGeoJson(poiList))
+            val scale = when {
+                currentZoomLevel >= 16f -> 1.0f
+                currentZoomLevel >= 14f -> 0.9f
+                currentZoomLevel >= 12f -> 0.78f
+                else -> 0.68f
+            }
+            layer?.setProperties(
+                visibility(Property.VISIBLE),
+                iconSize(scale)
+            )
+            src.setGeoJson(createPoisGeoJson(visiblePois))
         }
     }
 
