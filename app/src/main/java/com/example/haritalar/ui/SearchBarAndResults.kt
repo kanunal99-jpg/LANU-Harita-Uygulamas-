@@ -23,6 +23,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -48,6 +49,8 @@ fun SearchHeader(
     searchStatus: SearchUiStatus = SearchUiStatus.IDLE,
     searchErrorMessage: String? = null,
     searchActiveProvider: String? = null,
+    isSearchFocused: Boolean = false,
+    onSearchFocusChanged: (Boolean) -> Unit = {},
     onRetrySearch: () -> Unit = {},
     searchResults: List<SearchResult>,
     onSelectResult: (SearchResult) -> Unit,
@@ -110,6 +113,7 @@ fun SearchHeader(
                     ),
                     modifier = Modifier
                         .weight(1f)
+                        .onFocusChanged { onSearchFocusChanged(it.isFocused) }
                         .testTag("search_text_input")
                 )
 
@@ -140,8 +144,10 @@ fun SearchHeader(
 
         // Search Results / Empty State / Error State / Recent Searches
         AnimatedVisibility(
-            visible = searchQuery.trim().length >= 2 ||
-                    (searchQuery.isEmpty() && (recentSearches.isNotEmpty() || favorites.isNotEmpty())),
+            visible = isSearchFocused && (
+                    searchQuery.trim().length >= 2 ||
+                    (searchQuery.isEmpty() && (recentSearches.isNotEmpty() || favorites.isNotEmpty()))
+                ),
             enter = fadeIn(),
             exit = fadeOut()
         ) {
