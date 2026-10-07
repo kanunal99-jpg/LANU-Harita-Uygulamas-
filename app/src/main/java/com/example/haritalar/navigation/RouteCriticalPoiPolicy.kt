@@ -60,7 +60,9 @@ object RouteCriticalPoiPolicy {
             distanceSinceLast += remaining
         }
 
-        if (centers.last().distanceTo(route.last()) > safeSpacing * 0.35) {
+        // Destination coverage is mandatory: the final route segment may be
+        // shorter than the sampling spacing but still contain critical services.
+        if (centers.last().distanceTo(route.last()) > 1.0) {
             centers += route.last()
         }
 
