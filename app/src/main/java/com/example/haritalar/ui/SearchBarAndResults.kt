@@ -84,7 +84,7 @@ fun SearchHeader(
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = "Ara",
-                    tint = Color(0xFF007AFF),
+                    tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(24.dp)
                 )
 
@@ -95,7 +95,7 @@ fun SearchHeader(
                     onValueChange = onQueryChanged,
                     placeholder = {
                         Text(
-                            "Adres, cadde, mahalle veya mekan ara...",
+                            "Adres, işletme, cadde veya mekan ara...",
                             fontSize = 15.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )
@@ -119,7 +119,7 @@ fun SearchHeader(
                             .size(20.dp)
                             .testTag("search_loading_indicator"),
                         strokeWidth = 2.dp,
-                        color = Color(0xFF007AFF)
+                        color = MaterialTheme.colorScheme.primary
                     )
                 } else if (searchQuery.isNotEmpty()) {
                     IconButton(
@@ -213,7 +213,7 @@ fun SearchHeader(
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(18.dp),
                                     strokeWidth = 2.dp,
-                                    color = Color(0xFF007AFF)
+                                    color = MaterialTheme.colorScheme.primary
                                 )
                                 Spacer(modifier = Modifier.width(12.dp))
                                 Text(
@@ -307,7 +307,7 @@ fun SearchHeader(
                             Spacer(modifier = Modifier.height(12.dp))
                             Button(
                                 onClick = onRetrySearch,
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier
                                     .height(36.dp)
@@ -793,7 +793,7 @@ fun DestinationPreviewCard(
                     Icon(
                         imageVector = Icons.Default.AltRoute,
                         contentDescription = null,
-                        tint = Color(0xFF007AFF),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
@@ -801,13 +801,13 @@ fun DestinationPreviewCard(
                         "Rotalar",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF007AFF)
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
 
                 Button(
                     onClick = onStartNavigation,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                     shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .weight(1.3f)
@@ -930,7 +930,9 @@ private fun SavePlaceDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     listOf(
@@ -978,7 +980,7 @@ private fun CategoryChip(
 ) {
     Surface(
         shape = RoundedCornerShape(20.dp),
-        color = if (isSelected) Color(0xFF007AFF) else MaterialTheme.colorScheme.surface,
+        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface,
         contentColor = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface,
         shadowElevation = 3.dp,
         modifier = Modifier.clickable { onClick() }
@@ -991,7 +993,7 @@ private fun CategoryChip(
                 imageVector = icon,
                 contentDescription = title,
                 modifier = Modifier.size(16.dp),
-                tint = if (isSelected) Color.White else Color(0xFF007AFF)
+                tint = if (isSelected) Color.White else MaterialTheme.colorScheme.primary
             )
             Spacer(modifier = Modifier.width(6.dp))
             Text(
