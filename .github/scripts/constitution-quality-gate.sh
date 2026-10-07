@@ -53,5 +53,8 @@ fi
 test -s app/src/main/java/com/example/haritalar/navigation/PoiViewportPolicy.kt || fail "premium POI viewport/density policy eksik"
 test -s app/src/test/java/com/example/haritalar/navigation/PoiViewportPolicyTest.kt || fail "premium POI viewport regresyon testi eksik"
 
+grep -q 'Warm Android emulator SDK with retry' .github/workflows/android-apk.yml || fail "APK emulator SDK retry koruması eksik"
+grep -q 'Warm Android emulator SDK with retry' .github/workflows/pr-android-test.yml || fail "PR emulator SDK retry koruması eksik"
+
 echo "LANU constitution quality gate: PASS"
 
