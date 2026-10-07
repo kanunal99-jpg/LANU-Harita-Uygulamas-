@@ -4,7 +4,6 @@ import com.example.haritalar.data.traffic.TrafficRouteMatcher
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
-import kotlin.math.ceil
 
 enum class RouteDataCoverage {
     VERIFIED,
@@ -47,25 +46,16 @@ object RouteCriticalPoiPolicy {
     )
 
     fun plan(route: List<GeoPoint>): SamplingPlan? {
-        if (route.size < 2) return null
-        val total = routeLength(route)
-        if (total <= 1.0) return null
-
-        val desiredIntervals = ceil(total / MAX_FULL_SAMPLE_GAP_METERS).toInt().coerceAtLeast(1)
-        val sampleCount = (desiredIntervals + 1).coerceIn(2, MAX_SAMPLE_POINTS)
-        val gap = total / (sampleCount - 1)
-        val points = (0 until sampleCount).map { index ->
-            pointAtDistance(
-                route = route,
-                targetMeters = if (index == sampleCount - 1) total else gap * index
-            )
-        }
-
+        val generic = RouteSamplingPolicy.plan(
+            route = route,
+            maxFullSampleGapMeters = MAX_FULL_SAMPLE_GAP_METERS,
+            maxSamplePoints = MAX_SAMPLE_POINTS
+        ) ?: return null
         return SamplingPlan(
-            points = points,
-            routeLengthMeters = total,
-            maxSampleGapMeters = gap,
-            fullCoverage = gap <= MAX_FULL_SAMPLE_GAP_METERS + 1.0
+            points = generic.points,
+            routeLengthMeters = generic.routeLengthMeters,
+            maxSampleGapMeters = generic.maxSampleGapMeters,
+            fullCoverage = generic.fullCoverage
         )
     }
 
@@ -93,33 +83,5 @@ object RouteCriticalPoiPolicy {
             pois.count { it.category == category }
         }
 
-    private fun routeLength(route: List<GeoPoint>): Double {
-        var total = 0.0
-        for (index in 0 until route.lastIndex) {
-            total += route[index].distanceTo(route[index + 1])
-        }
-        return total
-    }
 
-    private fun pointAtDistance(route: List<GeoPoint>, targetMeters: Double): GeoPoint {
-        if (targetMeters <= 0.0) return route.first()
-        var traversed = 0.0
-
-        for (index in 0 until route.lastIndex) {
-            val start = route[index]
-            val end = route[index + 1]
-            val segment = start.distanceTo(end)
-            if (segment <= 0.0) continue
-
-            if (traversed + segment >= targetMeters) {
-                val fraction = ((targetMeters - traversed) / segment).coerceIn(0.0, 1.0)
-                return GeoPoint(
-                    latitude = start.latitude + ((end.latitude - start.latitude) * fraction),
-                    longitude = start.longitude + ((end.longitude - start.longitude) * fraction)
-                )
-            }
-            traversed += segment
-        }
-        return route.last()
-    }
 }
