@@ -5,6 +5,7 @@ import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
+import com.example.haritalar.model.WeatherDataMode
 import com.example.haritalar.model.WeatherType
 
 enum class RoadIntelligencePriority(val rank: Int) {
@@ -114,8 +115,12 @@ object RoadIntelligencePolicy {
                     WeatherType.CLEAR -> RoadIntelligencePriority.P3
                 },
                 title = condition.description.ifBlank { weatherLabel(condition.type) },
-                detail = "Rota üzerinde yaklaşan ${weatherLabel(condition.type)} koşulu",
-                source = "Open-Meteo"
+                detail = weatherEventDetail(condition),
+                source = when (condition.dataMode) {
+                    WeatherDataMode.ARRIVAL_FORECAST -> "Open-Meteo saatlik tahmin"
+                    WeatherDataMode.CURRENT_FALLBACK -> "Open-Meteo mevcut hava (fallback)"
+                },
+                distanceMeters = condition.routeDistanceMeters
             )
         }
 
@@ -161,6 +166,19 @@ object RoadIntelligencePolicy {
         } else {
             "$seconds sn"
         }
+
+    private fun weatherEventDetail(condition: WeatherCondition): String {
+        val parts = mutableListOf<String>()
+        condition.routeDistanceMeters?.let { distance ->
+            parts += formatDistance(distance)
+        }
+        condition.etaSecondsFromStart?.let { seconds ->
+            val minutes = ((seconds + 30L) / 60L).coerceAtLeast(0L)
+            parts += if (minutes == 0L) "şimdi" else "yaklaşık $minutes dk sonra"
+        }
+        parts += weatherLabel(condition.type)
+        return parts.joinToString(" • ")
+    }
 
     private fun weatherLabel(type: WeatherType): String = when (type) {
         WeatherType.CLEAR -> "açık hava"

@@ -6,6 +6,7 @@ import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
+import com.example.haritalar.model.WeatherDataMode
 import com.example.haritalar.model.WeatherType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -53,6 +54,31 @@ class RoadIntelligencePolicyTest {
         assertEquals(RoadIntelligencePriority.P0, events.first().priority)
         assertEquals(RoadIntelligenceType.CAMERA, events[1].type)
         assertEquals(RoadIntelligencePriority.P1, events[1].priority)
+    }
+
+    @Test
+    fun arrivalForecastWeatherCarriesDistanceEtaAndSource() {
+        val weather = WeatherCondition(
+            point = GeoPoint(40.91, 29.21),
+            type = WeatherType.RAIN,
+            description = "Yoğun yağış",
+            routeDistanceMeters = 12_500.0,
+            etaSecondsFromStart = 18 * 60L,
+            forecastEpochMillis = 1_800_000L,
+            dataMode = WeatherDataMode.ARRIVAL_FORECAST
+        )
+
+        val events = RoadIntelligencePolicy.build(
+            cameraWarning = null,
+            weather = weather,
+            traffic = null
+        )
+
+        val event = events.single()
+        assertEquals(RoadIntelligenceType.WEATHER, event.type)
+        assertEquals("Open-Meteo saatlik tahmin", event.source)
+        assertTrue(event.detail.contains("12.5 km"))
+        assertTrue(event.detail.contains("18 dk sonra"))
     }
 
     @Test

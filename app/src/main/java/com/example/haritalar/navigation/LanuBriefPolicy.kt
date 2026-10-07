@@ -5,6 +5,7 @@ import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
 import com.example.haritalar.model.WeatherCondition
+import com.example.haritalar.model.WeatherDataMode
 import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
@@ -177,29 +178,51 @@ object LanuBriefPolicy {
             )
         }
 
+        val fallbackCount = weather.count { it.dataMode == WeatherDataMode.CURRENT_FALLBACK }
+        val forecastCount = weather.size - fallbackCount
+        val weatherStatus = if (fallbackCount > 0) LanuBriefStatus.PARTIAL else LanuBriefStatus.VERIFIED
+        val weatherSource = when {
+            fallbackCount == 0 -> "Open-Meteo saatlik tahmin"
+            forecastCount == 0 -> "Open-Meteo mevcut hava (fallback)"
+            else -> "Open-Meteo saatlik tahmin + mevcut hava fallback"
+        }
+
         val risky = weather.filter { it.type != WeatherType.CLEAR }
         if (risky.isEmpty()) {
             return LanuBriefItem(
                 type = LanuBriefItemType.WEATHER,
                 title = "Önemli hava riski görünmüyor",
-                detail = "Open-Meteo tarafından örneklenen rota noktalarında yağmur, kar, sis veya fırtına işareti yok.",
-                source = "Open-Meteo",
-                status = LanuBriefStatus.VERIFIED
+                detail = "Rota üzerindeki örnek noktalar varış zamanlarına göre kontrol edildi.",
+                source = weatherSource,
+                status = weatherStatus,
+                severity = if (weatherStatus == LanuBriefStatus.PARTIAL) {
+                    LanuBriefSeverity.NOTICE
+                } else {
+                    LanuBriefSeverity.INFO
+                }
             )
         }
 
-        val worst = risky.maxByOrNull { weatherRiskRank(it.type) } ?: risky.first()
+        val worst = risky.sortedWith(
+            compareByDescending<WeatherCondition> { weatherRiskRank(it.type) }
+                .thenBy { it.routeDistanceMeters ?: Double.MAX_VALUE }
+        ).first()
         val counts = risky.groupingBy { it.type }.eachCount()
-        val detail = counts.entries
+        val riskSummary = counts.entries
             .sortedByDescending { weatherRiskRank(it.key) }
             .joinToString(" • ") { (type, count) -> "$count× ${weatherLabel(type)}" }
+        val position = formatWeatherPosition(worst)
+        val detail = listOfNotNull(
+            position.takeIf { it.isNotBlank() },
+            riskSummary.takeIf { it.isNotBlank() }
+        ).joinToString(" • ")
 
         return LanuBriefItem(
             type = LanuBriefItemType.WEATHER,
             title = worst.description,
-            detail = "$detail • rota örnek noktalarında",
-            source = "Open-Meteo",
-            status = LanuBriefStatus.VERIFIED,
+            detail = detail,
+            source = weatherSource,
+            status = weatherStatus,
             severity = when (worst.type) {
                 WeatherType.STORM -> LanuBriefSeverity.CRITICAL
                 WeatherType.SNOW -> LanuBriefSeverity.WARNING
@@ -207,6 +230,22 @@ object LanuBriefPolicy {
                 WeatherType.CLEAR -> LanuBriefSeverity.INFO
             }
         )
+    }
+
+    private fun formatWeatherPosition(condition: WeatherCondition): String {
+        val parts = mutableListOf<String>()
+        condition.routeDistanceMeters?.let { distance ->
+            parts += if (distance >= 1000.0) {
+                String.format(java.util.Locale.US, "%.1f km", distance / 1000.0)
+            } else {
+                "${distance.coerceAtLeast(0.0).toInt()} m"
+            }
+        }
+        condition.etaSecondsFromStart?.let { seconds ->
+            val minutes = ((seconds + 30L) / 60L).coerceAtLeast(0L)
+            parts += if (minutes == 0L) "başlangıçta" else "yaklaşık $minutes dk sonra"
+        }
+        return parts.joinToString(" • ")
     }
 
     private fun cameraItem(route: RouteOption, loadedCameras: List<SafetyCamera>): LanuBriefItem {

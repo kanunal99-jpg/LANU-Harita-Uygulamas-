@@ -42,6 +42,7 @@ import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
 import com.example.haritalar.navigation.VehicleHeadingState
+import com.example.haritalar.navigation.WeatherRequestGuard
 import com.example.haritalar.voice.TurkishTtsManager
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -134,6 +135,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private var searchJob: Job? = null
     private var routeCalculationJob: Job? = null
+    private var weatherJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
@@ -142,6 +144,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
     private var generationCounter = 1L
+    private var weatherGeneration = 0L
     private var trafficSignalGeneration = 0L
     private var poiGeneration = 0L
     private var lastPoiSearchCenter: GeoPoint? = null
@@ -264,6 +267,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
         routeCalculationJob?.cancel()
         routeCalculationJob = null
+        weatherJob?.cancel()
+        weatherJob = null
+        weatherGeneration++
         val invalidateGeneration = ++generationCounter
         _uiState.value = _uiState.value.copy(
             selectedDestination = null,
@@ -271,6 +277,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             trafficStatusMap = emptyMap(),
+            routeWeather = emptyList(),
+            approachingWeather = null,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -553,8 +561,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
-        viewModelScope.launch {
-            val weather = weatherRepository.getRouteWeather(route)
+        val requestGeneration = ++weatherGeneration
+        weatherJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            routeWeather = emptyList(),
+            approachingWeather = null
+        )
+        weatherJob = viewModelScope.launch {
+            val departureEpochMillis = System.currentTimeMillis()
+            val weather = weatherRepository.getRouteWeather(
+                route = route,
+                departureEpochMillis = departureEpochMillis
+            )
+            if (!WeatherRequestGuard.shouldApply(
+                    requestGeneration = requestGeneration,
+                    currentGeneration = weatherGeneration,
+                    requestedRouteId = route.routeId,
+                    currentRouteId = _uiState.value.selectedRoute?.routeId
+                )
+            ) {
+                return@launch
+            }
             _uiState.value = _uiState.value.copy(routeWeather = weather)
             checkWeatherProximity()
         }
@@ -612,6 +639,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun stopNavigation() {
         routeCalculationJob?.cancel()
         routeCalculationJob = null
+        weatherJob?.cancel()
+        weatherJob = null
+        weatherGeneration++
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
@@ -633,6 +663,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun handleOffRoute(currentPoint: GeoPoint) {
         routeCalculationJob?.cancel()
+        weatherJob?.cancel()
+        weatherJob = null
+        weatherGeneration++
+        _uiState.value = _uiState.value.copy(
+            routeWeather = emptyList(),
+            approachingWeather = null
+        )
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
         val genId = ++generationCounter
@@ -651,6 +688,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -1261,6 +1299,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     override fun onCleared() {
         super.onCleared()
         routeCalculationJob?.cancel()
+        weatherJob?.cancel()
         poiLoadJob?.cancel()
         poiViewportRefreshJob?.cancel()
         trafficSignalJob?.cancel()
