@@ -79,7 +79,7 @@ class OverpassBusinessSearchProvider(
               nwr["product"~"$regex",i](around:30000,${focusPoint.latitude},${focusPoint.longitude});
               $extraClauses
             );
-            out center tags 80;
+            out center 80;
         """.trimIndent()
 
         var lastError: Exception? = null
