@@ -77,10 +77,12 @@ private const val LAYER_VEHICLE_ARROW = "layer_vehicle_arrow"
 private const val ICON_VEHICLE_ARROW = "icon_vehicle_arrow"
 private const val SRC_DEST_MARKER = "src_dest_marker"
 private const val LAYER_DEST_MARKER = "layer_dest_marker"
+private const val ICON_DEST_MARKER = "icon_dest_marker"
 
 @Composable
 fun MapLibreContainer(
     userLocation: UserLocationData?,
+    isUserLocationReliable: Boolean = true,
     activeRoute: RouteOption?,
     alternativeRoutes: List<RouteOption>,
     trafficStatus: TrafficStatus?,
@@ -215,12 +217,21 @@ fun MapLibreContainer(
         }
     }
 
-    LaunchedEffect(userLocation, vehicleHeading, navigationState, mapStyle) {
+    LaunchedEffect(userLocation, isUserLocationReliable, vehicleHeading, navigationState, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_USER_LOC) ?: return@LaunchedEffect
         val navigating = navigationState == NavigationState.NAVIGATING
-        style.getLayer(LAYER_USER_LOC_PULSE)?.setProperties(visibility(if (navigating || userLocation == null) Property.NONE else Property.VISIBLE))
-        style.getLayer(LAYER_USER_LOC)?.setProperties(visibility(if (navigating || userLocation == null) Property.NONE else Property.VISIBLE))
+        val locationColor = if (isUserLocationReliable) Color.parseColor("#007AFF") else Color.parseColor("#64748B")
+        val pulseOpacity = if (isUserLocationReliable) 0.20f else 0.08f
+        style.getLayer(LAYER_USER_LOC_PULSE)?.setProperties(
+            visibility(if (navigating || userLocation == null) Property.NONE else Property.VISIBLE),
+            circleColor(locationColor),
+            circleOpacity(pulseOpacity)
+        )
+        style.getLayer(LAYER_USER_LOC)?.setProperties(
+            visibility(if (navigating || userLocation == null) Property.NONE else Property.VISIBLE),
+            circleColor(locationColor)
+        )
         style.getLayer(LAYER_VEHICLE_ARROW)?.setProperties(visibility(if (navigating && userLocation != null) Property.VISIBLE else Property.NONE))
         src.setGeoJson(if (userLocation != null) createUserLocationGeoJson(userLocation.point, vehicleHeading, navigating) else createEmptyFeatureCollection())
     }
@@ -319,8 +330,17 @@ private fun setupLayers(style: Style, context: Context) {
     style.addLayer(LineLayer(LAYER_ACTIVE_ROUTE, SRC_ACTIVE_ROUTE).apply { setProperties(lineColor(Color.parseColor("#007AFF")), lineWidth(6f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)) })
     style.addSource(GeoJsonSource(SRC_TRAFFIC, createEmptyFeatureCollection()))
     style.addLayer(LineLayer(LAYER_TRAFFIC, SRC_TRAFFIC).apply { setProperties(lineColor(get("color")), lineWidth(6f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND), visibility(Property.VISIBLE)) })
+    style.addImage(ICON_DEST_MARKER, createDestinationPinBitmap(context))
     style.addSource(GeoJsonSource(SRC_DEST_MARKER, createEmptyFeatureCollection()))
-    style.addLayer(CircleLayer(LAYER_DEST_MARKER, SRC_DEST_MARKER).apply { setProperties(circleRadius(9f), circleColor(Color.parseColor("#FF3B30")), circleStrokeWidth(3f), circleStrokeColor(Color.WHITE)) })
+    style.addLayer(SymbolLayer(LAYER_DEST_MARKER, SRC_DEST_MARKER).apply {
+        setProperties(
+            iconImage(ICON_DEST_MARKER),
+            iconAllowOverlap(true),
+            iconIgnorePlacement(true),
+            iconAnchor(Property.ICON_ANCHOR_BOTTOM),
+            iconSize(1.0f)
+        )
+    })
 
     val poiSrc = GeoJsonSource(SRC_POIS, createEmptyFeatureCollection())
     style.addSource(poiSrc)
@@ -453,6 +473,44 @@ private fun feature(body: JSONObject): JSONObject { body.put("type", "Feature");
 private fun featureCollection(features: JSONArray): String = JSONObject().apply { put("type", "FeatureCollection"); put("features", features) }.toString()
 private fun featureCollection(single: JSONObject): String = featureCollection(JSONArray().apply { put(single) })
 private fun createEmptyFeatureCollection(): String = "{\"type\":\"FeatureCollection\",\"features\":[]}"
+
+fun createDestinationPinBitmap(context: Context): Bitmap {
+    val d = context.resources.displayMetrics.density
+    val width = (44 * d).toInt().coerceAtLeast(52)
+    val height = (56 * d).toInt().coerceAtLeast(66)
+    val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val cx = width / 2f
+    val headCy = 19f * d
+    val radius = 14f * d
+
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.argb(55, 0, 0, 0)
+        canvas.drawCircle(cx, headCy + 2f * d, radius + 3f * d, it)
+    }
+
+    val pinPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#7C3AED") }
+    val pinPath = Path().apply {
+        moveTo(cx, height - 5f * d)
+        lineTo(cx - 10f * d, headCy + 8f * d)
+        lineTo(cx + 10f * d, headCy + 8f * d)
+        close()
+    }
+    canvas.drawPath(pinPath, pinPaint)
+    canvas.drawCircle(cx, headCy, radius, pinPaint)
+
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.WHITE
+        it.style = Paint.Style.STROKE
+        it.strokeWidth = 2.2f * d
+        canvas.drawCircle(cx, headCy, radius, it)
+    }
+    Paint(Paint.ANTI_ALIAS_FLAG).also {
+        it.color = Color.WHITE
+        canvas.drawCircle(cx, headCy, 5f * d, it)
+    }
+    return bitmap
+}
 
 fun createSafetyCameraBitmap(context: Context): Bitmap {
     val d = context.resources.displayMetrics.density
