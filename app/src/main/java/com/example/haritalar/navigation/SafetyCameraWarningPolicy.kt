@@ -1,24 +1,17 @@
 package com.example.haritalar.navigation
 
+import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import kotlin.math.ceil
 
 /** Pure safety-warning policy; never invents a speed limit or enforcement point. */
 object SafetyCameraWarningPolicy {
-    const val BASE_WARNING_DISTANCE_METERS = 20_000.0
-    const val MAX_WARNING_DISTANCE_METERS = 20_000.0
+    const val BASE_WARNING_DISTANCE_METERS = 5_000.0
+    const val MAX_WARNING_DISTANCE_METERS = 5_000.0
     const val WARNING_STEP_METERS = 500.0
-    const val CASCADE_START_DISTANCE_METERS = 5_000.0
 
-    private val ANNOUNCEMENT_MILESTONES_METERS = buildList {
-        add(250)
-        var distance = 500
-        while (distance <= CASCADE_START_DISTANCE_METERS.toInt()) {
-            add(distance)
-            distance += WARNING_STEP_METERS.toInt()
-        }
-        add(20_000)
-    }.distinct().sorted().toIntArray()
+    private val ANNOUNCEMENT_MILESTONES_METERS =
+        (500..5_000 step 500).toList().sorted().toIntArray()
 
     data class ProximityWarning(
         val camera: SafetyCamera,
@@ -30,6 +23,15 @@ object SafetyCameraWarningPolicy {
         val speedLimitKmh: Int?,
         val overspeed: Boolean
     )
+
+    fun nearest(
+        cameras: List<SafetyCamera>,
+        point: GeoPoint,
+        speedKmh: Float
+    ): ProximityWarning? {
+        val camera = cameras.minByOrNull { it.point.distanceTo(point) } ?: return null
+        return evaluate(camera, camera.point.distanceTo(point), speedKmh)
+    }
 
     fun evaluate(
         camera: SafetyCamera,
@@ -52,10 +54,7 @@ object SafetyCameraWarningPolicy {
         )
     }
 
-    /**
-     * Active navigation gets a 20 km early-warning horizon. Camera truthfulness comes
-     * from route filtering and source data, not from vehicle speed.
-     */
+    /** Driving voice alerts start only inside the final 5 km. */
     fun warningRadiusMeters(speedKmh: Float): Int = MAX_WARNING_DISTANCE_METERS.toInt()
 
     fun warningBucket(distanceMeters: Double): Int {
@@ -65,16 +64,12 @@ object SafetyCameraWarningPolicy {
     }
 
     /**
-     * Voice sequence:
-     * - early heads-up at 20 km
-     * - from 5 km down to 500 m, every 500 m
-     * - final 250 m warning
-     *
-     * A milestone key is announced only once per camera by the ViewModel.
+     * During driving, announce only 5.0 -> 4.5 -> ... -> 0.5 km.
+     * No 20 km / 10 km driving announcements: long-distance camera positions belong
+     * to the pre-drive route briefing.
      */
     fun announcementMilestone(distanceMeters: Double): Int? {
-        if (distanceMeters < 0.0 || distanceMeters > MAX_WARNING_DISTANCE_METERS) return null
-        if (distanceMeters == 0.0) return 0
+        if (distanceMeters <= 0.0 || distanceMeters > MAX_WARNING_DISTANCE_METERS) return null
         return ANNOUNCEMENT_MILESTONES_METERS.firstOrNull { distanceMeters <= it }
     }
 
