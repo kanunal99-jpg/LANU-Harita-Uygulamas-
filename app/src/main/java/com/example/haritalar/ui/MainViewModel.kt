@@ -39,6 +39,7 @@ import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.PoiViewportPolicy
 import com.example.haritalar.navigation.NavigationProgress
+import com.example.haritalar.navigation.RouteCriticalPoiCoverage
 import com.example.haritalar.navigation.UserLocationData
 import com.example.haritalar.navigation.VehicleHeadingManager
 import com.example.haritalar.navigation.VehicleHeadingState
@@ -105,6 +106,7 @@ data class MainUiState(
     val currentZoomLevel: Float = 0f,
     val isWeatherLayerVisible: Boolean = true,
     val routeWeather: List<com.example.haritalar.model.WeatherCondition> = emptyList(),
+    val routeCriticalPoiCoverage: RouteCriticalPoiCoverage? = null,
     val approachingWeather: com.example.haritalar.model.WeatherCondition? = null
 )
 
@@ -138,6 +140,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
+    private var routeCriticalPoiJob: Job? = null
     private var liveShareJob: Job? = null
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
@@ -455,6 +458,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 isLoadingRoutes = true,
                 activeGenerationId = genId,
                 routeWeather = emptyList(),
+                routeCriticalPoiCoverage = null,
                 statusMessage = "Rotalar hesaplanıyor..."
             )
 
@@ -473,7 +477,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
-                primaryRoute?.let { fetchWeatherForRoute(it) }
+                primaryRoute?.let {
+                    fetchWeatherForRoute(it)
+                    fetchCriticalPoisForRoute(it)
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -502,7 +509,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCalculationJob = viewModelScope.launch {
             _uiState.value = _uiState.value.copy(
                 isLoadingRoutes = true, activeGenerationId = genId,
-                routeOptions = emptyList(), selectedRoute = null, routeWeather = emptyList(),
+                routeOptions = emptyList(), selectedRoute = null, routeWeather = emptyList(), routeCriticalPoiCoverage = null,
                 statusMessage = "Rota hesaplanıyor..."
             )
             try {
@@ -533,6 +540,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     isLoadingRoutes = false, navigationState = NavigationState.ROUTE_SELECTION, statusMessage = null
                 )
                 fetchWeatherForRoute(route)
+                fetchCriticalPoisForRoute(route)
                 startNavigationInternal(route, latestLocation)
             } catch (e: CancellationException) {
                 throw e
@@ -548,8 +556,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun selectRoute(route: RouteOption) {
-        _uiState.value = _uiState.value.copy(selectedRoute = route)
+        _uiState.value = _uiState.value.copy(
+            selectedRoute = route,
+            routeWeather = emptyList(),
+            routeCriticalPoiCoverage = null
+        )
         fetchWeatherForRoute(route)
+        fetchCriticalPoisForRoute(route)
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
@@ -557,6 +570,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             val weather = weatherRepository.getRouteWeather(route)
             _uiState.value = _uiState.value.copy(routeWeather = weather)
             checkWeatherProximity()
+        }
+    }
+
+    private fun fetchCriticalPoisForRoute(route: RouteOption) {
+        routeCriticalPoiJob?.cancel()
+        routeCriticalPoiJob = viewModelScope.launch {
+            val coverage = repository.fetchCriticalPoisForRoute(route)
+            if (_uiState.value.selectedRoute?.routeId != route.routeId) return@launch
+            _uiState.value = _uiState.value.copy(routeCriticalPoiCoverage = coverage)
         }
     }
 
@@ -627,7 +649,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
-            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), approachingWeather = null
+            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), routeCriticalPoiCoverage = null, approachingWeather = null
         )
     }
 
@@ -926,6 +948,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             poiGeneration++
             poiLoadJob?.cancel()
             poiViewportRefreshJob?.cancel()
+        routeCriticalPoiJob?.cancel()
             _uiState.value = _uiState.value.copy(
                 isPoiLayerVisible = false,
                 poiList = emptyList(),
