@@ -5,11 +5,10 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -77,11 +76,11 @@ fun SearchHeader(
         modifier = modifier
             .fillMaxWidth()
             .statusBarsPadding()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
     ) {
         // Search Bar Box
         Surface(
-            shape = RoundedCornerShape(24.dp),
+            shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
             shadowElevation = 8.dp,
             modifier = Modifier
@@ -91,7 +90,7 @@ fun SearchHeader(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                    .padding(horizontal = 14.dp, vertical = 2.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Icon(
@@ -110,7 +109,9 @@ fun SearchHeader(
                         Text(
                             "Adres, işletme, cadde veya mekan ara...",
                             fontSize = 15.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     },
                     singleLine = true,
@@ -467,63 +468,39 @@ fun SearchHeader(
             }
         }
 
-        // Quick POI Category Chips
+        // Quick POI Category Chips — complete category set, responsive and unclipped.
         if (searchResults.isEmpty() && searchQuery.isEmpty()) {
-            Spacer(modifier = Modifier.height(10.dp))
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+            val quickCategories = listOf(
+                Triple(PoiCategory.FUEL, "Benzinlik", Icons.Default.LocalGasStation),
+                Triple(PoiCategory.PHARMACY, "Eczane", Icons.Default.LocalPharmacy),
+                Triple(PoiCategory.HOSPITAL, "Hastane", Icons.Default.LocalHospital),
+                Triple(PoiCategory.PARKING, "Otopark", Icons.Default.LocalParking),
+                Triple(PoiCategory.RESTAURANT, "Restoran", Icons.Default.Restaurant),
+                Triple(PoiCategory.MARKET, "Market", Icons.Default.ShoppingCart),
+                Triple(PoiCategory.CAFE, "Kafe", Icons.Default.LocalCafe),
+                Triple(PoiCategory.ATM, "ATM", Icons.Default.Atm),
+                Triple(PoiCategory.CHARGING_STATION, "Şarj", Icons.Default.EvStation)
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 2.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                CategoryChip(
-                    title = "Benzinlik",
-                    icon = Icons.Default.LocalGasStation,
-                    isSelected = selectedCategory == PoiCategory.FUEL,
-                    onClick = {
-                        onSelectCategory(if (selectedCategory == PoiCategory.FUEL) null else PoiCategory.FUEL)
-                    }
-                )
-                CategoryChip(
-                    title = "Eczane",
-                    icon = Icons.Default.LocalPharmacy,
-                    isSelected = selectedCategory == PoiCategory.PHARMACY,
-                    onClick = {
-                        onSelectCategory(if (selectedCategory == PoiCategory.PHARMACY) null else PoiCategory.PHARMACY)
-                    }
-                )
-                CategoryChip(
-                    title = "Hastane",
-                    icon = Icons.Default.LocalHospital,
-                    isSelected = selectedCategory == PoiCategory.HOSPITAL,
-                    onClick = {
-                        onSelectCategory(if (selectedCategory == PoiCategory.HOSPITAL) null else PoiCategory.HOSPITAL)
-                    }
-                )
-                CategoryChip(
-                    title = "Otopark",
-                    icon = Icons.Default.LocalParking,
-                    isSelected = selectedCategory == PoiCategory.PARKING,
-                    onClick = {
-                        onSelectCategory(if (selectedCategory == PoiCategory.PARKING) null else PoiCategory.PARKING)
-                    }
-                )
-                CategoryChip(
-                    title = "Restoran",
-                    icon = Icons.Default.Restaurant,
-                    isSelected = selectedCategory == PoiCategory.RESTAURANT,
-                    onClick = {
-                        onSelectCategory(if (selectedCategory == PoiCategory.RESTAURANT) null else PoiCategory.RESTAURANT)
-                    }
-                )
-                CategoryChip(
-                    title = "Şarj",
-                    icon = Icons.Default.EvStation,
-                    isSelected = selectedCategory == PoiCategory.CHARGING_STATION,
-                    onClick = {
-                        onSelectCategory(if (selectedCategory == PoiCategory.CHARGING_STATION) null else PoiCategory.CHARGING_STATION)
-                    }
-                )
+                items(
+                    items = quickCategories,
+                    key = { it.first.name }
+                ) { (category, title, icon) ->
+                    CategoryChip(
+                        title = title,
+                        icon = icon,
+                        isSelected = selectedCategory == category,
+                        onClick = {
+                            onSelectCategory(if (selectedCategory == category) null else category)
+                        }
+                    )
+                }
             }
         }
     }

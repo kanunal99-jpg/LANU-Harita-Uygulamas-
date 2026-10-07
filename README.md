@@ -2,11 +2,21 @@
 
 LANU Harita, Android için geliştirilen Türkçe navigasyon uygulamasıdır. Proje gerçek GPS, alternatif rota, MapLibre harita, trafik doğrulama, POI/adres arama, trafik ışıkları, sabit hız kamerası uyarıları, hava durumu, çevrimdışı harita/cache, Android foreground navigasyon ve canlı konum paylaşımı bileşenlerini içerir.
 
-**Güncel uygulama sürümü:** 1.1.1 (versionCode 3)
+**Güncel uygulama sürümü:** 1.1.6 (versionCode 8)
 
 ## Ürün doğruluğu
 
 Bu repoda ürün gerçeği **ANAYASA.md** ile yönetilir. Temel kural: kaynakta doğrulanmayan bilgi gerçekmiş gibi gösterilmez.
+
+### Premium doğruluk omurgası
+
+- Türkiye yerel idari dizini: 81 il / 973 ilçe; arama parser'ı sınırlı bir "önemli ilçeler" listesine bağlı değildir.
+- İstanbul'un 39 ilçesi Avrupa/Anadolu yakası olarak ayrı doğrulama tablosunda tutulur.
+- Aynı isimli ama farklı konumdaki işletmeler arama sonuçlarında yanlışlıkla birleştirilmez.
+- OSRM alternatifleri sıraya bakılarak "En Kısa" veya "Ücretsiz" diye etiketlenmez.
+- Ücret/feribot bilgisi doğrulanmamışsa UI bunu kesin bilgi gibi göstermez.
+- Reroute sonrası hava ve trafik yaşam döngüsü yeni rotaya taşınır; eski rota verisinin geri yazması engellenir.
+- POI sorgu yarıçapı serbest harita kullanımında görünür alana göre 4–20 km arasında uyarlanır.
 
 ### Konum / navigasyon
 

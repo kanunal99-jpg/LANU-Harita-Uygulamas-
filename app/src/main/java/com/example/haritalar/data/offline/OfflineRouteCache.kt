@@ -6,6 +6,7 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.LaneDirection
 import com.example.haritalar.model.LaneInfo
 import com.example.haritalar.model.ManeuverType
+import com.example.haritalar.model.RouteAttributeStatus
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.TurnManeuver
@@ -75,6 +76,8 @@ class OfflineRouteCache(context: Context) {
         .put("distanceMeters", route.distanceMeters)
         .put("hasTolls", route.hasTolls)
         .put("hasFerry", route.hasFerry)
+        .put("tollStatus", route.tollStatus.name)
+        .put("ferryStatus", route.ferryStatus.name)
         .put("routeType", route.routeType.name)
         .put("trafficDelaySeconds", route.trafficDelaySeconds)
         .put("geometry", JSONArray().also { array -> route.geometry.forEach { array.put(pointJson(it)) } })
@@ -130,6 +133,16 @@ class OfflineRouteCache(context: Context) {
             maneuvers = maneuvers,
             hasTolls = json.optBoolean("hasTolls"),
             hasFerry = json.optBoolean("hasFerry"),
+            tollStatus = runCatching {
+                RouteAttributeStatus.valueOf(json.optString("tollStatus"))
+            }.getOrElse {
+                if (json.optBoolean("hasTolls")) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN
+            },
+            ferryStatus = runCatching {
+                RouteAttributeStatus.valueOf(json.optString("ferryStatus"))
+            }.getOrElse {
+                if (json.optBoolean("hasFerry")) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN
+            },
             routeType = routeType,
             trafficDelaySeconds = 0L,
             generationId = generationId

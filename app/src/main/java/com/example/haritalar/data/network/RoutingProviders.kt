@@ -1,7 +1,9 @@
 package com.example.haritalar.data.network
 
+import com.example.haritalar.data.repository.RouteTruthPolicy
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.ManeuverType
+import com.example.haritalar.model.RouteAttributeStatus
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.TurnManeuver
@@ -115,7 +117,7 @@ class ValhallaRoutingProvider(
             val request = Request.Builder()
                 .url("https://valhalla1.openstreetmap.de/route")
                 .post(requestBody)
-                .header("User-Agent", "HaritalarAndroidNav/1.0")
+                .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -127,6 +129,8 @@ class ValhallaRoutingProvider(
                 val totalTime = summary.optLong("time", 0)
                 val totalLengthKm = summary.optDouble("length", 0.0)
                 val distanceMeters = totalLengthKm * 1000.0
+                val hasTollField = summary.has("has_toll")
+                val hasFerryField = summary.has("has_ferry")
                 val hasToll = summary.optBoolean("has_toll", false)
                 val hasFerry = summary.optBoolean("has_ferry", false)
                 val legs = trip.optJSONArray("legs") ?: return null
@@ -168,10 +172,21 @@ class ValhallaRoutingProvider(
                     }
                 }
 
-                val routeId = "valhalla_${routeType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
+                val tollStatus = when {
+                    !hasTollField -> RouteAttributeStatus.UNKNOWN
+                    hasToll -> RouteAttributeStatus.PRESENT
+                    else -> RouteAttributeStatus.ABSENT
+                }
+                val ferryStatus = when {
+                    !hasFerryField -> RouteAttributeStatus.UNKNOWN
+                    hasFerry -> RouteAttributeStatus.PRESENT
+                    else -> RouteAttributeStatus.ABSENT
+                }
+                val verifiedType = RouteTruthPolicy.verifiedRouteType(routeType, tollStatus, ferryStatus)
+                val routeId = "valhalla_${verifiedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                 return RouteOption(
                     routeId = routeId,
-                    title = routeType.displayName,
+                    title = verifiedType.displayName,
                     summary = maneuvers.firstOrNull { it.roadName.isNotEmpty() }?.roadName ?: "En uygun rota",
                     durationSeconds = totalTime,
                     distanceMeters = distanceMeters,
@@ -179,7 +194,9 @@ class ValhallaRoutingProvider(
                     maneuvers = maneuvers,
                     hasTolls = hasToll,
                     hasFerry = hasFerry,
-                    routeType = routeType,
+                    tollStatus = tollStatus,
+                    ferryStatus = ferryStatus,
+                    routeType = verifiedType,
                     generationId = generationId
                 )
             }
@@ -223,7 +240,7 @@ class OsrmRoutingProvider(
                 "?overview=full&geometries=geojson&steps=true&alternatives=true"
             val request = Request.Builder()
                 .url(url)
-                .header("User-Agent", "HaritalarAndroidNav/1.0")
+                .header("User-Agent", "LANUHaritaAndroidNav/1.1.6")
                 .build()
 
             client.newCall(request).execute().use { response ->
@@ -232,16 +249,6 @@ class OsrmRoutingProvider(
                 val root = JSONObject(body)
                 val routesArray = root.optJSONArray("routes") ?: return@withContext emptyList()
                 val results = mutableListOf<RouteOption>()
-                val routeTypes = listOf(
-                    RouteType.FASTEST,
-                    RouteType.SHORTEST,
-                    RouteType.TOLL_FREE,
-                    RouteType.FASTEST_TOLL,
-                    RouteType.NO_FERRY,
-                    RouteType.WITH_FERRY,
-                    RouteType.TOLL_AND_FERRY_FREE
-                )
-
                 for (i in 0 until routesArray.length()) {
                     val r = routesArray.getJSONObject(i)
                     val duration = r.optDouble("duration", 0.0).toLong()
@@ -300,11 +307,13 @@ class OsrmRoutingProvider(
                         }
                     }
 
-                    val assignedType = routeTypes.getOrElse(i) { RouteType.FASTEST }
+                    // OSRM alternatives do not certify "shortest", "toll-free" or
+                    // "ferry-free" semantics merely by response order. Keep labels neutral.
+                    val assignedType = RouteTruthPolicy.osrmType(i)
                     val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                     results.add(RouteOption(
                         routeId = routeId,
-                        title = assignedType.displayName,
+                        title = RouteTruthPolicy.osrmTitle(i),
                         summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
                         durationSeconds = duration,
                         distanceMeters = distance,
@@ -312,6 +321,8 @@ class OsrmRoutingProvider(
                         maneuvers = maneuvers,
                         hasTolls = hasToll,
                         hasFerry = hasFerry,
+                        tollStatus = RouteTruthPolicy.positiveOnlyStatus(hasToll),
+                        ferryStatus = RouteTruthPolicy.positiveOnlyStatus(hasFerry),
                         routeType = assignedType,
                         generationId = generationId
                     ))

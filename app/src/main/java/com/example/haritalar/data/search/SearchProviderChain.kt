@@ -6,7 +6,6 @@ import com.example.haritalar.model.SearchResponse
 import com.example.haritalar.model.SearchResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 /**
  * Resilient multi-provider search chain:
@@ -119,7 +118,7 @@ class SearchProviderChain(
         }
 
         if (collectedResults.isNotEmpty()) {
-            val deduplicated = deduplicateResults(collectedResults)
+            val deduplicated = SearchResultDeduplicator.deduplicate(collectedResults)
             val ranked = SearchRankingEvaluator.rankAndEvaluateResults(deduplicated, parsedQuery, focusPoint)
             cacheProvider.put(trimmed, ranked)
             return@withContext SearchResponse.Success(ranked, activeProviderName)
@@ -213,19 +212,4 @@ class SearchProviderChain(
         )
     }
 
-    private fun deduplicateResults(results: List<SearchResult>): List<SearchResult> {
-        val unique = mutableListOf<SearchResult>()
-        for (item in results) {
-            val isDuplicate = unique.any { existing ->
-                val closeCoordinates = abs(existing.point.latitude - item.point.latitude) < 0.0002 &&
-                        abs(existing.point.longitude - item.point.longitude) < 0.0002
-                val sameName = existing.name.equals(item.name, ignoreCase = true)
-                closeCoordinates || sameName
-            }
-            if (!isDuplicate) {
-                unique.add(item)
-            }
-        }
-        return unique
-    }
 }

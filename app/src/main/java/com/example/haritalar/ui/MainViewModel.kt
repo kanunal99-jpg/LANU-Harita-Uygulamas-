@@ -36,6 +36,8 @@ import com.example.haritalar.navigation.DestinationSnapPolicy
 import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
+import com.example.haritalar.navigation.NavigationRefreshPolicy
+import com.example.haritalar.navigation.PoiSearchAreaPolicy
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
@@ -133,6 +135,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var routeCalculationJob: Job? = null
     private var trafficRefreshJob: Job? = null
+    private var weatherJob: Job? = null
+    private var weatherGeneration = 0L
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
@@ -271,6 +275,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
+            routeWeather = emptyList(),
+            approachingWeather = null,
             statusMessage = null
         )
     }
@@ -369,7 +375,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             isLoadingRoutes = false,
-            navigationState = NavigationState.IDLE
+            navigationState = NavigationState.IDLE,
+            routeWeather = emptyList(),
+            approachingWeather = null
         )
     }
 
@@ -391,6 +399,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             navigationState = NavigationState.IDLE,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
+            routeWeather = emptyList(),
+            approachingWeather = null,
             statusMessage = null
         )
     }
@@ -467,8 +477,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     trafficStatusMap = trafficMap,
                     navigationState = if (routes.isNotEmpty()) NavigationState.ROUTE_SELECTION else NavigationState.IDLE,
                     isLoadingRoutes = false,
+                    routeWeather = emptyList(),
+                    approachingWeather = null,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
+                primaryRoute?.let { fetchWeatherForRoute(it) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -546,9 +559,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
-        viewModelScope.launch {
+        val requestId = ++weatherGeneration
+        weatherJob?.cancel()
+        weatherJob = viewModelScope.launch {
             val weather = weatherRepository.getRouteWeather(route)
-            _uiState.value = _uiState.value.copy(routeWeather = weather)
+            if (requestId != weatherGeneration || _uiState.value.selectedRoute?.routeId != route.routeId) {
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(
+                routeWeather = weather,
+                approachingWeather = null
+            )
             checkWeatherProximity()
         }
     }
@@ -594,6 +615,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isWrongWay = depGuidance.isWrongWay,
             statusMessage = null
         )
+        fetchWeatherForRoute(route)
         navigationEngine.startNavigation(route)
         NavigationForegroundService.start(
             getApplication(),
@@ -611,6 +633,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
+        weatherJob?.cancel()
+        weatherGeneration++
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
@@ -620,6 +644,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
+            routeWeather = emptyList(), approachingWeather = null,
             isWrongWay = false, isLoadingRoutes = false
         )
     }
@@ -641,9 +666,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val newRoute = routes.first()
                     _uiState.value = _uiState.value.copy(
                         routeOptions = routes, selectedRoute = newRoute, trafficStatusMap = trafficMap,
-                        navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
+                        navigationState = NavigationState.NAVIGATING,
+                        routeWeather = emptyList(), approachingWeather = null,
+                        statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
+                    startPeriodicTrafficRefresh()
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -743,12 +772,27 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startPeriodicTrafficRefresh() {
         trafficRefreshJob?.cancel()
         trafficRefreshJob = viewModelScope.launch {
-            while (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+            while (true) {
+                val stateBeforeDelay = _uiState.value.navigationState
+                if (!NavigationRefreshPolicy.shouldKeepTrafficLoopAlive(stateBeforeDelay)) break
+
                 delay(60_000L)
+
+                if (!NavigationRefreshPolicy.shouldRefreshTrafficNow(_uiState.value.navigationState)) {
+                    if (NavigationRefreshPolicy.shouldKeepTrafficLoopAlive(_uiState.value.navigationState)) continue
+                    break
+                }
+
                 val currentRoute = _uiState.value.selectedRoute ?: break
                 val genId = _uiState.value.activeGenerationId
-                val result = repository.trafficCoordinator.requestRefresh(routes = listOf(currentRoute), generationId = genId)
-                if (result != null && genId == _uiState.value.activeGenerationId) {
+                val result = repository.trafficCoordinator.requestRefresh(
+                    routes = listOf(currentRoute),
+                    generationId = genId
+                )
+                if (result != null &&
+                    genId == _uiState.value.activeGenerationId &&
+                    _uiState.value.selectedRoute?.routeId == currentRoute.routeId
+                ) {
                     val (updatedRoutes, updatedMap) = result
                     val updated = updatedRoutes.firstOrNull()
                     if (updated != null) {
@@ -959,6 +1003,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val radiusMeters = PoiSearchAreaPolicy.radiusMeters(
+            trackingMode = _uiState.value.mapTrackingMode,
+            center = center,
+            viewport = _uiState.value.currentViewportBbox
+        )
         val generation = ++poiGeneration
         lastPoiSearchCenter = center
         poiLoadJob?.cancel()
@@ -967,7 +1016,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 poiList = emptyList(),
                 statusMessage = "İlgi noktaları yükleniyor..."
             )
-            val pois = repository.fetchPois(center, category)
+            val pois = repository.fetchPois(center, category, radiusMeters)
             if (generation != poiGeneration || _uiState.value.selectedPoiCategory != category) {
                 return@launch
             }

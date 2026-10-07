@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.haritalar.navtr"
     minSdk = 24
     targetSdk = 36
-    versionCode = 7
-    versionName = "1.1.5"
+    versionCode = 8
+    versionName = "1.1.6"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     buildConfigField("String", "TOMTOM_API_KEY", "\"${project.findProperty("TOMTOM_API_KEY") ?: System.getenv("TOMTOM_API_KEY") ?: ""}\"")
@@ -27,7 +27,7 @@ android {
       val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
       storeFile = file(keystorePath)
       storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
+      keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
       keyPassword = System.getenv("KEY_PASSWORD")
     }
     create("debugConfig") {
