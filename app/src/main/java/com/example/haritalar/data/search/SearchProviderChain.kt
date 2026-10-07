@@ -20,8 +20,8 @@ import kotlin.math.abs
  * relevance ranking.
  */
 class SearchProviderChain(
-    val primaryProvider: SearchProvider = NominatimSearchProvider(),
-    val alternativeProvider: SearchProvider = PhotonSearchProvider(),
+    val primaryProvider: SearchProvider = PhotonSearchProvider(),
+    val alternativeProvider: SearchProvider = NominatimSearchProvider(),
     val cacheProvider: CacheSearchProvider = CacheSearchProvider(),
     val businessProvider: SearchProvider = OverpassBusinessSearchProvider()
 ) {
@@ -47,7 +47,7 @@ class SearchProviderChain(
 
         val verifiedEntries = VerifiedPlaceDirectory.findMatches(trimmed)
         for (entry in verifiedEntries) {
-            val resolved = resolveVerifiedPlace(entry)
+            val resolved = resolveVerifiedPlace(entry, allowAlternativeForwardGeocoder)
             if (resolved != null) {
                 collectedResults += resolved
                 usedVerifiedDirectory = true
@@ -76,10 +76,12 @@ class SearchProviderChain(
             }
         }
 
-        val shouldQueryAlternative = primaryExceptionOccurred ||
+        val shouldQueryAlternative = allowAlternativeForwardGeocoder && (
+                primaryExceptionOccurred ||
                 collectedResults.isEmpty() ||
                 businessIntent ||
                 (parsedQuery.isBuildingLevelRequested && !hasVerifiedBuildingInPrimary)
+            )
 
         if (shouldQueryAlternative) {
             for (q in queryVariations) {
