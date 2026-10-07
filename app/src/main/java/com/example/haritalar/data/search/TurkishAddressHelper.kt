@@ -16,6 +16,7 @@ data class ParsedAddressQuery(
     val neighborhood: String? = null,
     val street: String? = null,
     val houseNumber: String? = null,
+    val postalCode: String? = null,
     val poiOrKeyword: String? = null,
     val isBuildingLevelRequested: Boolean = false
 )
@@ -121,6 +122,7 @@ object TurkishAddressHelper {
             return ParsedAddressQuery(rawQuery = "")
         }
 
+        val purePostalCode = trimmed.takeIf { it.matches(Regex("^\\d{5}$")) }
         var working = standardizeAddressQuery(trimmed)
         var detectedHouseNumber: String? = null
         var detectedProvince: String? = null
@@ -196,8 +198,9 @@ object TurkishAddressHelper {
             working = working.replace(streetMatch.value, " ").trim()
         }
 
-        // 6. If house number is still not found, check if a standalone trailing number exists at the end of query
-        if (detectedHouseNumber == null) {
+        // 6. If house number is still not found, check if a standalone trailing number exists at the end of query.
+        // A pure 5-digit Turkish postcode is NOT a house number.
+        if (detectedHouseNumber == null && purePostalCode == null) {
             val standaloneNumRegex = Regex("(?i)\\b([0-9]+(?:[/-][a-zA-Z0-9]+|[a-zA-Z])?)\\s*$")
             val endNumMatch = standaloneNumRegex.find(trimmed)
             if (endNumMatch != null) {
@@ -253,6 +256,7 @@ object TurkishAddressHelper {
             neighborhood = detectedNeighborhood,
             street = detectedStreet,
             houseNumber = detectedHouseNumber,
+            postalCode = purePostalCode,
             poiOrKeyword = remainingKeyword,
             isBuildingLevelRequested = hasHouseNum
         )
@@ -268,6 +272,11 @@ object TurkishAddressHelper {
 
         val parsed = parseAddressQuery(trimmed)
         val results = mutableListOf<String>()
+
+        if (parsed.postalCode != null) {
+            results.add(parsed.postalCode)
+            results.add("${parsed.postalCode} Türkiye")
+        }
 
         // 1. If house number and street are parsed, construct specific building queries
         if (parsed.street != null && parsed.houseNumber != null) {

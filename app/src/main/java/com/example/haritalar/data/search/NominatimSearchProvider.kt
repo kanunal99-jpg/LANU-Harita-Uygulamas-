@@ -31,26 +31,8 @@ class NominatimSearchProvider(
         val trimmed = query.trim()
         if (trimmed.length < 2) return@withContext emptyList()
 
-        val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
-        val urlBuilder = StringBuilder("https://nominatim.openstreetmap.org/search?")
-            .append("q=").append(encodedQuery)
-            .append("&format=json")
-            .append("&addressdetails=1")
-            .append("&limit=15")
-            .append("&accept-language=tr,en")
-            .append("&countrycodes=tr")
-
-        if (focusPoint != null) {
-            val minLon = focusPoint.longitude - 0.8
-            val maxLon = focusPoint.longitude + 0.8
-            val minLat = focusPoint.latitude - 0.8
-            val maxLat = focusPoint.latitude + 0.8
-            urlBuilder.append("&viewbox=").append("$minLon,$maxLat,$maxLon,$minLat")
-            urlBuilder.append("&bounded=0")
-        }
-
         val request = Request.Builder()
-            .url(urlBuilder.toString())
+            .url(buildSearchUrl(trimmed, focusPoint))
             .header("User-Agent", "LANUHaritaAndroidNav/1.0")
             .build()
 
@@ -103,6 +85,34 @@ class NominatimSearchProvider(
             }
             results
         }
+    }
+
+    internal fun buildSearchUrl(query: String, focusPoint: GeoPoint?): String {
+        val trimmed = query.trim()
+        val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
+        val isPostalCode = trimmed.matches(Regex("^\\d{5}$"))
+        val urlBuilder = StringBuilder("https://nominatim.openstreetmap.org/search?")
+        if (isPostalCode) {
+            urlBuilder.append("postalcode=").append(encodedQuery)
+        } else {
+            urlBuilder.append("q=").append(encodedQuery)
+        }
+        urlBuilder
+            .append("&format=json")
+            .append("&addressdetails=1")
+            .append("&limit=15")
+            .append("&accept-language=tr,en")
+            .append("&countrycodes=tr")
+
+        if (focusPoint != null && !isPostalCode) {
+            val minLon = focusPoint.longitude - 0.8
+            val maxLon = focusPoint.longitude + 0.8
+            val minLat = focusPoint.latitude - 0.8
+            val maxLat = focusPoint.latitude + 0.8
+            urlBuilder.append("&viewbox=").append("$minLon,$maxLat,$maxLon,$minLat")
+            urlBuilder.append("&bounded=0")
+        }
+        return urlBuilder.toString()
     }
 
     override suspend fun reverseGeocode(point: GeoPoint): String? = withContext(Dispatchers.IO) {

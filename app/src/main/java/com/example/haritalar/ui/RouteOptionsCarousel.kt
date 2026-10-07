@@ -2,14 +2,16 @@ package com.example.haritalar.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +38,14 @@ fun RouteOptionsCarousel(
     modifier: Modifier = Modifier
 ) {
     if (routes.isEmpty()) return
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(selectedRoute?.routeId, routes.map { it.routeId }) {
+        val selectedIndex = routes.indexOfFirst { it.routeId == selectedRoute?.routeId }
+        if (selectedIndex >= 0) {
+            listState.animateScrollToItem(selectedIndex)
+        }
+    }
 
     Surface(
         shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
@@ -85,18 +95,19 @@ fun RouteOptionsCarousel(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Horizontal Scroll of Route Cards
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp),
+            // Lazy horizontal list keeps the selected route fully visible.
+            LazyRow(
+                state = listState,
+                modifier = Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                routes.forEach { route ->
+                itemsIndexed(
+                    items = routes,
+                    key = { _, route -> route.routeId }
+                ) { _, route ->
                     val isSelected = route.routeId == selectedRoute?.routeId
-                    val trafficPair = trafficMap[route.routeId]
-                    val trafficStatus = trafficPair?.first
+                    val trafficStatus = trafficMap[route.routeId]?.first
 
                     RouteCard(
                         route = route,
@@ -112,7 +123,7 @@ fun RouteOptionsCarousel(
             // Start Navigation Primary Action Button
             Button(
                 onClick = onStartNavigation,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF007AFF)),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -127,9 +138,11 @@ fun RouteOptionsCarousel(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = "Navigasyonu Başlat (${selectedRoute?.title ?: "En Hızlı"})",
+                    text = "Navigasyonu Başlat",
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 15.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }
@@ -149,13 +162,18 @@ private fun RouteCard(
 
     val etaDate = Date(System.currentTimeMillis() + (totalSeconds * 1000L))
     val etaStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(etaDate)
+    val mainTextColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer
+        else MaterialTheme.colorScheme.onSurface
+    val secondaryTextColor = if (isSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.78f)
+        else MaterialTheme.colorScheme.onSurfaceVariant
 
     Surface(
         shape = RoundedCornerShape(18.dp),
-        color = if (isSelected) Color(0xFFF0F7FF) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        color = if (isSelected) MaterialTheme.colorScheme.primaryContainer
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
         border = BorderStroke(
             width = if (isSelected) 2.dp else 1.dp,
-            color = if (isSelected) Color(0xFF007AFF) else Color.Transparent
+            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
         ),
         modifier = Modifier
             .width(220.dp)
@@ -173,13 +191,13 @@ private fun RouteCard(
                     text = route.title,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = if (isSelected) Color(0xFF007AFF) else MaterialTheme.colorScheme.onSurface
+                    color = mainTextColor
                 )
                 if (isSelected) {
                     Icon(
                         imageVector = Icons.Default.CheckCircle,
                         contentDescription = "Seçili",
-                        tint = Color(0xFF007AFF),
+                        tint = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.size(18.dp)
                     )
                 }
@@ -193,20 +211,20 @@ private fun RouteCard(
                     text = "$mins",
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Black,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = mainTextColor
                 )
                 Text(
                     text = " dk",
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
+                    color = mainTextColor,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
                     text = "• $km",
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = secondaryTextColor,
                     modifier = Modifier.padding(bottom = 2.dp)
                 )
             }
@@ -214,7 +232,7 @@ private fun RouteCard(
             Text(
                 text = "Varış: $etaStr",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = secondaryTextColor
             )
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -223,7 +241,7 @@ private fun RouteCard(
             Text(
                 text = route.summary.ifEmpty { "Doğrudan güzergâh" },
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = secondaryTextColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )

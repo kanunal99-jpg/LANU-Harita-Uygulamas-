@@ -87,6 +87,16 @@ object SearchRankingEvaluator {
                 }
             }
 
+            // Exact postal-code match has high relevance for pure 5-digit searches.
+            if (!parsedQuery.postalCode.isNullOrBlank()) {
+                val resultPostalCode = details?.postalCode?.trim()
+                if (resultPostalCode == parsedQuery.postalCode) {
+                    score += 7000
+                } else if (result.displayName.contains(parsedQuery.postalCode)) {
+                    score += 4500
+                }
+            }
+
             // Province match
             if (!parsedQuery.province.isNullOrBlank()) {
                 val queryProvNorm = TurkishAddressHelper.normalizeTurkish(parsedQuery.province)

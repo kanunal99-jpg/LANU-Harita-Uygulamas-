@@ -1,5 +1,6 @@
 package com.example.haritalar.navigation
 
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -40,6 +41,33 @@ class NavigationLocationPolicyTest {
                 location(accuracyMeters = NavigationLocationPolicy.MAX_ACCURACY_METERS + 0.1f),
                 now
             )
+        )
+    }
+
+
+    @Test
+    fun readinessExplainsWhyRoutingIsBlocked() {
+        assertEquals(
+            NavigationLocationPolicy.Readiness.MISSING,
+            NavigationLocationPolicy.readiness(null, now)
+        )
+        assertEquals(
+            NavigationLocationPolicy.Readiness.STALE,
+            NavigationLocationPolicy.readiness(
+                location(timestamp = now - NavigationLocationPolicy.MAX_LOCATION_AGE_MILLIS - 1L),
+                now
+            )
+        )
+        assertEquals(
+            NavigationLocationPolicy.Readiness.INACCURATE,
+            NavigationLocationPolicy.readiness(
+                location(accuracyMeters = NavigationLocationPolicy.MAX_ACCURACY_METERS + 1f),
+                now
+            )
+        )
+        assertEquals(
+            NavigationLocationPolicy.Readiness.READY,
+            NavigationLocationPolicy.readiness(location(), now)
         )
     }
 
