@@ -39,13 +39,14 @@ object LanuBriefPolicy {
         traffic: TrafficStatus?,
         routeWeather: List<WeatherCondition>,
         loadedSafetyCameras: List<SafetyCamera>,
-        criticalPoiCoverage: RouteCriticalPoiCoverage? = null
+        criticalPoiCoverage: RouteCriticalPoiCoverage? = null,
+        routeCameraCoverage: RouteSafetyCameraCoverage? = null
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
-        items += cameraItem(route, loadedSafetyCameras)
+        items += cameraItem(route, loadedSafetyCameras, routeCameraCoverage)
         items += criticalPoiItem(criticalPoiCoverage)
 
         items += if (route.hasTolls) {
@@ -238,7 +239,70 @@ object LanuBriefPolicy {
         )
     }
 
-    private fun cameraItem(route: RouteOption, loadedCameras: List<SafetyCamera>): LanuBriefItem {
+    private fun cameraItem(
+        route: RouteOption,
+        loadedCameras: List<SafetyCamera>,
+        routeCoverage: RouteSafetyCameraCoverage?
+    ): LanuBriefItem {
+        if (routeCoverage != null) {
+            val status = when (routeCoverage.status) {
+                RouteDataCoverage.VERIFIED -> LanuBriefStatus.VERIFIED
+                RouteDataCoverage.PARTIAL -> LanuBriefStatus.PARTIAL
+                RouteDataCoverage.UNAVAILABLE -> LanuBriefStatus.UNAVAILABLE
+            }
+            if (routeCoverage.status == RouteDataCoverage.UNAVAILABLE) {
+                return LanuBriefItem(
+                    type = LanuBriefItemType.CAMERA,
+                    title = "Rota kamera verisi doğrulanamadı",
+                    detail = routeCoverage.note,
+                    source = routeCoverage.source,
+                    status = LanuBriefStatus.UNAVAILABLE,
+                    severity = LanuBriefSeverity.NOTICE
+                )
+            }
+
+            val nearestMeters = routeCoverage.cameras
+                .mapNotNull { SafetyCameraRouteFilterPolicy.routeProgressMeters(it.point, route.geometry) }
+                .minOrNull()
+            val nearestText = nearestMeters?.let {
+                if (it >= 1000.0) {
+                    String.format(java.util.Locale.US, "%.1f km", it / 1000.0)
+                } else {
+                    "${it.toInt()} m"
+                }
+            }
+            val gapKm = String.format(
+                java.util.Locale.US,
+                "%.1f",
+                routeCoverage.maxSampleGapMeters / 1000.0
+            )
+            val detail = buildString {
+                if (nearestText != null) {
+                    append("En yakın kamera rota boyunca yaklaşık $nearestText ileride. ")
+                }
+                append(
+                    "${routeCoverage.successfulSampleCount}/${routeCoverage.sampleCount} kamera örneği • " +
+                        "maks. örnek aralığı $gapKm km. ${routeCoverage.note}"
+                )
+            }
+            return LanuBriefItem(
+                type = LanuBriefItemType.CAMERA,
+                title = if (routeCoverage.cameras.isEmpty()) {
+                    "Doğrulanan rota koridorunda sabit kamera bulunmadı"
+                } else {
+                    "${routeCoverage.cameras.size} sabit kamera rota koridorunda"
+                },
+                detail = detail,
+                source = routeCoverage.source,
+                status = status,
+                severity = if (routeCoverage.cameras.isNotEmpty()) {
+                    LanuBriefSeverity.NOTICE
+                } else {
+                    LanuBriefSeverity.INFO
+                }
+            )
+        }
+
         val start = route.geometry.firstOrNull()
         if (start == null || route.geometry.size < 2) {
             return LanuBriefItem(
