@@ -34,3 +34,10 @@ Canlı trafik sağlayıcısının seçili rota için doğruladığı yol kapanı
 - Cache’den dönen segment canlı trafik olarak doğrulanmaz.
 - Cache trafik harita sürekliliği için korunabilir ancak ETA’ya canlı gecikme olarak eklenmez.
 - Cache’deki `roadClosure=true` değeri P0 canlı kapanış uyarısı üretmez.
+
+
+## LANU Brief entegrasyonu
+
+- Doğrulanmış canlı kapanış navigasyon başlamadan önce LANU Brief içinde CRITICAL olarak gösterilir.
+- Cache kapanışı sürüş öncesi kesin kapanış olarak gösterilmez.
+- Böylece kullanıcı kapalı yola girmeden önce alternatif rotayı değerlendirebilir.
