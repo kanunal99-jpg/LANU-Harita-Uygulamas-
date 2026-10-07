@@ -238,7 +238,8 @@ data class TrafficSegment(
     val freeFlowSpeed: Double,
     val delaySeconds: Long,
     val confidence: Double = 1.0,
-    val roadClosure: Boolean = false
+    val roadClosure: Boolean = false,
+    val fromCache: Boolean = false
 )
 
 data class TrafficStatus(
