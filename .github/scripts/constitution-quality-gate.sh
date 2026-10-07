@@ -67,6 +67,8 @@ grep -q "roadClosure" app/src/test/java/com/example/haritalar/navigation/RoadInt
 grep -q "fromCache" app/src/main/java/com/example/haritalar/model/NavigationModels.kt || fail "trafik cache provenance modeli eksik"
 grep -q "cachedSegments_neverClaimLiveTraffic" app/src/test/java/com/example/haritalar/data/traffic/TrafficRouteCostModelTest.kt || fail "cached trafik canlı doğrulama regresyon testi eksik"
 grep -q "cachedClosureNeverBecomesP0" app/src/test/java/com/example/haritalar/navigation/RoadIntelligencePolicyTest.kt || fail "cached kapanış P0 regresyon testi eksik"
+grep -q "ROAD_CLOSURE" app/src/main/java/com/example/haritalar/navigation/LanuBriefPolicy.kt || fail "LANU Brief yol kapanışı özeti eksik"
+grep -q "verifiedRoadClosureAppearsAsCriticalPreDriveWarning" app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "LANU Brief yol kapanışı regresyon testi eksik"
 
 echo "LANU constitution quality gate: PASS"
 
