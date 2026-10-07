@@ -12,8 +12,8 @@ test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
 grep -q 'ANA SERVİS.*ALTERNATİF.*GERÇEK FALLBACK' ANAYASA.md || fail "kritik zincir standardı Anayasa'da bulunamadı"
-grep -q 'versionName = "1.1.7"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.7 değil"
-grep -q 'versionCode = 9' app/build.gradle.kts || fail "beklenen Android versionCode 9 değil"
+grep -q 'versionName = "1.1.8"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.8 değil"
+grep -q 'versionCode = 10' app/build.gradle.kts || fail "beklenen Android versionCode 10 değil"
 grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml || fail "uygulama backup güvenlik kuralı kapalı değil"
 grep -q 'android:foregroundServiceType="location"' app/src/main/AndroidManifest.xml || fail "aktif navigasyon location foreground service bildirimi eksik"
 grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' app/src/main/AndroidManifest.xml || fail "foreground location permission eksik"
@@ -55,6 +55,10 @@ test -s app/src/test/java/com/example/haritalar/navigation/PoiViewportPolicyTest
 
 grep -q 'Warm Android emulator SDK with retry' .github/workflows/android-apk.yml || fail "APK emulator SDK retry koruması eksik"
 grep -q 'Warm Android emulator SDK with retry' .github/workflows/pr-android-test.yml || fail "PR emulator SDK retry koruması eksik"
+
+test -s app/src/main/java/com/example/haritalar/navigation/LanuBriefPolicy.kt || fail "LANU Brief policy eksik"
+test -s app/src/main/java/com/example/haritalar/ui/LanuBriefCard.kt || fail "LANU Brief UI eksik"
+test -s app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "LANU Brief veri dürüstlüğü testi eksik"
 
 echo "LANU constitution quality gate: PASS"
 
