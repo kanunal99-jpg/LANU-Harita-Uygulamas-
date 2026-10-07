@@ -118,6 +118,15 @@ class TrafficSignalRepository(
         }
     }
 
+    fun visibleSignalsForViewport(
+        signals: List<TrafficSignal>,
+        bbox: TrafficSignalBoundingBox,
+        zoomLevel: Float
+    ): List<TrafficSignal> {
+        if (zoomLevel < MIN_ZOOM_FOR_SIGNALS || !bbox.isValid()) return emptyList()
+        return deduplicateSignals(signals.filter { bbox.contains(it.point) })
+    }
+
     /**
      * Deduplicates a list of traffic signals by OSM node id.
      */

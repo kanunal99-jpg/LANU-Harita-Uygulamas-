@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.haritalar.model.NavigationState
+import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
@@ -233,7 +234,8 @@ fun HaritalarNavigationApp(
                 trafficStatus = currentTrafficStatus,
                 trafficSegments = currentTrafficSegments,
                 isTrafficLayerVisible = uiState.isTrafficLayerVisible,
-                isTrafficSignalsLayerVisible = uiState.isTrafficSignalsLayerVisible,
+                isTrafficSignalsLayerVisible = uiState.isTrafficSignalsLayerVisible &&
+                        uiState.currentZoomLevel >= TrafficSignalRepository.MIN_ZOOM_FOR_SIGNALS,
                 trafficSignals = uiState.trafficSignals,
                 isPoiLayerVisible = uiState.isPoiLayerVisible,
                 poiList = uiState.poiList,
@@ -266,6 +268,9 @@ fun HaritalarNavigationApp(
                 },
                 onTrafficSignalClick = { signal ->
                     viewModel.selectTrafficSignal(signal)
+                },
+                onPoiClick = { poi ->
+                    viewModel.selectPoi(poi)
                 },
                 modifier = Modifier.fillMaxSize()
             )
