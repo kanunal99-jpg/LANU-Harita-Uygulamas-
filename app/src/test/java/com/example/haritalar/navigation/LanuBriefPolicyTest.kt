@@ -146,4 +146,60 @@ class LanuBriefPolicyTest {
         assertTrue(item.detail.contains("3/3 kamera örneği"))
     }
 
+
+    @Test
+    fun everyVerifiedBriefRowRetainsSourceFreshness() {
+        val timestamp = 1_700_000_000_000L
+        val traffic = TrafficStatus(
+            verified = true,
+            message = "Akıcı",
+            delaySeconds = 0,
+            trafficLevel = TrafficLevel.LOW,
+            sourceName = "Test Traffic",
+            isLiveApi = true,
+            lastCheckTimestamp = timestamp
+        )
+        val weather = listOf(
+            WeatherCondition(
+                point = route.geometry[1],
+                type = WeatherType.CLEAR,
+                description = "Açık"
+            )
+        )
+        val poiCoverage = RouteCriticalPoiCoverage(
+            status = RouteDataCoverage.VERIFIED,
+            pois = emptyList(),
+            source = "OpenStreetMap / Overpass",
+            fetchedAtMillis = timestamp,
+            sampleCount = 6,
+            maxSampleGapMeters = 8_000.0,
+            note = "Tam rota koridoru örneklendi."
+        )
+        val cameraCoverage = RouteSafetyCameraCoverage(
+            status = RouteDataCoverage.VERIFIED,
+            cameras = emptyList(),
+            source = "OpenStreetMap / Overpass",
+            fetchedAtMillis = timestamp,
+            sampleCount = 3,
+            successfulSampleCount = 3,
+            maxSampleGapMeters = 8_000.0,
+            note = "Rota kamera örneklerinin tamamı doğrulandı."
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = traffic,
+            routeWeather = weather,
+            loadedSafetyCameras = emptyList(),
+            criticalPoiCoverage = poiCoverage,
+            routeCameraCoverage = cameraCoverage,
+            routeDataUpdatedAtMillis = timestamp,
+            routeWeatherUpdatedAtMillis = timestamp
+        )
+
+        assertTrue(brief.items.isNotEmpty())
+        assertTrue(brief.items.all { it.source.isNotBlank() })
+        assertTrue(brief.items.all { (it.updatedAtMillis ?: 0L) > 0L })
+    }
+
 }
