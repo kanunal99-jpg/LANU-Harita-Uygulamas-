@@ -136,6 +136,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
+    private var weatherJob: Job? = null
     private var liveShareJob: Job? = null
     private var liveShareSession: LiveSharingClient.Session? = null
     private val liveSharingClient = LiveSharingClient(BuildConfig.LIVE_SHARE_BASE_URL)
@@ -151,7 +152,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             locationManager.userLocation.collect { loc ->
                 if (loc != null) {
                     val headingState = vehicleHeadingManager.processLocation(loc)
-                    if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+                    if (_uiState.value.navigationState == NavigationState.NAVIGATING &&
+                        NavigationLocationPolicy.isUsableForRouting(loc)
+                    ) {
                         val progress = navigationEngine.processLocationUpdate(loc)
                         val wrongWay = vehicleHeadingManager.evaluateWrongWay(
                             currentHeading = headingState.heading,
@@ -176,6 +179,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             navigationProgress = progress,
                             departureGuidance = currentDep,
                             isWrongWay = wrongWay
+                        )
+                    } else if (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+                        // Keep showing the raw weak fix, but never feed an unusable fix into
+                        // snapping/off-route/wrong-way logic.
+                        _uiState.value = _uiState.value.copy(
+                            userLocation = loc.copy(bearing = headingState.heading),
+                            vehicleHeadingState = headingState,
+                            isWrongWay = false
                         )
                     } else {
                         _uiState.value = _uiState.value.copy(
@@ -321,7 +332,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 searchErrorMessage = null
             )
             delay(300L)
-            val focus = _uiState.value.userLocation?.point
+            val focus = PoiSearchCenterPolicy.resolve(
+                trackingMode = _uiState.value.mapTrackingMode,
+                liveLocation = currentRoutingLocation()?.point,
+                viewport = _uiState.value.currentViewportBbox
+            )
             val response = repository.searchPlacesResponse(query, focus)
 
             if (currentGen == searchGenerationId) {
@@ -546,8 +561,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
-        viewModelScope.launch {
+        weatherJob?.cancel()
+        weatherJob = viewModelScope.launch {
             val weather = weatherRepository.getRouteWeather(route)
+            if (_uiState.value.selectedRoute?.routeId != route.routeId) return@launch
             _uiState.value = _uiState.value.copy(routeWeather = weather)
             checkWeatherProximity()
         }
@@ -595,6 +612,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             statusMessage = null
         )
         navigationEngine.startNavigation(route)
+        fetchWeatherForRoute(route)
         NavigationForegroundService.start(
             getApplication(),
             _uiState.value.selectedDestination?.displayName
@@ -611,6 +629,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
+        weatherJob?.cancel()
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
@@ -620,7 +639,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
-            isWrongWay = false, isLoadingRoutes = false
+            isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(),
+            approachingWeather = null
         )
     }
 
@@ -644,6 +664,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
+                    startPeriodicTrafficRefresh()
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -666,8 +688,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun handleArrival(summary: TripSummary) {
         NavigationForegroundService.stop(getApplication())
+        val correctedSummary = summary.copy(
+            destinationAddress = _uiState.value.selectedDestination?.displayName
+                ?.takeIf { it.isNotBlank() }
+                ?: summary.destinationAddress
+        )
         _uiState.value = _uiState.value.copy(
-            navigationState = NavigationState.ARRIVED, tripSummary = summary, statusMessage = "Hedefinize ulaştınız!"
+            navigationState = NavigationState.ARRIVED,
+            tripSummary = correctedSummary,
+            statusMessage = "Hedefinize ulaştınız!"
         )
     }
 
@@ -967,7 +996,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 poiList = emptyList(),
                 statusMessage = "İlgi noktaları yükleniyor..."
             )
-            val pois = repository.fetchPois(center, category)
+            val radius = PoiSearchCenterPolicy.radiusMeters(_uiState.value.currentViewportBbox)
+            val pois = repository.fetchPois(center, category, radiusMeters = radius)
             if (generation != poiGeneration || _uiState.value.selectedPoiCategory != category) {
                 return@launch
             }
@@ -1207,6 +1237,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCalculationJob?.cancel()
         poiLoadJob?.cancel()
         poiViewportRefreshJob?.cancel()
+        weatherJob?.cancel()
         trafficSignalJob?.cancel()
         liveShareJob?.cancel()
         liveShareSession = null
