@@ -4,6 +4,15 @@ Bu belge üretimde gerçekten desteklenen yetenekleri ve bilinçli ürün sını
 
 ## Uygulanmış / CI ile doğrulanan yetenekler
 
+- Türkiye idari arama referansı yerelde 81 il / 973 ilçe içerir; ilçe ayrıştırması sınırlı örnek listesine bağlı değildir.
+- İstanbul'un 39 ilçesi Avrupa/Anadolu yakası olarak ayrı doğrulama tablosunda tutulur.
+- Arama deduplication aynı isimli uzak işletmeleri korur; yalnızca aynı fiziksel yer olduğuna dair konum+isim kanıtı varsa birleştirir.
+- Rota UI'sı ücret/feribot bilgisi bilinmiyorsa bunu "yok" gibi sunmaz; OSRM alternatiflerine cevap sırasından sahte "En Kısa/Ücretsiz" anlamı yüklenmez.
+- Valhalla kısıtlı rota isteği ancak provider cevabı kısıtı doğruluyorsa "Ücretsiz/Feribotsuz" etiketi taşır.
+- Reroute sonrası hava verisi yeni rota için yeniden alınır; eski async hava cevabı yeni rotayı ezemez.
+- Periyodik trafik worker'ı reroute state'inde yaşamaya devam eder ancak eski rota üzerinde refresh yapmaz.
+- POI kapsama yarıçapı serbest harita gezintisinde görünür alanla birlikte 4–20 km arasında uyarlanır.
+- GitHub Release pipeline'ı güvenli signing secret'ları sağlandığında production-signed release APK üretmeyi destekler; secret yoksa debug artifact açıkça debug olarak kalır.
 - Gerçek GPS zorunluluğu; uydurma konum fallback’i yok.
 - GPS freshness/accuracy ve fiziksel sıçrama filtresi.
 - Adaptif GPS sampling: hareket halinde 1 sn / 2 m, idle durumda 4 sn / 8 m; 8 km/h giriş ve 3 km/h çıkış hysteresis’i.
