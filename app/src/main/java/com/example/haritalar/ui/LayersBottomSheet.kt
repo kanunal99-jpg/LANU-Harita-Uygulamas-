@@ -133,40 +133,26 @@ fun LayersBottomSheet(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 16.dp, height = 4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color(0xFF10B981))
+                        Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                TrafficLegendItem(
+                                    label = "Akıcı",
+                                    color = Color(0xFF10B981),
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Yeşil (Akıcı)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 16.dp, height = 4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color(0xFFF59E0B))
+                                TrafficLegendItem(
+                                    label = "Yavaş",
+                                    color = Color(0xFFF59E0B),
+                                    modifier = Modifier.weight(1f)
                                 )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Sarı (Yavaş)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(width = 16.dp, height = 4.dp)
-                                        .clip(RoundedCornerShape(2.dp))
-                                        .background(Color(0xFFEF4444))
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text("Kırmızı (Sıkışık)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
+                            TrafficLegendItem(
+                                label = "Sıkışık",
+                                color = Color(0xFFEF4444)
+                            )
                         }
                     }
                 }
@@ -334,6 +320,32 @@ fun LayersBottomSheet(
             
             Spacer(modifier = Modifier.height(24.dp))
         }
+    }
+}
+
+@Composable
+private fun TrafficLegendItem(
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 20.dp, height = 5.dp)
+                .clip(RoundedCornerShape(3.dp))
+                .background(color)
+        )
+        Spacer(modifier = Modifier.width(7.dp))
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1
+        )
     }
 }
 
