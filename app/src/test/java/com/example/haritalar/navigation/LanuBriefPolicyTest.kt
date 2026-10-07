@@ -1,6 +1,10 @@
 package com.example.haritalar.navigation
 
 import com.example.haritalar.model.GeoPoint
+import com.example.haritalar.model.PoiCategory
+import com.example.haritalar.model.PoiItem
+import com.example.haritalar.model.RouteCriticalPoiDataState
+import com.example.haritalar.model.RouteCriticalPoiMatch
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RoadFeature
 import com.example.haritalar.model.RoadFeatureDataState
@@ -242,6 +246,66 @@ class LanuBriefPolicyTest {
         val item = brief.items.first { it.type == LanuBriefItemType.ROAD_FEATURE }
         assertEquals(LanuBriefStatus.PARTIAL, item.status)
         assertTrue(item.source.contains("önbelle"))
+    }
+
+
+    @Test
+    fun verifiedCriticalServicesShowCountsRouteKmAndCorridorDistance() {
+        val matches = listOf(
+            RouteCriticalPoiMatch(
+                poi = PoiItem(
+                    id = "fuel_1",
+                    name = "Rota Benzinlik",
+                    category = PoiCategory.FUEL,
+                    point = route.geometry[1]
+                ),
+                routeDistanceMeters = 7_200.0,
+                corridorDistanceMeters = 180.0
+            ),
+            RouteCriticalPoiMatch(
+                poi = PoiItem(
+                    id = "pharmacy_1",
+                    name = "Rota Eczane",
+                    category = PoiCategory.PHARMACY,
+                    point = route.geometry[1]
+                ),
+                routeDistanceMeters = 12_500.0,
+                corridorDistanceMeters = 420.0
+            )
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            routeCriticalPois = matches,
+            routeCriticalPoiDataState = RouteCriticalPoiDataState.VERIFIED
+        )
+
+        val item = brief.items.first { it.type == LanuBriefItemType.CRITICAL_SERVICES }
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertTrue(item.title.contains("2 kritik hizmet"))
+        assertTrue(item.detail.contains("Benzinlik 1"))
+        assertTrue(item.detail.contains("ilk 7.2 km"))
+        assertTrue(item.detail.contains("rotadan ~180 m"))
+        assertTrue(item.detail.contains("Eczane 1"))
+    }
+
+    @Test
+    fun unavailableCriticalServiceProviderNeverPretendsZeroServicesIsVerified() {
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            routeCriticalPois = emptyList(),
+            routeCriticalPoiDataState = RouteCriticalPoiDataState.UNAVAILABLE
+        )
+
+        val item = brief.items.first { it.type == LanuBriefItemType.CRITICAL_SERVICES }
+        assertEquals(LanuBriefStatus.UNAVAILABLE, item.status)
+        assertTrue(item.title.contains("doğrulanamadı"))
     }
 
 }
