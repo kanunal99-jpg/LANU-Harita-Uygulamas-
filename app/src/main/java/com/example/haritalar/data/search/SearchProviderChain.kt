@@ -10,8 +10,8 @@ import kotlin.math.abs
 
 /**
  * Resilient multi-provider search chain:
- * Primary Provider (Nominatim OSM)
- * -> Alternative Provider (Komoot Photon)
+ * Live typeahead provider (Komoot Photon)
+ * -> Explicit committed fallback (Nominatim OSM)
  * -> Cache / Recent Searches
  * -> Safe Fallback / Error State
  *
