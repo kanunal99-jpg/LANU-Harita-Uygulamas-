@@ -23,6 +23,8 @@ import com.example.haritalar.model.MapTrackingMode
 import com.example.haritalar.model.NavigationState
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
+import com.example.haritalar.model.RouteCriticalPoiDataState
+import com.example.haritalar.model.RouteCriticalPoiMatch
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RoadFeature
 import com.example.haritalar.model.RoadFeatureDataState
@@ -120,7 +122,9 @@ data class MainUiState(
     val approachingWeather: com.example.haritalar.model.WeatherCondition? = null,
     val routeRoadFeatures: List<RoadFeature> = emptyList(),
     val roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
-    val approachingRoadFeatureWarning: RoadFeatureWarning? = null
+    val approachingRoadFeatureWarning: RoadFeatureWarning? = null,
+    val routeCriticalPois: List<RouteCriticalPoiMatch> = emptyList(),
+    val routeCriticalPoiDataState: RouteCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -153,6 +157,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var routeCalculationJob: Job? = null
     private var weatherJob: Job? = null
     private var roadFeatureJob: Job? = null
+    private var routeCriticalPoiJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
@@ -164,6 +169,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var generationCounter = 1L
     private var weatherGeneration = 0L
     private var roadFeatureGeneration = 0L
+    private var routeCriticalPoiGeneration = 0L
     private var trafficSignalGeneration = 0L
     private var poiGeneration = 0L
     private var lastPoiSearchCenter: GeoPoint? = null
@@ -295,6 +301,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         roadFeatureJob?.cancel()
         roadFeatureJob = null
         roadFeatureGeneration++
+        routeCriticalPoiJob?.cancel()
+        routeCriticalPoiJob = null
+        routeCriticalPoiGeneration++
         cameraBriefJob?.cancel()
         cameraBriefJob = null
         lastPreDriveCameraBriefRouteId = null
@@ -310,6 +319,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeRoadFeatures = emptyList(),
             roadFeatureDataState = RoadFeatureDataState.IDLE,
             approachingRoadFeatureWarning = null,
+            routeCriticalPois = emptyList(),
+            routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -497,6 +508,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 routeRoadFeatures = emptyList(),
                 roadFeatureDataState = RoadFeatureDataState.IDLE,
                 approachingRoadFeatureWarning = null,
+                routeCriticalPois = emptyList(),
+                routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
                 statusMessage = "Rotalar hesaplanıyor..."
             )
 
@@ -520,6 +533,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 primaryRoute?.let {
                     fetchWeatherForRoute(it)
                     fetchRoadFeaturesForRoute(it)
+                    fetchCriticalPoisForRoute(it)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -552,6 +566,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 routeOptions = emptyList(), selectedRoute = null, routeWeather = emptyList(),
                 routeRoadFeatures = emptyList(), roadFeatureDataState = RoadFeatureDataState.IDLE,
                 approachingRoadFeatureWarning = null,
+                routeCriticalPois = emptyList(), routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
                 statusMessage = "Rota hesaplanıyor..."
             )
             try {
@@ -585,6 +600,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 fetchWeatherForRoute(route)
                 fetchRoadFeaturesForRoute(route)
+                fetchCriticalPoisForRoute(route)
                 lastPreDriveCameraBriefRouteId = null
                 _uiState.value = _uiState.value.copy(
                     statusMessage = "Rota hazır. Radar güzergâh özeti hazırlanıyor."
@@ -613,6 +629,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
         fetchWeatherForRoute(route)
         fetchRoadFeaturesForRoute(route)
+        fetchCriticalPoisForRoute(route)
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
@@ -648,7 +665,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             routeRoadFeatures = emptyList(),
             roadFeatureDataState = RoadFeatureDataState.IDLE,
-            approachingRoadFeatureWarning = null
+            approachingRoadFeatureWarning = null,
+            routeCriticalPois = emptyList(),
+            routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
         )
         roadFeatureJob = viewModelScope.launch {
             val result = roadFeatureRepository.getForRoute(route.geometry)
@@ -678,6 +697,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     )
                 }
             }
+        }
+    }
+
+    private fun fetchCriticalPoisForRoute(route: RouteOption) {
+        val requestGeneration = ++routeCriticalPoiGeneration
+        routeCriticalPoiJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            routeCriticalPois = emptyList(),
+            routeCriticalPoiDataState = RouteCriticalPoiDataState.LOADING
+        )
+
+        routeCriticalPoiJob = viewModelScope.launch {
+            val summary = repository.fetchCriticalPoisForRoute(route.geometry)
+            if (requestGeneration != routeCriticalPoiGeneration ||
+                _uiState.value.selectedRoute?.routeId != route.routeId
+            ) {
+                return@launch
+            }
+
+            _uiState.value = _uiState.value.copy(
+                routeCriticalPois = summary.matches,
+                routeCriticalPoiDataState = summary.dataState
+            )
         }
     }
 
@@ -749,6 +791,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         roadFeatureJob?.cancel()
         roadFeatureJob = null
         roadFeatureGeneration++
+        routeCriticalPoiJob?.cancel()
+        routeCriticalPoiJob = null
+        routeCriticalPoiGeneration++
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
@@ -770,7 +815,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
             isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), approachingWeather = null,
             routeRoadFeatures = emptyList(), roadFeatureDataState = RoadFeatureDataState.IDLE,
-            approachingRoadFeatureWarning = null
+            approachingRoadFeatureWarning = null,
+            routeCriticalPois = emptyList(), routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
         )
     }
 
@@ -782,6 +828,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         roadFeatureJob?.cancel()
         roadFeatureJob = null
         roadFeatureGeneration++
+        routeCriticalPoiJob?.cancel()
+        routeCriticalPoiJob = null
+        routeCriticalPoiGeneration++
         announcedRoadFeatureMilestones.clear()
         _uiState.value = _uiState.value.copy(
             routeWeather = emptyList(),
@@ -810,6 +859,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     navigationEngine.updateRoute(newRoute)
                     fetchWeatherForRoute(newRoute)
                     fetchRoadFeaturesForRoute(newRoute)
+                    fetchCriticalPoisForRoute(newRoute)
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
