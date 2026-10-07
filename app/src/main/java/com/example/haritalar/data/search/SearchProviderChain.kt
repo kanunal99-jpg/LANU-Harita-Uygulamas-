@@ -22,7 +22,8 @@ import kotlin.math.abs
 class SearchProviderChain(
     val primaryProvider: SearchProvider = NominatimSearchProvider(),
     val alternativeProvider: SearchProvider = PhotonSearchProvider(),
-    val cacheProvider: CacheSearchProvider = CacheSearchProvider()
+    val cacheProvider: CacheSearchProvider = CacheSearchProvider(),
+    val businessProvider: SearchProvider = OverpassBusinessSearchProvider()
 ) {
 
     suspend fun executeSearch(query: String, focusPoint: GeoPoint? = null): SearchResponse = withContext(Dispatchers.IO) {
@@ -33,9 +34,21 @@ class SearchProviderChain(
 
         val parsedQuery = TurkishAddressHelper.parseAddressQuery(trimmed)
         val queryVariations = TurkishAddressHelper.generateSearchQueries(trimmed)
+        val businessIntent = BusinessIntentClassifier.isBusinessIntent(trimmed)
 
         val collectedResults = mutableListOf<SearchResult>()
         var activeProviderName = primaryProvider.name
+        var usedVerifiedDirectory = false
+        var usedBusinessProvider = false
+
+        val verifiedEntries = VerifiedPlaceDirectory.findMatches(trimmed)
+        for (entry in verifiedEntries) {
+            val resolved = resolveVerifiedPlace(entry)
+            if (resolved != null) {
+                collectedResults += resolved
+                usedVerifiedDirectory = true
+            }
+        }
         var primaryExceptionOccurred = false
         var alternativeExceptionOccurred = false
         var hasVerifiedBuildingInPrimary = false
@@ -61,6 +74,7 @@ class SearchProviderChain(
 
         val shouldQueryAlternative = primaryExceptionOccurred ||
                 collectedResults.isEmpty() ||
+                businessIntent ||
                 (parsedQuery.isBuildingLevelRequested && !hasVerifiedBuildingInPrimary)
 
         if (shouldQueryAlternative) {
@@ -82,6 +96,25 @@ class SearchProviderChain(
                     alternativeExceptionOccurred = true
                     break
                 }
+            }
+        }
+
+        if (businessIntent && focusPoint != null && collectedResults.size < 12) {
+            try {
+                val businessResults = businessProvider.search(trimmed, focusPoint)
+                if (businessResults.isNotEmpty()) {
+                    collectedResults.addAll(businessResults)
+                    usedBusinessProvider = true
+                }
+            } catch (_: Exception) {
+                // The address geocoders and cache remain valid fallbacks.
+            }
+        }
+
+        if (usedVerifiedDirectory || usedBusinessProvider) {
+            activeProviderName = when {
+                usedVerifiedDirectory && !usedBusinessProvider -> "LANU Doğrulanmış"
+                else -> "LANU Çoklu Kaynak"
             }
         }
 
@@ -137,6 +170,47 @@ class SearchProviderChain(
         }
 
         null
+    }
+
+    private suspend fun resolveVerifiedPlace(entry: VerifiedPlaceEntry): SearchResult? {
+        val candidates = mutableListOf<SearchResult>()
+        try {
+            candidates += primaryProvider.search(entry.address, null)
+        } catch (_: Exception) {
+            // Continue with alternative.
+        }
+        if (candidates.isEmpty()) {
+            try {
+                candidates += alternativeProvider.search(entry.address, null)
+            } catch (_: Exception) {
+                return null
+            }
+        }
+
+        val expectedTokens = listOf(entry.street, entry.district, entry.province)
+            .map { TurkishAddressHelper.normalizeTurkish(it).substringBefore(" ") }
+            .filter { it.length >= 4 }
+        val best = candidates
+            .map { candidate ->
+                val haystack = TurkishAddressHelper.normalizeTurkish(
+                    candidate.displayName + " " + candidate.shortAddress
+                )
+                expectedTokens.count { haystack.contains(it) } to candidate
+            }
+            .maxByOrNull { it.first }
+            ?.takeIf { it.first >= 2 }
+            ?.second
+            ?: return null
+
+        return best.copy(
+            id = entry.id,
+            name = entry.name,
+            displayName = entry.address,
+            shortAddress = entry.address,
+            resultType = com.example.haritalar.model.AddressResultType.POI,
+            provider = "LANU Doğrulanmış",
+            confidence = 1.0f
+        )
     }
 
     private fun deduplicateResults(results: List<SearchResult>): List<SearchResult> {
