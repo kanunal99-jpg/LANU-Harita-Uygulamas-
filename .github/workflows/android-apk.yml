@@ -42,6 +42,29 @@ jobs:
           ls -l /dev/kvm
           test -r /dev/kvm
           test -w /dev/kvm
+      - name: Warm Android emulator SDK with retry
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sdkmanager: $(command -v sdkmanager)"
+          for attempt in 1 2 3; do
+            echo "Android emulator SDK warm-up attempt ${attempt}/3"
+            if sdkmanager --install \
+              emulator \
+              'system-images;android-34;google_apis;x86_64' \
+              --channel=0; then
+              echo "Android emulator SDK packages are ready."
+              exit 0
+            fi
+
+            echo "sdkmanager failed; clearing transient download caches before retry."
+            rm -rf "$HOME/.android/cache"/* 2>/dev/null || true
+            rm -rf "${ANDROID_HOME:-/usr/local/lib/android/sdk}/.temp"/* 2>/dev/null || true
+            sleep $((attempt * 10))
+          done
+
+          echo "ERROR: Android emulator SDK packages could not be prepared after 3 attempts."
+          exit 1
       - name: Create Android debug keystore
         run: |
           keytool -genkeypair -v \
