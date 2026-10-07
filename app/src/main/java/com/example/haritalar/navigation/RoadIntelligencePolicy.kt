@@ -48,7 +48,7 @@ object RoadIntelligencePolicy {
         val events = mutableListOf<RoadIntelligenceEvent>()
 
         val verifiedClosures = if (traffic?.verified == true) {
-            trafficSegments.filter { it.roadClosure }
+            trafficSegments.filter { it.roadClosure && !it.fromCache }
         } else {
             emptyList()
         }
