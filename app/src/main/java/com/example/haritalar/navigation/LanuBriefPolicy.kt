@@ -197,6 +197,7 @@ object LanuBriefPolicy {
             detail = "$detail • rota örnek noktalarında",
             source = "Open-Meteo",
             status = LanuBriefStatus.VERIFIED,
+            updatedAtMillis = updatedAtMillis,
             severity = when (worst.type) {
                 WeatherType.STORM -> LanuBriefSeverity.CRITICAL
                 WeatherType.SNOW -> LanuBriefSeverity.WARNING
