@@ -206,7 +206,9 @@ fun HaritalarNavigationApp(
         uiState.routeWeather,
         safetyCameras,
         uiState.routeCriticalPoiCoverage,
-        routeCameraCoverage
+        routeCameraCoverage,
+        uiState.routeDataUpdatedAtMillis,
+        uiState.routeWeatherUpdatedAtMillis
     ) {
         uiState.selectedRoute?.let { route ->
             LanuBriefPolicy.build(
@@ -215,7 +217,9 @@ fun HaritalarNavigationApp(
                 routeWeather = uiState.routeWeather,
                 loadedSafetyCameras = safetyCameras,
                 criticalPoiCoverage = uiState.routeCriticalPoiCoverage,
-                routeCameraCoverage = routeCameraCoverage
+                routeCameraCoverage = routeCameraCoverage,
+                routeDataUpdatedAtMillis = uiState.routeDataUpdatedAtMillis,
+                routeWeatherUpdatedAtMillis = uiState.routeWeatherUpdatedAtMillis
             )
         }
     }
