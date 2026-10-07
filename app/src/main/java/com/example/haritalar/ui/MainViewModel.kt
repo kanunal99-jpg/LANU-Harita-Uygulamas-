@@ -133,6 +133,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var searchJob: Job? = null
     private var routeCalculationJob: Job? = null
     private var trafficRefreshJob: Job? = null
+    private var weatherJob: Job? = null
+    private var weatherGeneration = 0L
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
     private var poiViewportRefreshJob: Job? = null
@@ -271,6 +273,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
+            routeWeather = emptyList(),
+            approachingWeather = null,
             statusMessage = null
         )
     }
@@ -369,7 +373,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             isLoadingRoutes = false,
-            navigationState = NavigationState.IDLE
+            navigationState = NavigationState.IDLE,
+            routeWeather = emptyList(),
+            approachingWeather = null
         )
     }
 
@@ -391,6 +397,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             navigationState = NavigationState.IDLE,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
+            routeWeather = emptyList(),
+            approachingWeather = null,
             statusMessage = null
         )
     }
@@ -467,8 +475,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     trafficStatusMap = trafficMap,
                     navigationState = if (routes.isNotEmpty()) NavigationState.ROUTE_SELECTION else NavigationState.IDLE,
                     isLoadingRoutes = false,
+                    routeWeather = emptyList(),
+                    approachingWeather = null,
                     statusMessage = if (routes.isEmpty()) "Rota bulunamadı." else null
                 )
+                primaryRoute?.let { fetchWeatherForRoute(it) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -546,9 +557,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
-        viewModelScope.launch {
+        val requestId = ++weatherGeneration
+        weatherJob?.cancel()
+        weatherJob = viewModelScope.launch {
             val weather = weatherRepository.getRouteWeather(route)
-            _uiState.value = _uiState.value.copy(routeWeather = weather)
+            if (requestId != weatherGeneration || _uiState.value.selectedRoute?.routeId != route.routeId) {
+                return@launch
+            }
+            _uiState.value = _uiState.value.copy(
+                routeWeather = weather,
+                approachingWeather = null
+            )
             checkWeatherProximity()
         }
     }
@@ -594,6 +613,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isWrongWay = depGuidance.isWrongWay,
             statusMessage = null
         )
+        fetchWeatherForRoute(route)
         navigationEngine.startNavigation(route)
         NavigationForegroundService.start(
             getApplication(),
@@ -611,6 +631,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         NavigationForegroundService.stop(getApplication())
         locationManager.stopSimulation()
         trafficRefreshJob?.cancel()
+        weatherJob?.cancel()
+        weatherGeneration++
         ttsManager.stop()
         announcedCameraWarningMilestones.clear()
         lastOverspeedCameraWarningKey = null
@@ -620,6 +642,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
             isSimulationActive = false, statusMessage = null, isSearchAlongRouteOpen = false,
             alongRoutePois = emptyList(), isLoadingAlongRoute = false, departureGuidance = null,
+            routeWeather = emptyList(), approachingWeather = null,
             isWrongWay = false, isLoadingRoutes = false
         )
     }
@@ -641,9 +664,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     val newRoute = routes.first()
                     _uiState.value = _uiState.value.copy(
                         routeOptions = routes, selectedRoute = newRoute, trafficStatusMap = trafficMap,
-                        navigationState = NavigationState.NAVIGATING, statusMessage = null, isLoadingRoutes = false
+                        navigationState = NavigationState.NAVIGATING,
+                        routeWeather = emptyList(), approachingWeather = null,
+                        statusMessage = null, isLoadingRoutes = false
                     )
                     navigationEngine.updateRoute(newRoute)
+                    fetchWeatherForRoute(newRoute)
+                    startPeriodicTrafficRefresh()
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
@@ -743,12 +770,31 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private fun startPeriodicTrafficRefresh() {
         trafficRefreshJob?.cancel()
         trafficRefreshJob = viewModelScope.launch {
-            while (_uiState.value.navigationState == NavigationState.NAVIGATING) {
+            while (true) {
+                val stateBeforeDelay = _uiState.value.navigationState
+                if (stateBeforeDelay != NavigationState.NAVIGATING &&
+                    stateBeforeDelay != NavigationState.OFF_ROUTE_REROUTING
+                ) break
+
                 delay(60_000L)
+
+                if (_uiState.value.navigationState == NavigationState.OFF_ROUTE_REROUTING) {
+                    continue
+                }
+                if (_uiState.value.navigationState != NavigationState.NAVIGATING) {
+                    break
+                }
+
                 val currentRoute = _uiState.value.selectedRoute ?: break
                 val genId = _uiState.value.activeGenerationId
-                val result = repository.trafficCoordinator.requestRefresh(routes = listOf(currentRoute), generationId = genId)
-                if (result != null && genId == _uiState.value.activeGenerationId) {
+                val result = repository.trafficCoordinator.requestRefresh(
+                    routes = listOf(currentRoute),
+                    generationId = genId
+                )
+                if (result != null &&
+                    genId == _uiState.value.activeGenerationId &&
+                    _uiState.value.selectedRoute?.routeId == currentRoute.routeId
+                ) {
                     val (updatedRoutes, updatedMap) = result
                     val updated = updatedRoutes.firstOrNull()
                     if (updated != null) {
