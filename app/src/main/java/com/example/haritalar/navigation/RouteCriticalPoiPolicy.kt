@@ -25,6 +25,53 @@ object RouteCriticalPoiPolicy {
     const val ROUTE_QUERY_RADIUS_METERS = 9_000
     const val ROUTE_SAMPLE_SPACING_METERS = 16_000.0
 
+    fun routeSampleCenters(
+        route: List<GeoPoint>,
+        spacingMeters: Double = ROUTE_SAMPLE_SPACING_METERS
+    ): List<GeoPoint> {
+        if (route.isEmpty()) return emptyList()
+        if (route.size == 1) return route
+
+        val safeSpacing = spacingMeters.coerceIn(8_000.0, 30_000.0)
+        val centers = mutableListOf(route.first())
+        var distanceSinceLast = 0.0
+
+        for (index in 0 until route.lastIndex) {
+            var segmentStart = route[index]
+            val segmentEnd = route[index + 1]
+            var remaining = segmentStart.distanceTo(segmentEnd)
+            if (remaining <= 0.0) continue
+
+            while (distanceSinceLast + remaining >= safeSpacing) {
+                val needed = safeSpacing - distanceSinceLast
+                val fraction = (needed / remaining).coerceIn(0.0, 1.0)
+                val sample = GeoPoint(
+                    latitude = segmentStart.latitude +
+                        (segmentEnd.latitude - segmentStart.latitude) * fraction,
+                    longitude = segmentStart.longitude +
+                        (segmentEnd.longitude - segmentStart.longitude) * fraction
+                )
+                centers += sample
+                segmentStart = sample
+                remaining = segmentStart.distanceTo(segmentEnd)
+                distanceSinceLast = 0.0
+                if (remaining <= 1.0) break
+            }
+            distanceSinceLast += remaining
+        }
+
+        if (centers.last().distanceTo(route.last()) > safeSpacing * 0.35) {
+            centers += route.last()
+        }
+
+        return centers.distinctBy {
+            Pair(
+                (it.latitude * 1_000_000).toLong(),
+                (it.longitude * 1_000_000).toLong()
+            )
+        }
+    }
+
     fun matchToRoute(
         pois: List<PoiItem>,
         route: List<GeoPoint>,
