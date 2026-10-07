@@ -13,6 +13,7 @@ import com.example.haritalar.model.RouteOption
 import com.example.haritalar.navigation.RouteDataCoverage
 import com.example.haritalar.navigation.RouteSafetyCameraCoverage
 import com.example.haritalar.navigation.RouteSafetyCameraCoveragePolicy
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -141,20 +142,26 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             var usedCache = false
 
             for (point in plan.points) {
-                when (
-                    val result = repository.get(
-                        RouteSafetyCameraCoveragePolicy.boundingBox(point),
-                        maxCameras = 500
-                    )
-                ) {
-                    is SafetyCameraFetchResult.Success -> {
-                        successfulSamples += 1
-                        usedCache = usedCache || result.fromCache
-                        collected += result.cameras
+                try {
+                    when (
+                        val result = repository.get(
+                            RouteSafetyCameraCoveragePolicy.boundingBox(point),
+                            maxCameras = 500
+                        )
+                    ) {
+                        is SafetyCameraFetchResult.Success -> {
+                            successfulSamples += 1
+                            usedCache = usedCache || result.fromCache
+                            collected += result.cameras
+                        }
+                        is SafetyCameraFetchResult.Error -> {
+                            collected += result.fallbackCameras
+                        }
                     }
-                    is SafetyCameraFetchResult.Error -> {
-                        collected += result.fallbackCameras
-                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // Keep the remaining route samples alive; coverage will become PARTIAL/UNAVAILABLE.
                 }
             }
 
