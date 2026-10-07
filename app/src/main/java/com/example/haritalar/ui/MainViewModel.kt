@@ -279,6 +279,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             routeOptions = emptyList(),
             selectedRoute = null,
             trafficStatusMap = emptyMap(),
+            routeWeather = emptyList(),
+            routeWeatherUpdatedAtMillis = null,
+            routeDataUpdatedAtMillis = null,
+            routeCriticalPoiCoverage = null,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -970,7 +974,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             poiGeneration++
             poiLoadJob?.cancel()
             poiViewportRefreshJob?.cancel()
-        routeCriticalPoiJob?.cancel()
             _uiState.value = _uiState.value.copy(
                 isPoiLayerVisible = false,
                 poiList = emptyList(),
