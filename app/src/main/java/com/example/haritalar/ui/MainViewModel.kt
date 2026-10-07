@@ -37,6 +37,7 @@ import com.example.haritalar.navigation.NavigationEngine
 import com.example.haritalar.navigation.NavigationLocationPolicy
 import com.example.haritalar.navigation.NavigationForegroundService
 import com.example.haritalar.navigation.NavigationRefreshPolicy
+import com.example.haritalar.navigation.PoiSearchAreaPolicy
 import com.example.haritalar.navigation.PoiSearchCenterPolicy
 import com.example.haritalar.navigation.NavigationProgress
 import com.example.haritalar.navigation.UserLocationData
@@ -1002,6 +1003,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
+        val radiusMeters = PoiSearchAreaPolicy.radiusMeters(
+            trackingMode = _uiState.value.mapTrackingMode,
+            center = center,
+            viewport = _uiState.value.currentViewportBbox
+        )
         val generation = ++poiGeneration
         lastPoiSearchCenter = center
         poiLoadJob?.cancel()
@@ -1010,7 +1016,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 poiList = emptyList(),
                 statusMessage = "İlgi noktaları yükleniyor..."
             )
-            val pois = repository.fetchPois(center, category)
+            val pois = repository.fetchPois(center, category, radiusMeters)
             if (generation != poiGeneration || _uiState.value.selectedPoiCategory != category) {
                 return@launch
             }
