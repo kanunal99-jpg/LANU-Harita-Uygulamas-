@@ -35,6 +35,9 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     private val _isRoutePrefetching = MutableStateFlow(false)
     val isRoutePrefetching: StateFlow<Boolean> = _isRoutePrefetching.asStateFlow()
 
+    private val _completedRoutePrefetchRouteId = MutableStateFlow<String?>(null)
+    val completedRoutePrefetchRouteId: StateFlow<String?> = _completedRoutePrefetchRouteId.asStateFlow()
+
     private var viewportCameras: List<SafetyCamera> = emptyList()
     private var navigationCameras: List<SafetyCamera> = emptyList()
 
@@ -43,6 +46,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     private var navigationJob: Job? = null
     private var lastViewportRequest: SafetyCameraBoundingBox? = null
     private var lastRouteFingerprint: String? = null
+    private var routePrefetchGeneration: Long = 0L
     private var lastNavigationCenter: GeoPoint? = null
 
     fun onViewportChanged(bbox: SafetyCameraBoundingBox, zoomLevel: Float) {
@@ -87,38 +91,57 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             append(',')
             append(route.last().longitude)
         }
-        if (fingerprint == lastRouteFingerprint && _routeCameras.value.isNotEmpty()) return
+        if (
+            fingerprint == lastRouteFingerprint &&
+            _completedRoutePrefetchRouteId.value == routeId
+        ) {
+            return
+        }
 
         routeJob?.cancel()
+        val generation = ++routePrefetchGeneration
+        lastRouteFingerprint = fingerprint
+        _completedRoutePrefetchRouteId.value = null
+        _routeCameras.value = emptyList()
+        _isRoutePrefetching.value = true
+        publishMerged()
+
         routeJob = viewModelScope.launch {
-            _isRoutePrefetching.value = true
             val merged = linkedMapOf<Long, SafetyCamera>()
-            val centers = SafetyCameraAreaPolicy.routePrefetchCenters(route)
-            for (center in centers) {
-                val bbox = SafetyCameraAreaPolicy.boundingBoxAround(
-                    center = center,
-                    radiusMeters = SafetyCameraAreaPolicy.ROUTE_PREFETCH_RADIUS_METERS
-                )
-                when (val result = repository.get(bbox, maxCameras = 500)) {
-                    is SafetyCameraFetchResult.Success -> {
-                        result.cameras.forEach { merged[it.id] = it }
-                    }
-                    is SafetyCameraFetchResult.Error -> {
-                        result.fallbackCameras.forEach { merged[it.id] = it }
+            try {
+                val centers = SafetyCameraAreaPolicy.routePrefetchCenters(route)
+                for (center in centers) {
+                    val bbox = SafetyCameraAreaPolicy.boundingBoxAround(
+                        center = center,
+                        radiusMeters = SafetyCameraAreaPolicy.ROUTE_PREFETCH_RADIUS_METERS
+                    )
+                    when (val result = repository.get(bbox, maxCameras = 500)) {
+                        is SafetyCameraFetchResult.Success -> {
+                            result.cameras.forEach { merged[it.id] = it }
+                        }
+                        is SafetyCameraFetchResult.Error -> {
+                            result.fallbackCameras.forEach { merged[it.id] = it }
+                        }
                     }
                 }
+                if (generation != routePrefetchGeneration) return@launch
+                _routeCameras.value = merged.values.toList()
+                _completedRoutePrefetchRouteId.value = routeId
+                publishMerged()
+            } finally {
+                if (generation == routePrefetchGeneration) {
+                    _isRoutePrefetching.value = false
+                }
             }
-            lastRouteFingerprint = fingerprint
-            _routeCameras.value = merged.values.toList()
-            _isRoutePrefetching.value = false
-            publishMerged()
         }
     }
 
     fun clearRoutePrefetch() {
         routeJob?.cancel()
         routeJob = null
+        routePrefetchGeneration++
         lastRouteFingerprint = null
+        _completedRoutePrefetchRouteId.value = null
         _routeCameras.value = emptyList()
         _isRoutePrefetching.value = false
         publishMerged()
