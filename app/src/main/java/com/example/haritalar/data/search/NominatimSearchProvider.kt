@@ -32,8 +32,16 @@ class NominatimSearchProvider(
         if (trimmed.length < 2) return@withContext emptyList()
 
         val encodedQuery = URLEncoder.encode(trimmed, "UTF-8")
+        val isPostalCode = trimmed.matches(Regex("^\\d{5}$"))
         val urlBuilder = StringBuilder("https://nominatim.openstreetmap.org/search?")
-            .append("q=").append(encodedQuery)
+        if (isPostalCode) {
+            urlBuilder
+                .append("postalcode=").append(encodedQuery)
+                .append("&country=").append(URLEncoder.encode("Türkiye", "UTF-8"))
+        } else {
+            urlBuilder.append("q=").append(encodedQuery)
+        }
+        urlBuilder
             .append("&format=json")
             .append("&addressdetails=1")
             .append("&limit=15")
