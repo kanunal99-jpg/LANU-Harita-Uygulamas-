@@ -12,8 +12,8 @@ test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
 grep -q 'ANA SERVİS.*ALTERNATİF.*GERÇEK FALLBACK' ANAYASA.md || fail "kritik zincir standardı Anayasa'da bulunamadı"
-grep -q 'versionName = "1.1.12"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.12 değil"
-grep -q 'versionCode = 14' app/build.gradle.kts || fail "beklenen Android versionCode 14 değil"
+grep -q 'versionName = "1.1.13"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.13 değil"
+grep -q 'versionCode = 15' app/build.gradle.kts || fail "beklenen Android versionCode 15 değil"
 grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml || fail "uygulama backup güvenlik kuralı kapalı değil"
 grep -q 'android:foregroundServiceType="location"' app/src/main/AndroidManifest.xml || fail "aktif navigasyon location foreground service bildirimi eksik"
 grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' app/src/main/AndroidManifest.xml || fail "foreground location permission eksik"
@@ -90,6 +90,14 @@ grep -q 'prefetchForRoute' app/src/main/java/com/example/haritalar/ui/SafetyCame
 grep -q 'updatePreDriveSafetyCameraData' app/src/main/java/com/example/haritalar/ui/MainViewModel.kt || fail "rota öncesi radar ses özeti akışı eksik"
 grep -q 'lanu:nearby_road' app/src/main/java/com/example/haritalar/data/network/SafetyCameraService.kt || fail "radar yol bağlamı zenginleştirmesi eksik"
 grep -q 'lanu:nearby_place' app/src/main/java/com/example/haritalar/data/network/SafetyCameraService.kt || fail "radar yer bağlamı zenginleştirmesi eksik"
+test -s app/src/main/java/com/example/haritalar/navigation/RadarBriefReadinessPolicy.kt || fail "radar rota readiness policy eksik"
+test -s app/src/test/java/com/example/haritalar/navigation/RadarBriefReadinessPolicyTest.kt || fail "radar rota readiness regresyon testi eksik"
+grep -q 'completedRoutePrefetchRouteId' app/src/main/java/com/example/haritalar/ui/SafetyCameraLayerViewModel.kt || fail "radar prefetch sonucu rota kimliğiyle bağlı değil"
+grep -q 'cameraRouteScanComplete' app/src/main/java/com/example/haritalar/navigation/LanuBriefPolicy.kt || fail "LANU Brief radar tarama durumu eksik"
+grep -q 'cameraItemShowsScanningUntilSelectedRouteScanCompletes' app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "LANU Brief radar tarama durum testi eksik"
+if grep -q 'Özet tamamlanınca navigasyonu başlatın' app/src/main/java/com/example/haritalar/ui/MainViewModel.kt; then
+  fail "radar özeti navigasyonu tekrar bloke ediyor"
+fi
 
 echo "LANU constitution quality gate: PASS"
 
