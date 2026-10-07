@@ -30,6 +30,7 @@ import com.example.haritalar.model.NavigationState
 import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.navigation.LanuBriefPolicy
 import com.example.haritalar.navigation.NavigationLocationPolicy
+import com.example.haritalar.navigation.RadarBriefReadinessPolicy
 import com.example.haritalar.navigation.RoadIntelligencePolicy
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.ui.*
@@ -183,13 +184,11 @@ fun HaritalarNavigationApp(
         uiState.navigationState
     ) {
         val selectedRouteId = uiState.selectedRoute?.routeId
-        val routeReady = selectedRouteId != null &&
-            !isRouteSafetyCameraPrefetching &&
-            completedRouteSafetyCameraPrefetchRouteId == selectedRouteId &&
-            (
-                uiState.navigationState == NavigationState.ROUTE_SELECTION ||
-                    uiState.navigationState == NavigationState.NAVIGATING
-            )
+        val routeReady = RadarBriefReadinessPolicy.isSelectedRouteScanReady(
+            selectedRouteId = selectedRouteId,
+            completedRouteId = completedRouteSafetyCameraPrefetchRouteId,
+            isPrefetching = isRouteSafetyCameraPrefetching
+        ) && RadarBriefReadinessPolicy.canDeliverInState(uiState.navigationState)
         if (routeReady) {
             viewModel.updatePreDriveSafetyCameraData(routeSafetyCameras)
         }
