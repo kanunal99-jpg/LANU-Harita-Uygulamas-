@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.haritalar.navtr"
     minSdk = 24
     targetSdk = 36
-    versionCode = 10
-    versionName = "1.1.8"
+    versionCode = 11
+    versionName = "1.1.9"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     buildConfigField("String", "TOMTOM_API_KEY", "\"${project.findProperty("TOMTOM_API_KEY") ?: System.getenv("TOMTOM_API_KEY") ?: ""}\"")
