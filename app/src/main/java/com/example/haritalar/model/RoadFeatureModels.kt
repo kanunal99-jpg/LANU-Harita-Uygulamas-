@@ -1,5 +1,12 @@
 package com.example.haritalar.model
 
+enum class RoadFeatureDataState {
+    IDLE,
+    VERIFIED,
+    CACHED,
+    UNAVAILABLE
+}
+
 enum class RoadFeatureType {
     SPEED_CALMING,
     SCHOOL_ZONE,
