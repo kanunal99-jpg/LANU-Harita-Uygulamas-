@@ -182,12 +182,16 @@ fun HaritalarNavigationApp(
     val roadIntelligenceEvents = remember(
         uiState.approachingCameraWarning,
         uiState.approachingWeather,
-        currentTrafficStatus
+        currentTrafficStatus,
+        currentTrafficSegments,
+        uiState.userLocation?.point
     ) {
         RoadIntelligencePolicy.build(
             cameraWarning = uiState.approachingCameraWarning,
             weather = uiState.approachingWeather,
-            traffic = currentTrafficStatus
+            traffic = currentTrafficStatus,
+            trafficSegments = currentTrafficSegments,
+            userPoint = uiState.userLocation?.point
         )
     }
     val preDriveBrief = remember(
