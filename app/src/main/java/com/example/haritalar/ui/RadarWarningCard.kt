@@ -59,9 +59,9 @@ fun RadarWarningCard(
                         )
                         Text(
                             text = if (warning.overspeed) {
-                                "Doğrulanmış hız sınırının üzerindesin; güvenli şekilde yavaşla."
+                                "OSM kaynağındaki hız sınırının üzerindesin; güvenli şekilde yavaşla."
                             } else {
-                                "Aktif rota üzerindeki doğrulanmış sabit kamera noktası."
+                                "Aktif rota üzerinde OSM'de kayıtlı sabit kamera noktası."
                             },
                             color = Color.White.copy(alpha = 0.96f),
                             fontWeight = FontWeight.SemiBold,
@@ -75,8 +75,8 @@ fun RadarWarningCard(
                             )
                         }
                         Text(
-                            text = warning.speedLimitKmh?.let { "Doğrulanmış hız sınırı: $it km/h" }
-                                ?: "Hız limiti kaynakta doğrulanamadı.",
+                            text = warning.speedLimitKmh?.let { "OSM'de kayıtlı hız sınırı: $it km/h" }
+                                ?: "Hız limiti OSM kaynağında belirtilmemiş.",
                             color = Color.White.copy(alpha = 0.9f),
                             fontSize = 12.sp
                         )
