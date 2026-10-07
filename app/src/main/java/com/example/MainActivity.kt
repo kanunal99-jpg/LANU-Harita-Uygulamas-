@@ -112,7 +112,10 @@ fun HaritalarNavigationApp(
         val msg = uiState.statusMessage
         if (msg != null) {
             val isGpsMessage = msg.contains("GPS", ignoreCase = true) ||
-                msg.contains("konum", ignoreCase = true)
+                msg.contains("son bilinen konum", ignoreCase = true) ||
+                msg.contains("konum henüz alınmadı", ignoreCase = true) ||
+                msg.contains("konum alınmadan", ignoreCase = true) ||
+                msg.contains("doğruluğu navigasyon için yetersiz", ignoreCase = true)
             val result = snackbarHostState.showSnackbar(
                 message = msg,
                 actionLabel = if (isGpsMessage) "Konumu Yenile" else null,
