@@ -19,7 +19,8 @@ import kotlinx.coroutines.launch
 /**
  * Safety-camera state with two independent scopes:
  * 1) visible viewport, for map rendering
- * 2) navigation prefetch area, for speed-adaptive warnings up to 10 km even when the map is tightly zoomed
+ * 2) complete route prefetch, for pre-drive route-kilometer briefing
+ * 3) near-vehicle navigation prefetch, for the final 5 km voice cascade
  *
  * Last successful data is retained if a provider/mirror fails.
  */
@@ -28,12 +29,20 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     private val _cameras = MutableStateFlow<List<SafetyCamera>>(emptyList())
     val cameras: StateFlow<List<SafetyCamera>> = _cameras.asStateFlow()
 
+    private val _routeCameras = MutableStateFlow<List<SafetyCamera>>(emptyList())
+    val routeCameras: StateFlow<List<SafetyCamera>> = _routeCameras.asStateFlow()
+
+    private val _isRoutePrefetching = MutableStateFlow(false)
+    val isRoutePrefetching: StateFlow<Boolean> = _isRoutePrefetching.asStateFlow()
+
     private var viewportCameras: List<SafetyCamera> = emptyList()
     private var navigationCameras: List<SafetyCamera> = emptyList()
 
     private var viewportJob: Job? = null
+    private var routeJob: Job? = null
     private var navigationJob: Job? = null
     private var lastViewportRequest: SafetyCameraBoundingBox? = null
+    private var lastRouteFingerprint: String? = null
     private var lastNavigationCenter: GeoPoint? = null
 
     fun onViewportChanged(bbox: SafetyCameraBoundingBox, zoomLevel: Float) {
@@ -57,6 +66,62 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
                 }
             }
         }
+    }
+
+    fun prefetchForRoute(routeId: String, route: List<GeoPoint>) {
+        if (route.size < 2) {
+            clearRoutePrefetch()
+            return
+        }
+
+        val fingerprint = buildString {
+            append(routeId)
+            append(':')
+            append(route.size)
+            append(':')
+            append(route.first().latitude)
+            append(',')
+            append(route.first().longitude)
+            append(':')
+            append(route.last().latitude)
+            append(',')
+            append(route.last().longitude)
+        }
+        if (fingerprint == lastRouteFingerprint && _routeCameras.value.isNotEmpty()) return
+
+        routeJob?.cancel()
+        routeJob = viewModelScope.launch {
+            _isRoutePrefetching.value = true
+            val merged = linkedMapOf<Long, SafetyCamera>()
+            val centers = SafetyCameraAreaPolicy.routePrefetchCenters(route)
+            for (center in centers) {
+                val bbox = SafetyCameraAreaPolicy.boundingBoxAround(
+                    center = center,
+                    radiusMeters = SafetyCameraAreaPolicy.ROUTE_PREFETCH_RADIUS_METERS
+                )
+                when (val result = repository.get(bbox, maxCameras = 500)) {
+                    is SafetyCameraFetchResult.Success -> {
+                        result.cameras.forEach { merged[it.id] = it }
+                    }
+                    is SafetyCameraFetchResult.Error -> {
+                        result.fallbackCameras.forEach { merged[it.id] = it }
+                    }
+                }
+            }
+            lastRouteFingerprint = fingerprint
+            _routeCameras.value = merged.values.toList()
+            _isRoutePrefetching.value = false
+            publishMerged()
+        }
+    }
+
+    fun clearRoutePrefetch() {
+        routeJob?.cancel()
+        routeJob = null
+        lastRouteFingerprint = null
+        _routeCameras.value = emptyList()
+        _isRoutePrefetching.value = false
+        publishMerged()
     }
 
     fun prefetchForNavigation(
@@ -97,7 +162,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
     }
 
     private fun publishMerged() {
-        _cameras.value = (navigationCameras + viewportCameras)
+        _cameras.value = (_routeCameras.value + navigationCameras + viewportCameras)
             .distinctBy { it.id }
     }
 
@@ -109,6 +174,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
 
     override fun onCleared() {
         viewportJob?.cancel()
+        routeJob?.cancel()
         navigationJob?.cancel()
         super.onCleared()
     }

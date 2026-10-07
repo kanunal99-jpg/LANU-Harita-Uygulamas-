@@ -10,12 +10,11 @@ import kotlin.math.max
  * Keeps navigation warnings independent from the currently visible map viewport.
  */
 object SafetyCameraAreaPolicy {
-    /**
-     * Must stay larger than SafetyCameraWarningPolicy.MAX_WARNING_DISTANCE_METERS so
-     * movement/network latency does not create a blind edge at the warning horizon.
-     */
-    const val NAVIGATION_PREFETCH_RADIUS_METERS = 12_000.0
-    const val NAVIGATION_REFRESH_DISTANCE_METERS = 1_500.0
+    const val NAVIGATION_PREFETCH_RADIUS_METERS = 8_000.0
+    const val NAVIGATION_REFRESH_DISTANCE_METERS = 2_000.0
+
+    const val ROUTE_PREFETCH_RADIUS_METERS = 12_000.0
+    const val ROUTE_PREFETCH_SPACING_METERS = 18_000.0
 
     fun boundingBoxAround(
         center: GeoPoint,
@@ -36,5 +35,58 @@ object SafetyCameraAreaPolicy {
     fun shouldRefresh(previousCenter: GeoPoint?, currentCenter: GeoPoint): Boolean {
         if (previousCenter == null) return true
         return previousCenter.distanceTo(currentCenter) >= NAVIGATION_REFRESH_DISTANCE_METERS
+    }
+
+    /**
+     * Produces overlapping query centers along the complete route so the pre-drive
+     * briefing can see cameras at route km 20, 30, 100... before navigation starts.
+     */
+    fun routePrefetchCenters(
+        route: List<GeoPoint>,
+        spacingMeters: Double = ROUTE_PREFETCH_SPACING_METERS
+    ): List<GeoPoint> {
+        if (route.isEmpty()) return emptyList()
+        if (route.size == 1) return route
+
+        val safeSpacing = spacingMeters.coerceIn(5_000.0, 30_000.0)
+        val centers = mutableListOf(route.first())
+        var accumulatedSinceLast = 0.0
+
+        for (index in 0 until route.lastIndex) {
+            val a = route[index]
+            val b = route[index + 1]
+            val segmentLength = a.distanceTo(b)
+            if (segmentLength <= 0.0) continue
+
+            var remainingOnSegment = segmentLength
+            var segmentStart = a
+
+            while (accumulatedSinceLast + remainingOnSegment >= safeSpacing) {
+                val needed = safeSpacing - accumulatedSinceLast
+                val fraction = (needed / remainingOnSegment).coerceIn(0.0, 1.0)
+                val point = GeoPoint(
+                    latitude = segmentStart.latitude + (b.latitude - segmentStart.latitude) * fraction,
+                    longitude = segmentStart.longitude + (b.longitude - segmentStart.longitude) * fraction
+                )
+                centers += point
+                remainingOnSegment = point.distanceTo(b)
+                segmentStart = point
+                accumulatedSinceLast = 0.0
+                if (remainingOnSegment <= 1.0) break
+            }
+
+            accumulatedSinceLast += remainingOnSegment
+        }
+
+        if (centers.last().distanceTo(route.last()) > safeSpacing * 0.35) {
+            centers += route.last()
+        }
+
+        return centers.distinctBy {
+            Pair(
+                (it.latitude * 1_000_000).toLong(),
+                (it.longitude * 1_000_000).toLong()
+            )
+        }
     }
 }

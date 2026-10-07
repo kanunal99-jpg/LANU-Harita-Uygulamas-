@@ -85,9 +85,10 @@ class TurkishTtsManager(context: Context) : TextToSpeech.OnInitListener, Navigat
     }
 
     override fun playNavigationStartSequence() {
+        // Keep any already queued pre-drive radar briefing intact.
         speak(
             "${NavigationVoicePolicy.SEAT_BELT_MESSAGE} ${NavigationVoicePolicy.START_MESSAGE}",
-            isPriority = true
+            isPriority = false
         )
     }
 

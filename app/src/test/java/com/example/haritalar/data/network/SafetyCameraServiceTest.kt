@@ -39,6 +39,42 @@ class SafetyCameraServiceTest {
     }
 
     @Test
+    fun `parser enriches camera with nearby road and place context`() {
+        val json = """
+            {
+              "elements": [
+                {
+                  "type": "node",
+                  "id": 100,
+                  "lat": 41.0000,
+                  "lon": 29.0000,
+                  "tags": {"highway": "speed_camera", "maxspeed": "80"}
+                },
+                {
+                  "type": "way",
+                  "id": 200,
+                  "center": {"lat": 41.0002, "lon": 29.0000},
+                  "tags": {"highway": "primary", "name": "D100"}
+                },
+                {
+                  "type": "node",
+                  "id": 300,
+                  "lat": 41.0003,
+                  "lon": 29.0000,
+                  "tags": {"amenity": "fuel", "name": "Örnek Tesis"}
+                }
+              ]
+            }
+        """.trimIndent()
+
+        val result = service.parseOsmResponse(json)
+        val camera = result.single()
+
+        assertEquals("D100", camera.rawTags["lanu:nearby_road"])
+        assertEquals("Örnek Tesis", camera.rawTags["lanu:nearby_place"])
+    }
+
+    @Test
     fun `parser keeps missing speed limit unknown`() {
         val json = """
             {"elements":[

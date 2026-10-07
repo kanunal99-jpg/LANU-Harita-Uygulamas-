@@ -7,11 +7,11 @@ import kotlin.math.ceil
 /** Pure safety-warning policy; never invents a speed limit or enforcement point. */
 object SafetyCameraWarningPolicy {
     const val BASE_WARNING_DISTANCE_METERS = 5_000.0
-    const val MAX_WARNING_DISTANCE_METERS = 10_000.0
+    const val MAX_WARNING_DISTANCE_METERS = 5_000.0
     const val WARNING_STEP_METERS = 500.0
 
     private val ANNOUNCEMENT_MILESTONES_METERS =
-        intArrayOf(250, 500, 1_000, 2_000, 3_000, 5_000, 6_500, 8_000, 10_000)
+        (500..5_000 step 500).toList().sorted().toIntArray()
 
     data class ProximityWarning(
         val camera: SafetyCamera,
@@ -39,7 +39,7 @@ object SafetyCameraWarningPolicy {
         speedKmh: Float
     ): ProximityWarning? {
         val warningRadius = warningRadiusMeters(speedKmh)
-        if (distanceMeters > warningRadius) return null
+        if (distanceMeters < 0.0 || distanceMeters > warningRadius) return null
 
         val limit = parseSpeedLimitKmh(camera.maxSpeed)
         return ProximityWarning(
@@ -54,16 +54,8 @@ object SafetyCameraWarningPolicy {
         )
     }
 
-    /**
-     * Earlier warning at road speeds without increasing false precision at low speed.
-     * The value is a notification horizon only; it does not imply camera detection.
-     */
-    fun warningRadiusMeters(speedKmh: Float): Int = when {
-        speedKmh >= 110f -> 10_000
-        speedKmh >= 90f -> 8_000
-        speedKmh >= 70f -> 6_500
-        else -> BASE_WARNING_DISTANCE_METERS.toInt()
-    }
+    /** Driving voice alerts start only inside the final 5 km. */
+    fun warningRadiusMeters(speedKmh: Float): Int = MAX_WARNING_DISTANCE_METERS.toInt()
 
     fun warningBucket(distanceMeters: Double): Int {
         if (distanceMeters <= 0.0) return 0
@@ -72,11 +64,12 @@ object SafetyCameraWarningPolicy {
     }
 
     /**
-     * Sparse voice/haptic milestones avoid a distracting alert every 500 m.
+     * During driving, announce only 5.0 -> 4.5 -> ... -> 0.5 km.
+     * No 20 km / 10 km driving announcements: long-distance camera positions belong
+     * to the pre-drive route briefing.
      */
     fun announcementMilestone(distanceMeters: Double): Int? {
-        if (distanceMeters < 0.0 || distanceMeters > MAX_WARNING_DISTANCE_METERS) return null
-        if (distanceMeters == 0.0) return 0
+        if (distanceMeters <= 0.0 || distanceMeters > MAX_WARNING_DISTANCE_METERS) return null
         return ANNOUNCEMENT_MILESTONES_METERS.firstOrNull { distanceMeters <= it }
     }
 
