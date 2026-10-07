@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
+import com.example.haritalar.navigation.LanuDriveBrief
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -32,6 +33,7 @@ fun RouteOptionsCarousel(
     routes: List<RouteOption>,
     selectedRoute: RouteOption?,
     trafficMap: Map<String, Pair<TrafficStatus, List<TrafficSegment>>>,
+    brief: LanuDriveBrief? = null,
     onSelectRoute: (RouteOption) -> Unit,
     onStartNavigation: () -> Unit,
     onCancel: () -> Unit,
@@ -118,7 +120,14 @@ fun RouteOptionsCarousel(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(12.dp))
+
+            LanuBriefCard(
+                brief = brief,
+                modifier = Modifier.padding(horizontal = 16.dp)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
 
             // Start Navigation Primary Action Button
             Button(
