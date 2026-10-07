@@ -42,11 +42,11 @@ data class RoadIntelligenceEvent(
 object RoadIntelligencePolicy {
     fun build(
         cameraWarning: SafetyCameraWarningPolicy.ProximityWarning?,
-        roadFeatureWarning: RoadFeatureWarning? = null,
         weather: WeatherCondition?,
         traffic: TrafficStatus?,
         trafficSegments: List<TrafficSegment> = emptyList(),
-        userPoint: GeoPoint? = null
+        userPoint: GeoPoint? = null,
+        roadFeatureWarning: RoadFeatureWarning? = null
     ): List<RoadIntelligenceEvent> {
         val events = mutableListOf<RoadIntelligenceEvent>()
 
