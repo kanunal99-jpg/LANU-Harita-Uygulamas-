@@ -2,6 +2,7 @@ package com.example.haritalar.data.network
 
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.ManeuverType
+import com.example.haritalar.model.RouteAttributeStatus
 import com.example.haritalar.model.RouteOption
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.TurnManeuver
@@ -127,6 +128,8 @@ class ValhallaRoutingProvider(
                 val totalTime = summary.optLong("time", 0)
                 val totalLengthKm = summary.optDouble("length", 0.0)
                 val distanceMeters = totalLengthKm * 1000.0
+                val hasTollField = summary.has("has_toll")
+                val hasFerryField = summary.has("has_ferry")
                 val hasToll = summary.optBoolean("has_toll", false)
                 val hasFerry = summary.optBoolean("has_ferry", false)
                 val legs = trip.optJSONArray("legs") ?: return null
@@ -179,6 +182,16 @@ class ValhallaRoutingProvider(
                     maneuvers = maneuvers,
                     hasTolls = hasToll,
                     hasFerry = hasFerry,
+                    tollStatus = when {
+                        !hasTollField -> RouteAttributeStatus.UNKNOWN
+                        hasToll -> RouteAttributeStatus.PRESENT
+                        else -> RouteAttributeStatus.ABSENT
+                    },
+                    ferryStatus = when {
+                        !hasFerryField -> RouteAttributeStatus.UNKNOWN
+                        hasFerry -> RouteAttributeStatus.PRESENT
+                        else -> RouteAttributeStatus.ABSENT
+                    },
                     routeType = routeType,
                     generationId = generationId
                 )
@@ -232,16 +245,6 @@ class OsrmRoutingProvider(
                 val root = JSONObject(body)
                 val routesArray = root.optJSONArray("routes") ?: return@withContext emptyList()
                 val results = mutableListOf<RouteOption>()
-                val routeTypes = listOf(
-                    RouteType.FASTEST,
-                    RouteType.SHORTEST,
-                    RouteType.TOLL_FREE,
-                    RouteType.FASTEST_TOLL,
-                    RouteType.NO_FERRY,
-                    RouteType.WITH_FERRY,
-                    RouteType.TOLL_AND_FERRY_FREE
-                )
-
                 for (i in 0 until routesArray.length()) {
                     val r = routesArray.getJSONObject(i)
                     val duration = r.optDouble("duration", 0.0).toLong()
@@ -300,11 +303,13 @@ class OsrmRoutingProvider(
                         }
                     }
 
-                    val assignedType = routeTypes.getOrElse(i) { RouteType.FASTEST }
+                    // OSRM alternatives do not certify "shortest", "toll-free" or
+                    // "ferry-free" semantics merely by response order. Keep labels neutral.
+                    val assignedType = if (i == 0) RouteType.RECOMMENDED else RouteType.ALTERNATIVE
                     val routeId = "osrm_${assignedType.name.lowercase()}_${UUID.randomUUID().toString().take(6)}"
                     results.add(RouteOption(
                         routeId = routeId,
-                        title = assignedType.displayName,
+                        title = if (i == 0) "Önerilen Rota" else "Alternatif Rota ${i + 1}",
                         summary = if (mainRoad.isNotEmpty()) mainRoad else "Rota $i",
                         durationSeconds = duration,
                         distanceMeters = distance,
@@ -312,6 +317,8 @@ class OsrmRoutingProvider(
                         maneuvers = maneuvers,
                         hasTolls = hasToll,
                         hasFerry = hasFerry,
+                        tollStatus = if (hasToll) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN,
+                        ferryStatus = if (hasFerry) RouteAttributeStatus.PRESENT else RouteAttributeStatus.UNKNOWN,
                         routeType = assignedType,
                         generationId = generationId
                     ))
