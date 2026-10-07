@@ -16,7 +16,8 @@ data class LanuBriefItem(
     val detail: String,
     val source: String,
     val status: LanuBriefStatus,
-    val severity: LanuBriefSeverity = LanuBriefSeverity.INFO
+    val severity: LanuBriefSeverity = LanuBriefSeverity.INFO,
+    val updatedAtMillis: Long? = null
 )
 
 data class LanuDriveBrief(
@@ -40,12 +41,14 @@ object LanuBriefPolicy {
         routeWeather: List<WeatherCondition>,
         loadedSafetyCameras: List<SafetyCamera>,
         criticalPoiCoverage: RouteCriticalPoiCoverage? = null,
-        routeCameraCoverage: RouteSafetyCameraCoverage? = null
+        routeCameraCoverage: RouteSafetyCameraCoverage? = null,
+        routeDataUpdatedAtMillis: Long? = null,
+        routeWeatherUpdatedAtMillis: Long? = null
     ): LanuDriveBrief {
         val items = mutableListOf<LanuBriefItem>()
 
         items += trafficItem(route, traffic)
-        items += weatherItem(routeWeather)
+        items += weatherItem(routeWeather, routeWeatherUpdatedAtMillis)
         items += cameraItem(route, loadedSafetyCameras, routeCameraCoverage)
         items += criticalPoiItem(criticalPoiCoverage)
 
@@ -56,7 +59,8 @@ object LanuBriefPolicy {
                 detail = "Seçili rota ücretli yol veya ücretli geçiş içeriyor.",
                 source = "Rota sağlayıcısı",
                 status = LanuBriefStatus.VERIFIED,
-                severity = LanuBriefSeverity.NOTICE
+                severity = LanuBriefSeverity.NOTICE,
+                updatedAtMillis = routeDataUpdatedAtMillis
             )
         } else {
             LanuBriefItem(
@@ -64,7 +68,8 @@ object LanuBriefPolicy {
                 title = "Ücretli geçiş işareti yok",
                 detail = "Rota sağlayıcısı seçili rotada ücretli geçiş bildirmedi.",
                 source = "Rota sağlayıcısı",
-                status = LanuBriefStatus.VERIFIED
+                status = LanuBriefStatus.VERIFIED,
+                updatedAtMillis = routeDataUpdatedAtMillis
             )
         }
 
@@ -75,7 +80,8 @@ object LanuBriefPolicy {
                 detail = "Seçili rota feribot bölümü içeriyor.",
                 source = "Rota sağlayıcısı",
                 status = LanuBriefStatus.VERIFIED,
-                severity = LanuBriefSeverity.NOTICE
+                severity = LanuBriefSeverity.NOTICE,
+                updatedAtMillis = routeDataUpdatedAtMillis
             )
         }
 
@@ -94,7 +100,8 @@ object LanuBriefPolicy {
                 },
                 source = "LANU veri kalite motoru",
                 status = if (unavailable > 0) LanuBriefStatus.PARTIAL else LanuBriefStatus.VERIFIED,
-                severity = if (unavailable > 0) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
+                severity = if (unavailable > 0) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO,
+                updatedAtMillis = System.currentTimeMillis()
             )
         }
 
@@ -117,7 +124,8 @@ object LanuBriefPolicy {
                 detail = "Temel rota süresi korunuyor; doğrulanmamış trafik gecikmesi eklenmiyor.",
                 source = traffic?.sourceName ?: "Trafik sağlayıcısı",
                 status = LanuBriefStatus.UNAVAILABLE,
-                severity = LanuBriefSeverity.NOTICE
+                severity = LanuBriefSeverity.NOTICE,
+                updatedAtMillis = traffic?.lastCheckTimestamp?.takeIf { it > 0L }
             )
         }
 
@@ -130,6 +138,7 @@ object LanuBriefPolicy {
                 detail = traffic.message.ifBlank { "Canlı trafik sağlayıcısı rota gecikmesi bildirdi." },
                 source = traffic.sourceName,
                 status = LanuBriefStatus.VERIFIED,
+                updatedAtMillis = traffic.lastCheckTimestamp.takeIf { it > 0L },
                 severity = when {
                     delayMinutes >= 20 -> LanuBriefSeverity.CRITICAL
                     delayMinutes >= 10 -> LanuBriefSeverity.WARNING
@@ -142,12 +151,16 @@ object LanuBriefPolicy {
                 title = "Belirgin trafik gecikmesi yok",
                 detail = traffic.message.ifBlank { "Canlı trafik kontrolü rota üzerinde önemli gecikme göstermiyor." },
                 source = traffic.sourceName,
-                status = LanuBriefStatus.VERIFIED
+                status = LanuBriefStatus.VERIFIED,
+                updatedAtMillis = traffic.lastCheckTimestamp.takeIf { it > 0L }
             )
         }
     }
 
-    private fun weatherItem(weather: List<WeatherCondition>): LanuBriefItem {
+    private fun weatherItem(
+        weather: List<WeatherCondition>,
+        updatedAtMillis: Long?
+    ): LanuBriefItem {
         if (weather.isEmpty()) {
             return LanuBriefItem(
                 type = LanuBriefItemType.WEATHER,
@@ -155,7 +168,8 @@ object LanuBriefPolicy {
                 detail = "Hava sağlayıcısından rota örnekleri alınamadı; hava koşulu uydurulmuyor.",
                 source = "Open-Meteo",
                 status = LanuBriefStatus.UNAVAILABLE,
-                severity = LanuBriefSeverity.NOTICE
+                severity = LanuBriefSeverity.NOTICE,
+                updatedAtMillis = updatedAtMillis
             )
         }
 
@@ -166,7 +180,8 @@ object LanuBriefPolicy {
                 title = "Önemli hava riski görünmüyor",
                 detail = "Open-Meteo tarafından örneklenen rota noktalarında yağmur, kar, sis veya fırtına işareti yok.",
                 source = "Open-Meteo",
-                status = LanuBriefStatus.VERIFIED
+                status = LanuBriefStatus.VERIFIED,
+                updatedAtMillis = updatedAtMillis
             )
         }
 
@@ -210,7 +225,8 @@ object LanuBriefPolicy {
                 detail = coverage.note,
                 source = coverage.source,
                 status = LanuBriefStatus.UNAVAILABLE,
-                severity = LanuBriefSeverity.NOTICE
+                severity = LanuBriefSeverity.NOTICE,
+                updatedAtMillis = coverage.fetchedAtMillis
             )
         }
 
@@ -230,6 +246,7 @@ object LanuBriefPolicy {
             title = if (total > 0) "$total kritik nokta rota koridorunda" else "Doğrulanan koridorda kritik POI bulunmadı",
             detail = "$summary • ${coverage.sampleCount} rota örneği • maks. örnek aralığı $gapKm km • güncellendi ${briefTime(coverage.fetchedAtMillis)}. ${coverage.note}",
             source = coverage.source,
+            updatedAtMillis = coverage.fetchedAtMillis,
             status = when (coverage.status) {
                 RouteDataCoverage.VERIFIED -> LanuBriefStatus.VERIFIED
                 RouteDataCoverage.PARTIAL -> LanuBriefStatus.PARTIAL
@@ -257,7 +274,8 @@ object LanuBriefPolicy {
                     detail = routeCoverage.note,
                     source = routeCoverage.source,
                     status = LanuBriefStatus.UNAVAILABLE,
-                    severity = LanuBriefSeverity.NOTICE
+                    severity = LanuBriefSeverity.NOTICE,
+                    updatedAtMillis = routeCoverage.fetchedAtMillis
                 )
             }
 
@@ -295,6 +313,7 @@ object LanuBriefPolicy {
                 detail = detail,
                 source = routeCoverage.source,
                 status = status,
+                updatedAtMillis = routeCoverage.fetchedAtMillis,
                 severity = if (routeCoverage.cameras.isNotEmpty()) {
                     LanuBriefSeverity.NOTICE
                 } else {
