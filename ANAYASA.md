@@ -115,6 +115,22 @@ CI, Anayasa dosyasının varlığını ve tanımlı kritik doğruluk kontrolleri
 - Release APK’sı için SHA-256 üretilir ve build/test zinciri başarılı olmadan yayın yapılmaz.
 - Yayının hedef commit’i ve APK’nın gerçekten erişilebilir olduğu doğrulanır.
 
+## 11.1 Her anlamlı geliştirmede APK yayın zorunluluğu
+
+LANU'da kullanıcı tarafından cihaz üzerinde kontrol edilmesi anlamlı olan her **dişe dokunur geliştirme, özellik, davranış değişikliği veya önemli hata düzeltmesi** ayrı bir yayınlanabilir Android sürümü olarak ele alınır.
+
+- İlgili değişiklik test kapılarını geçmeden yayınlanamaz.
+- Sürüm numarası / versionCode artırılır.
+- APK CI ile yeniden build edilir.
+- APK yalnızca workflow artifact olarak bırakılmaz.
+- İlgili APK **GitHub Releases / Yayınlar** altında cihazdan doğrudan indirilebilir biçimde bulunmalıdır.
+- Release asset'in gerçekten yüklendiği, indirilebilir olduğu ve doğru commit/sürümden üretildiği doğrulanır.
+- SHA-256 dosyası ilgili APK ile birlikte yayınlanır.
+- Bir özellik “tamamlandı” denmeden önce kullanıcıya indirilebilir APK bağlantısı verilir.
+- Dokümantasyon-only veya kullanıcı davranışını hiç değiştirmeyen küçük metin değişiklikleri zorunlu APK yayını kapsamı dışında tutulabilir; ancak kullanıcı deneyimini, veri akışını, performansı, UI'ı, navigasyonu, aramayı, uyarıları, POI'yi, kamerayı, GPS'i, hava/trafik bilgisini veya backend davranışını etkileyen değişiklikler kapsam içindedir.
+
+Bu kural LANU'nun mevcut ve gelecekteki tüm Android geliştirmelerinde varsayılan olarak uygulanır.
+
 ## 12. Tamamlanma tanımı
 
 Bir geliştirme işi şu döngü tamamlanmadan kapanmaz:
