@@ -231,7 +231,7 @@ class TrafficCache(
             cache.remove(makeKey(point))
             return null
         }
-        return entry.segment
+        return entry.segment.copy(fromCache = true)
     }
 
     fun put(point: GeoPoint, segment: TrafficSegment) {
@@ -356,12 +356,27 @@ object TrafficRouteCostModel {
             )
         }
 
+        val liveSegments = segments.filterNot { it.fromCache }
+        if (liveSegments.isEmpty()) {
+            return TrafficStatus(
+                verified = false,
+                message = "Canlı trafik yenilenemedi • son bilinen cache yalnız harita için korunuyor",
+                delaySeconds = 0,
+                trafficLevel = TrafficLevel.UNKNOWN,
+                sourceName = "$providerName • cache",
+                isLiveApi = false,
+                httpStatusCode = httpStatusCode,
+                segmentCount = segments.size,
+                lastCheckTimestamp = lastCheckTimestamp
+            )
+        }
+
         var totalDelay = 0L
         var totalSpeedRatio = 0.0
         var totalSpeed = 0.0
         var count = 0
 
-        for (s in segments) {
+        for (s in liveSegments) {
             totalDelay += s.delaySeconds
             totalSpeed += s.currentSpeed
             if (s.freeFlowSpeed > 0) {
@@ -408,7 +423,7 @@ object TrafficRouteCostModel {
             sourceName = providerName,
             isLiveApi = true,
             httpStatusCode = httpStatusCode ?: 200,
-            segmentCount = segments.size,
+            segmentCount = liveSegments.size,
             lastCheckTimestamp = lastCheckTimestamp,
             averageSpeedKmh = avgSpeed,
             rawSampleDetails = "Doğrulanan $count segment ortalama hızı: ${avgSpeed.toInt()} km/h"
