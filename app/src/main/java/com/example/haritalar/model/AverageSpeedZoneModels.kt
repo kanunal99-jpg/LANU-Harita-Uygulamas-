@@ -40,3 +40,10 @@ sealed class AverageSpeedZoneFetchResult {
         val fallbackZones: List<AverageSpeedZone> = emptyList()
     ) : AverageSpeedZoneFetchResult()
 }
+
+
+data class AverageSpeedZoneRouteSummary(
+    val matches: List<AverageSpeedZoneRouteMatch>,
+    val dataState: AverageSpeedZoneDataState,
+    val source: String
+)
