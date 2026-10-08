@@ -51,7 +51,7 @@ class SafetyCameraMultiRegionCacheInstrumentedTest {
             listOf(SafetyCamera(303L, GeoPoint(41.0, 29.0)))
         )
         val prefs = context.getSharedPreferences("lanu_safety_camera_cache", Context.MODE_PRIVATE)
-        val entries = JSONArray(prefs.getString("area_index_v2", "[]"))
+        val entries = JSONArray(prefs.getString("area_index_v2", "[]") ?: "[]")
         entries.put(JSONObject().put("key", "broken").put("savedAt", 123L).put(
             "bbox", JSONObject().put("south", "not-a-number")
         ))
