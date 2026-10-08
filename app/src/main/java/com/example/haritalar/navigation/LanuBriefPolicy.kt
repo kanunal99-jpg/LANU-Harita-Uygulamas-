@@ -51,6 +51,7 @@ object LanuBriefPolicy {
         roadFeatures: List<RoadFeature> = emptyList(),
         roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
         cameraRouteScanComplete: Boolean = false,
+        cameraRouteScanDegraded: Boolean = false,
         routeCriticalPois: List<RouteCriticalPoiMatch> = emptyList(),
         routeCriticalPoiDataState: RouteCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
     ): LanuDriveBrief {
@@ -59,7 +60,7 @@ object LanuBriefPolicy {
         closureItem(traffic, trafficSegments)?.let { items += it }
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
-        items += cameraItem(route, loadedSafetyCameras, cameraRouteScanComplete)
+        items += cameraItem(route, loadedSafetyCameras, cameraRouteScanComplete, cameraRouteScanDegraded)
         items += roadFeatureItem(roadFeatures, roadFeatureDataState)
         items += criticalServicesItem(routeCriticalPois, routeCriticalPoiDataState)
 
@@ -264,7 +265,8 @@ object LanuBriefPolicy {
     private fun cameraItem(
         route: RouteOption,
         loadedCameras: List<SafetyCamera>,
-        routeScanComplete: Boolean
+        routeScanComplete: Boolean,
+        routeScanDegraded: Boolean
     ): LanuBriefItem {
         if (route.geometry.size < 2) {
             return LanuBriefItem(
@@ -282,6 +284,20 @@ object LanuBriefPolicy {
                 cameras = loadedCameras,
                 route = route.geometry
             ).size
+            if (routeScanDegraded) {
+                return LanuBriefItem(
+                    type = LanuBriefItemType.CAMERA,
+                    title = "Rota kamera verisi kısmen doğrulanamadı",
+                    detail = if (partialCount > 0) {
+                        "Kontrol edilen bölümlerde $partialCount kamera/denetim noktası kaydı bulundu; bazı kesimlerde yalnız eski önbellek kullanılabildi veya kamera verisi alınamadı. Toplam sayı bilinmiyor."
+                    } else {
+                        "Bazı kesimlerde kamera sağlayıcısına ulaşılamadı veya yalnız son bilinen veri kullanılabildi. Kamera bulunamadığı sonucuna varılamaz."
+                    },
+                    source = "OpenStreetMap / son bilinen veri",
+                    status = LanuBriefStatus.PARTIAL,
+                    severity = LanuBriefSeverity.NOTICE
+                )
+            }
             return LanuBriefItem(
                 type = LanuBriefItemType.CAMERA,
                 title = if (partialCount > 0) {
