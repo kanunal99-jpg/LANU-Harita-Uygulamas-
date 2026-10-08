@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.network.SafetyCameraAreaPolicy
 import com.example.haritalar.data.repository.SafetyCameraRepository
+import com.example.haritalar.navigation.SafetyCameraRouteProgressPolicy
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
@@ -110,7 +111,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             val merged = linkedMapOf<Long, SafetyCamera>()
             try {
                 val centers = SafetyCameraAreaPolicy.routePrefetchCenters(route)
-                for (center in centers) {
+                for ((index, center) in centers.withIndex()) {
                     val bbox = SafetyCameraAreaPolicy.boundingBoxAround(
                         center = center,
                         radiusMeters = SafetyCameraAreaPolicy.ROUTE_PREFETCH_RADIUS_METERS
@@ -122,6 +123,13 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
                         is SafetyCameraFetchResult.Error -> {
                             result.fallbackCameras.forEach { merged[it.id] = it }
                         }
+                    }
+                    if (generation != routePrefetchGeneration) return@launch
+                    // Uzun rotalarda ilk taranan bölümün sonuçlarını erkenden göster.
+                    // Tamamlanma kimliği yalnız bütün rota tarandığında atanır.
+                    if (SafetyCameraRouteProgressPolicy.shouldPublishPartial(index, centers.size)) {
+                        _routeCameras.value = merged.values.toList()
+                        publishMerged()
                     }
                 }
                 if (generation != routePrefetchGeneration) return@launch
