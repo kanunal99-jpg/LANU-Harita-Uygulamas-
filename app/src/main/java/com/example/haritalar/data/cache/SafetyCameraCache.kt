@@ -5,6 +5,7 @@ import android.util.Log
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
+import com.example.haritalar.model.SafetyCameraType
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -34,6 +35,7 @@ class SafetyCameraCache(context: Context) {
                         .put("id", camera.id)
                         .put("lat", camera.point.latitude)
                         .put("lon", camera.point.longitude)
+                        .put("type", camera.type.name)
                         .put("maxSpeed", camera.maxSpeed)
                         .put("direction", camera.direction)
                         .put("operator", camera.operator)
@@ -96,6 +98,9 @@ class SafetyCameraCache(context: Context) {
                         SafetyCamera(
                             id = item.getLong("id"),
                             point = point,
+                            type = runCatching {
+                                SafetyCameraType.valueOf(item.optString("type"))
+                            }.getOrDefault(SafetyCameraType.FIXED_SPEED),
                             maxSpeed = item.optString("maxSpeed").takeIf { it.isNotBlank() && it != "null" },
                             direction = item.optString("direction").takeIf { it.isNotBlank() && it != "null" },
                             operator = item.optString("operator").takeIf { it.isNotBlank() && it != "null" },
