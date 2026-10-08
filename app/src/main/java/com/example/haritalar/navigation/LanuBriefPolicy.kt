@@ -278,10 +278,22 @@ object LanuBriefPolicy {
         }
 
         if (!routeScanComplete) {
+            val partialCount = SafetyCameraRouteFilterPolicy.camerasAlongRoute(
+                cameras = loadedCameras,
+                route = route.geometry
+            ).size
             return LanuBriefItem(
                 type = LanuBriefItemType.CAMERA,
-                title = "Rota radar/kamera taraması sürüyor",
-                detail = "Seçili güzergâhın tamamı OpenStreetMap radar/kamera verisiyle eşleştiriliyor.",
+                title = if (partialCount > 0) {
+                    "$partialCount kamera/denetim noktası şu ana kadar bulundu"
+                } else {
+                    "Rota radar/kamera taraması sürüyor"
+                },
+                detail = if (partialCount > 0) {
+                    "Güzergâhın yalnızca taranan bölümlerinde $partialCount nokta eşleşti; tam rota taraması henüz bitmedi."
+                } else {
+                    "Seçili güzergâhın tamamı OpenStreetMap radar/kamera verisiyle eşleştiriliyor."
+                },
                 source = "OpenStreetMap",
                 status = LanuBriefStatus.PARTIAL,
                 severity = LanuBriefSeverity.INFO
