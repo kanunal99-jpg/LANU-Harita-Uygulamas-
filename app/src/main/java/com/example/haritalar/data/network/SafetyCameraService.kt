@@ -7,6 +7,7 @@ import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraFetchResult
 import com.example.haritalar.model.SafetyCameraType
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -104,6 +105,9 @@ class SafetyCameraService(
                         endpointUsed = endpoint
                     )
                 }
+            } catch (cancelled: CancellationException) {
+                // A cancelled navigation/route must not launch new mirror requests.
+                throw cancelled
             } catch (e: Exception) {
                 networkError = true
                 lastError = e.message ?: "Bağlantı hatası"
