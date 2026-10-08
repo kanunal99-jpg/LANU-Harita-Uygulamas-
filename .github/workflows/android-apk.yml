@@ -221,10 +221,17 @@ jobs:
           gh release download "$tag" --pattern 'apk-signing-info.txt' --dir "$verify_dir"
           expected="$(cut -d ' ' -f 1 "$verify_dir/apk-sha256.txt")"
           actual="$(sha256sum "$verify_dir/app-debug.apk" | awk '{print $1}')"
+          local_expected="$(cut -d ' ' -f 1 apk-sha256.txt)"
+          test "$local_expected" = "$expected" || {
+            echo "ERROR: Immutable versioned release already contains a different APK; refusing to publish inconsistent latest asset"
+            exit 1
+          }
           test "$actual" = "$expected" || {
             echo "ERROR: Versioned APK does not match its published SHA-256 after download"
             exit 1
           }
+          apksigner_bin="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner_bin"
           downloaded_cert="$("$apksigner_bin" verify --print-certs "$verify_dir/app-debug.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
           published_cert="$(sed -n 's/^signer_certificate_sha256=//p' "$verify_dir/apk-signing-info.txt" | head -n 1)"
           test -n "$downloaded_cert" && test "$downloaded_cert" = "$published_cert" || {
