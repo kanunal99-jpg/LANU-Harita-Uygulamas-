@@ -75,10 +75,17 @@ object SafetyCameraVoicePolicy {
 
     fun preDriveAnnouncements(
         cameras: List<SafetyCameraRouteFilterPolicy.RouteCamera>,
-        resolvedAddresses: Map<Long, String> = emptyMap()
+        resolvedAddresses: Map<Long, String> = emptyMap(),
+        coverageDegraded: Boolean = false
     ): List<String> {
         if (cameras.isEmpty()) {
-            return listOf("Rota kamera özeti. Seçili güzergâhta doğrulanmış kamera kaydı görünmüyor.")
+            return listOf(
+                if (coverageDegraded) {
+                    "Rota kamera özeti kısmi. Bazı güzergâh bölümlerinden güncel kamera verisi alınamadı. Bu nedenle kamera bulunmadığı söylenemez."
+                } else {
+                    "Rota kamera özeti. Seçili güzergâhta doğrulanmış kamera kaydı görünmüyor."
+                }
+            )
         }
 
         val result = mutableListOf<String>()
@@ -88,7 +95,11 @@ object SafetyCameraVoicePolicy {
             .entries
             .sortedBy { it.key.ordinal }
             .joinToString(", ") { (type, count) -> "$count ${type.spokenName}" }
-        result += "Rota kamera özeti. Seçili güzergâhta ${cameras.size} denetim noktası görünüyor: $typeSummary."
+        result += if (coverageDegraded) {
+            "Rota kamera özeti kısmi. Bazı yol kesimlerinde güncel veri doğrulanamadı. Bulunan ${cameras.size} denetim noktası: $typeSummary. Toplam sayı bilinmiyor."
+        } else {
+            "Rota kamera özeti. Seçili güzergâhta ${cameras.size} denetim noktası görünüyor: $typeSummary."
+        }
 
         cameras.forEachIndexed { index, item ->
             val context = locationContext(
