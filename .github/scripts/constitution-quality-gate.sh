@@ -149,5 +149,11 @@ grep -q 'KEY_LEGACY_PAYLOAD' app/src/main/java/com/example/haritalar/data/cache/
 test -s app/src/test/java/com/example/haritalar/data/network/SafetyCameraMirrorFallbackTest.kt || fail "Overpass alternatif mirror entegrasyon testleri eksik"
 grep -q 'MAX_CACHE_BYTES = 3_000_000' app/src/main/java/com/example/haritalar/data/cache/SafetyCameraCacheIndexPolicy.kt || fail "radar cache boyut sınırı eksik"
 grep -q 'apk-signing-info.txt' .github/workflows/android-apk.yml || fail "APK signing sertifika raporu eksik"
+test -s app/src/test/java/com/example/haritalar/navigation/SafetyCameraWarningPolicyTest.kt || fail "sürüş kamera hız limiti regresyon testleri eksik"
+grep -q 'multipleOrConditionalOsmLimitsNeverBecomeVerifiedNumericLimit' app/src/test/java/com/example/haritalar/navigation/SafetyCameraWarningPolicyTest.kt || fail "koşullu OSM hız limiti regresyon testi eksik"
+grep -q 'malformedGpsDistanceAndSpeedAreHandledWithoutFalseWarnings' app/src/test/java/com/example/haritalar/navigation/SafetyCameraWarningPolicyTest.kt || fail "geçersiz GPS alarm koruması testi eksik"
+grep -q 'sourceLimitIsNotAnnouncedAsVerifiedRegulatoryFact' app/src/test/java/com/example/haritalar/navigation/SafetyCameraVoicePolicyTest.kt || fail "OSM kaynak hız sınırı ses dürüstlüğü testi eksik"
+grep -q 'Kaynakta belirtilen hız sınırı' app/src/main/java/com/example/haritalar/navigation/SafetyCameraVoicePolicy.kt || fail "OSM hız sınırı sesinde kaynak doğruluğu eksik"
+if grep -q 'Doğrulanmış hız sınırı' app/src/main/java/com/example/haritalar/ui/MainViewModel.kt; then fail "kaynağa dayalı hız sınırı yasal olarak doğrulanmış gösteriliyor"; fi
 echo "LANU constitution quality gate: PASS"
 
