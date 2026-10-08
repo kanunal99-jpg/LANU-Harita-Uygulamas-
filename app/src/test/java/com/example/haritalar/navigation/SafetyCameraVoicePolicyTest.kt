@@ -126,11 +126,11 @@ class SafetyCameraVoicePolicyTest {
         )
         val warning = SafetyCameraWarningPolicy.evaluate(camera, 900.0, 100f)!!
         val spoken = SafetyCameraVoicePolicy.drivingMilestoneAnnouncement(warning)
-        assertTrue(!spoken.contains("Hız sınırı 50"))
+        assertTrue(!spoken.contains("kilometre saat"))
         val brief = SafetyCameraVoicePolicy.preDriveAnnouncements(
             listOf(SafetyCameraRouteFilterPolicy.RouteCamera(camera, 20_000.0))
         )
-        assertTrue(brief.none { it.contains("Hız sınırı 50") })
+        assertTrue(brief.none { it.contains("kilometre saat") })
     }
 
     @Test
