@@ -53,16 +53,9 @@ object TurkishAddressHelper {
         "Yozgat", "Zonguldak"
     )
 
-    // Major / frequent Turkish districts
-    val NOTABLE_DISTRICTS = listOf(
-        "Kadıköy", "Beşiktaş", "Şişli", "Üsküdar", "Beyoğlu", "Fatih", "Bakırköy", "Sarıyer",
-        "Maltepe", "Kartal", "Pendik", "Ataşehir", "Ümraniye", "Beylikdüzü", "Zeytinburnu",
-        "Çankaya", "Keçiören", "Yenimahalle", "Mamak", "Etimesgut", "Sincan", "Altındağ", "Gölbaşı",
-        "Konak", "Bornova", "Karşıyaka", "Buca", "Çiğli", "Gaziemir", "Balçova", "Narlıdere",
-        "Nilüfer", "Osmangazi", "Yıldırım", "Muratpaşa", "Kepez", "Konyaaltı", "Alanya", "Manavgat",
-        "Seyhan", "Çukurova", "Yüreğir", "Selçuklu", "Meram", "Karatay", "Şahinbey", "Şehitkamil",
-        "İzmit", "Gebze", "Melikgazi", "Kocasinan", "Odunpazarı", "Tepebaşı", "Ortahisar"
-    )
+    // Kept for legacy callers; the complete parent-linked directory supersedes a hand-picked list.
+    val NOTABLE_DISTRICTS = TurkishDistrictDirectory.districtsByProvince.values
+        .flatten().distinct()
 
     /**
      * Converts Turkish diacritics to ASCII characters and lowercases cleanly.
@@ -146,28 +139,26 @@ object TurkishAddressHelper {
             val match = regex.find(wNorm)
             if (match != null) {
                 detectedProvince = prov
-                // remove from working
-                val start = match.range.first
-                val end = match.range.last + 1
-                // Replace in working using matched range or word boundary
-                working = working.replace(Regex("(?i)\\b$prov\\b"), " ")
-                    .replace(Regex("(?i)\\b$pNorm\\b"), " ")
-                    .trim()
+                // Normalized Turkish text has the same character offsets as the original.
+                // Remove the matched province exactly; generic ignore-case regex misses 'ı/İ'.
+                working = working.removeRange(match.range).trim()
                 break
             }
         }
 
-        // 3. Extract District (İlçe) from known districts
-        for (dist in NOTABLE_DISTRICTS) {
-            val dNorm = normalizeTurkish(dist)
-            val wNorm = normalizeTurkish(working)
-            val regex = Regex("(?i)\\b$dNorm\\b")
-            if (regex.containsMatchIn(wNorm)) {
-                detectedDistrict = dist
-                working = working.replace(Regex("(?i)\\b$dist\\b"), " ")
-                    .replace(Regex("(?i)\\b$dNorm\\b"), " ")
-                    .trim()
-                break
+        // 3. Resolve a district against its explicit parent province.
+        // Without a province, only nationwide-unambiguous district names are accepted.
+        TurkishDistrictDirectory.findDistrict(working, detectedProvince)?.let { district ->
+            val normalizedWorking = normalizeTurkish(working)
+            val normalizedDistrict = normalizeTurkish(district)
+            val districtPattern = Regex("(^|[^a-z0-9])${Regex.escape(normalizedDistrict)}(?=$|[^a-z0-9])")
+            val districtMatch = districtPattern.find(normalizedWorking)
+            if (districtMatch != null) {
+                val start = normalizedWorking.indexOf(normalizedDistrict, districtMatch.range.first)
+                if (start >= 0) {
+                    detectedDistrict = district
+                    working = working.removeRange(start, start + normalizedDistrict.length).trim()
+                }
             }
         }
 
@@ -212,14 +203,8 @@ object TurkishAddressHelper {
             }
         }
 
-        // 7. Check if there's an unrecognized district or neighborhood in the remaining working string
-        val remainingTokens = working.split(Regex("[,;\\s]+")).map { it.trim() }.filter { it.length >= 2 }
-        if (detectedDistrict == null && remainingTokens.isNotEmpty()) {
-            // First remaining word could be district if province was specified
-            if (detectedProvince != null && remainingTokens.isNotEmpty()) {
-                detectedDistrict = remainingTokens.first().replaceFirstChar { if (it.isLowerCase()) it.titlecase(TR_LOCALE) else it.toString() }
-            }
-        }
+        // 7. Unrecognized text stays a search keyword. Never invent an ilçe
+        // from its first token when the province is known.
 
         // If street was not matched via regex (e.g. "Caferağa Moda Caddesi 15" without prior match)
         if (detectedStreet == null) {
