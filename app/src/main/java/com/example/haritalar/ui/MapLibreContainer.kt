@@ -14,6 +14,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.example.haritalar.model.AverageSpeedZoneRouteMatch
 import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.MapTrackingMode
@@ -55,6 +56,12 @@ private const val SRC_ALT_ROUTES = "src_alt_routes"
 private const val LAYER_ALT_ROUTES = "layer_alt_routes"
 private const val SRC_TRAFFIC = "src_traffic"
 private const val LAYER_TRAFFIC = "layer_traffic"
+private const val SRC_AVERAGE_SPEED_ZONES = "src_average_speed_zones"
+private const val LAYER_AVERAGE_SPEED_ZONES = "layer_average_speed_zones"
+private const val SRC_AVERAGE_SPEED_START = "src_average_speed_start"
+private const val LAYER_AVERAGE_SPEED_START = "layer_average_speed_start"
+private const val SRC_AVERAGE_SPEED_END = "src_average_speed_end"
+private const val LAYER_AVERAGE_SPEED_END = "layer_average_speed_end"
 private const val SRC_TRAFFIC_SIGNALS = "src_traffic_signals"
 private const val LAYER_TRAFFIC_SIGNALS = "layer_traffic_signals"
 private const val ICON_TRAFFIC_SIGNAL = "icon_traffic_signal"
@@ -108,6 +115,7 @@ fun MapLibreContainer(
     isSafetyCamerasLayerVisible: Boolean = true,
     routeWeather: List<com.example.haritalar.model.WeatherCondition> = emptyList(),
     isWeatherLayerVisible: Boolean = true,
+    averageSpeedZones: List<AverageSpeedZoneRouteMatch> = emptyList(),
     destinationPoint: GeoPoint?,
     cameraMode: CameraMode,
     mapTrackingMode: MapTrackingMode,
@@ -362,6 +370,36 @@ fun MapLibreContainer(
         }
     }
 
+    LaunchedEffect(averageSpeedZones, mapStyle) {
+        val style = mapStyle ?: return@LaunchedEffect
+        val lineSource = style.getSourceAs<GeoJsonSource>(SRC_AVERAGE_SPEED_ZONES)
+            ?: return@LaunchedEffect
+        val startSource = style.getSourceAs<GeoJsonSource>(SRC_AVERAGE_SPEED_START)
+            ?: return@LaunchedEffect
+        val endSource = style.getSourceAs<GeoJsonSource>(SRC_AVERAGE_SPEED_END)
+            ?: return@LaunchedEffect
+
+        if (averageSpeedZones.isEmpty()) {
+            lineSource.setGeoJson(createEmptyFeatureCollection())
+            startSource.setGeoJson(createEmptyFeatureCollection())
+            endSource.setGeoJson(createEmptyFeatureCollection())
+            style.getLayer(LAYER_AVERAGE_SPEED_ZONES)?.setProperties(visibility(Property.NONE))
+            style.getLayer(LAYER_AVERAGE_SPEED_START)?.setProperties(visibility(Property.NONE))
+            style.getLayer(LAYER_AVERAGE_SPEED_END)?.setProperties(visibility(Property.NONE))
+        } else {
+            lineSource.setGeoJson(
+                createMultiLineStringGeoJson(
+                    averageSpeedZones.map { it.zone.geometry }.filter { it.size >= 2 }
+                )
+            )
+            startSource.setGeoJson(createAverageSpeedEndpointGeoJson(averageSpeedZones, start = true))
+            endSource.setGeoJson(createAverageSpeedEndpointGeoJson(averageSpeedZones, start = false))
+            style.getLayer(LAYER_AVERAGE_SPEED_ZONES)?.setProperties(visibility(Property.VISIBLE))
+            style.getLayer(LAYER_AVERAGE_SPEED_START)?.setProperties(visibility(Property.VISIBLE))
+            style.getLayer(LAYER_AVERAGE_SPEED_END)?.setProperties(visibility(Property.VISIBLE))
+        }
+    }
+
     LaunchedEffect(isTrafficSignalsLayerVisible, trafficSignals, mapStyle) {
         val style = mapStyle ?: return@LaunchedEffect
         val src = style.getSourceAs<GeoJsonSource>(SRC_TRAFFIC_SIGNALS) ?: return@LaunchedEffect
@@ -384,6 +422,38 @@ private fun setupLayers(style: Style, context: Context) {
     style.addLayer(LineLayer(LAYER_ACTIVE_ROUTE, SRC_ACTIVE_ROUTE).apply { setProperties(lineColor(Color.parseColor("#007AFF")), lineWidth(6f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)) })
     style.addSource(GeoJsonSource(SRC_TRAFFIC, createEmptyFeatureCollection()))
     style.addLayer(LineLayer(LAYER_TRAFFIC, SRC_TRAFFIC).apply { setProperties(lineColor(get("color")), lineWidth(6f), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND), visibility(Property.VISIBLE)) })
+
+    style.addSource(GeoJsonSource(SRC_AVERAGE_SPEED_ZONES, createEmptyFeatureCollection()))
+    style.addLayer(LineLayer(LAYER_AVERAGE_SPEED_ZONES, SRC_AVERAGE_SPEED_ZONES).apply {
+        setProperties(
+            lineColor(Color.parseColor("#F59E0B")),
+            lineWidth(8f),
+            lineOpacity(0.62f),
+            lineCap(Property.LINE_CAP_ROUND),
+            lineJoin(Property.LINE_JOIN_ROUND),
+            visibility(Property.NONE)
+        )
+    })
+    style.addSource(GeoJsonSource(SRC_AVERAGE_SPEED_START, createEmptyFeatureCollection()))
+    style.addLayer(CircleLayer(LAYER_AVERAGE_SPEED_START, SRC_AVERAGE_SPEED_START).apply {
+        setProperties(
+            circleRadius(7f),
+            circleColor(Color.parseColor("#10B981")),
+            circleStrokeWidth(3f),
+            circleStrokeColor(Color.WHITE),
+            visibility(Property.NONE)
+        )
+    })
+    style.addSource(GeoJsonSource(SRC_AVERAGE_SPEED_END, createEmptyFeatureCollection()))
+    style.addLayer(CircleLayer(LAYER_AVERAGE_SPEED_END, SRC_AVERAGE_SPEED_END).apply {
+        setProperties(
+            circleRadius(7f),
+            circleColor(Color.parseColor("#EF4444")),
+            circleStrokeWidth(3f),
+            circleStrokeColor(Color.WHITE),
+            visibility(Property.NONE)
+        )
+    })
     style.addImage(ICON_DEST_MARKER, createDestinationPinBitmap(context))
     style.addSource(GeoJsonSource(SRC_DEST_MARKER, createEmptyFeatureCollection()))
     style.addLayer(SymbolLayer(LAYER_DEST_MARKER, SRC_DEST_MARKER).apply {
@@ -463,6 +533,34 @@ private fun createMultiLineStringGeoJson(lines: List<List<GeoPoint>>): String {
     lines.forEach { line ->
         val coords = JSONArray(); line.forEach { coords.put(JSONArray().apply { put(it.longitude); put(it.latitude) }) }
         features.put(feature(JSONObject().apply { put("geometry", JSONObject().apply { put("type", "LineString"); put("coordinates", coords) }) }))
+    }
+    return featureCollection(features)
+}
+
+private fun createAverageSpeedEndpointGeoJson(
+    matches: List<AverageSpeedZoneRouteMatch>,
+    start: Boolean
+): String {
+    val features = JSONArray()
+    matches.forEach { match ->
+        val point = if (start) match.zone.geometry.firstOrNull() else match.zone.geometry.lastOrNull()
+        if (point != null) {
+            features.put(
+                feature(
+                    JSONObject().apply {
+                        put(
+                            "properties",
+                            JSONObject().apply {
+                                put("zoneId", match.zone.id)
+                                put("role", if (start) "start" else "end")
+                                match.speedLimitKmh?.let { put("maxSpeed", it) }
+                            }
+                        )
+                        put("geometry", pointGeometry(point))
+                    }
+                )
+            )
+        }
     }
     return featureCollection(features)
 }
