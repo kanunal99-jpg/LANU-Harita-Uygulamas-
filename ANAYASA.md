@@ -251,3 +251,23 @@ Yeni özellik yalnızca ekrana çizildiği için tamamlanmış sayılmaz. Tamaml
 **veri doğruluğu + UX + sürüş güvenliği + fallback + performans + test + gerçek cihaz doğrulaması + release kanıtı**
 
 birlikte değerlendirilir.
+
+
+## 14. Bağlayıcı Premium Master Specification
+
+`docs/LANU_PREMIUM_MASTER_SPEC_2026_10_08.md` bu Anayasa'nın bağlayıcı ürün kapsamı ekidir.
+
+Bu ek özellikle:
+- navigasyon yardımcı veri servislerinin navigasyon başlangıcını bloke etmemesini,
+- kamera/hız denetimi sınıflarının kaynaktan dürüst biçimde ayrıştırılmasını,
+- son 5 km / 500 m kamera ses eşiklerini,
+- ETA-zamanlı rota hava zekâsını,
+- merkezi Road Intelligence öncelik motorunu,
+- rota geneli kritik hizmetleri,
+- streaming uzun-rota analizini,
+- kaynak/güncellik/güven görünürlüğünü,
+- her anlamlı geliştirmede doğrulanmış APK Release kuralını
+
+zorunlu ürün davranışı olarak tanımlar.
+
+Canlı polis/jandarma/seyyar radar konumunu kullanıcılar arasında paylaşarak denetimden kaçınmayı kolaylaştıran bir özellik bu kapsamın parçası değildir. Topluluk altyapısı yol güvenliği ve doğrulanabilir yol olayları için kullanılabilir.
