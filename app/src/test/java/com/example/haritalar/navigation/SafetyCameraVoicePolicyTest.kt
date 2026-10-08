@@ -80,7 +80,7 @@ class SafetyCameraVoicePolicyTest {
 
         assertTrue(text.contains("5 kilometre sonra"))
         assertTrue(text.contains("D100 üzerinde"))
-        assertTrue(text.contains("Hız sınırı 90"))
+        assertTrue(text.contains("Kaynakta belirtilen hız sınırı 90"))
     }
 
     @Test
