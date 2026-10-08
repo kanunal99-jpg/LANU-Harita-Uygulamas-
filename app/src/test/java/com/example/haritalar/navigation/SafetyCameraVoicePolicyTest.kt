@@ -40,6 +40,29 @@ class SafetyCameraVoicePolicyTest {
     }
 
     @Test
+    fun partialRouteScanDoesNotReadOutVerifiedNoCameraStatement() {
+        val announcements = SafetyCameraVoicePolicy.preDriveAnnouncements(
+            cameras = emptyList(),
+            coverageDegraded = true
+        )
+        assertEquals(1, announcements.size)
+        assertTrue(announcements.first().contains("verisi alınamadı"))
+        assertTrue(announcements.first().contains("kamera bulunmadığı söylenemez"))
+    }
+
+    @Test
+    fun partialRouteScanWithKnownCameraExplainsIncompleteCoverage() {
+        val camera = SafetyCamera(id = 117L, point = GeoPoint(41.0, 29.0))
+        val announcements = SafetyCameraVoicePolicy.preDriveAnnouncements(
+            cameras = listOf(SafetyCameraRouteFilterPolicy.RouteCamera(camera, 12_000.0)),
+            coverageDegraded = true
+        )
+        assertEquals(2, announcements.size)
+        assertTrue(announcements.first().contains("kısmi"))
+        assertTrue(announcements.first().contains("Toplam sayı bilinmiyor"))
+    }
+
+    @Test
     fun drivingAnnouncementUsesOnlyMilestoneDistanceAndKnownLocation() {
         val camera = SafetyCamera(
             id = 3L,
