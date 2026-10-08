@@ -1,6 +1,8 @@
 package com.example.haritalar.navigation
 
 import com.example.haritalar.model.PoiCategory
+import com.example.haritalar.model.AverageSpeedZoneDataState
+import com.example.haritalar.model.AverageSpeedZoneRouteMatch
 import com.example.haritalar.model.RouteCriticalPoiDataState
 import com.example.haritalar.model.RouteCriticalPoiMatch
 import com.example.haritalar.model.RouteOption
@@ -16,7 +18,7 @@ import com.example.haritalar.model.WeatherType
 
 enum class LanuBriefStatus { VERIFIED, PARTIAL, UNAVAILABLE }
 enum class LanuBriefSeverity { INFO, NOTICE, WARNING, CRITICAL }
-enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, ROAD_FEATURE, CRITICAL_SERVICES, WEATHER, TOLL, FERRY, DATA_QUALITY }
+enum class LanuBriefItemType { ROAD_CLOSURE, TRAFFIC, CAMERA, AVERAGE_SPEED, ROAD_FEATURE, CRITICAL_SERVICES, WEATHER, TOLL, FERRY, DATA_QUALITY }
 
 data class LanuBriefItem(
     val type: LanuBriefItemType,
@@ -51,6 +53,8 @@ object LanuBriefPolicy {
         roadFeatures: List<RoadFeature> = emptyList(),
         roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
         cameraRouteScanComplete: Boolean = false,
+        averageSpeedZones: List<AverageSpeedZoneRouteMatch> = emptyList(),
+        averageSpeedZoneDataState: AverageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE,
         routeCriticalPois: List<RouteCriticalPoiMatch> = emptyList(),
         routeCriticalPoiDataState: RouteCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
     ): LanuDriveBrief {
@@ -60,6 +64,7 @@ object LanuBriefPolicy {
         items += trafficItem(route, traffic)
         items += weatherItem(routeWeather)
         items += cameraItem(route, loadedSafetyCameras, cameraRouteScanComplete)
+        items += averageSpeedItem(averageSpeedZones, averageSpeedZoneDataState)
         items += roadFeatureItem(roadFeatures, roadFeatureDataState)
         items += criticalServicesItem(routeCriticalPois, routeCriticalPoiDataState)
 
@@ -317,6 +322,86 @@ object LanuBriefPolicy {
             severity = if (onRoute.isNotEmpty()) LanuBriefSeverity.NOTICE else LanuBriefSeverity.INFO
         )
     }
+
+    private fun averageSpeedItem(
+        matches: List<AverageSpeedZoneRouteMatch>,
+        dataState: AverageSpeedZoneDataState
+    ): LanuBriefItem {
+        if (dataState == AverageSpeedZoneDataState.UNAVAILABLE) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.AVERAGE_SPEED,
+                title = "Ortalama hız koridorları doğrulanamadı",
+                detail = "OSM/Overpass koridor geometrisi alınamadı; koridor bilgisi uydurulmuyor.",
+                source = "OpenStreetMap / Overpass",
+                status = LanuBriefStatus.UNAVAILABLE,
+                severity = LanuBriefSeverity.NOTICE
+            )
+        }
+
+        if (dataState == AverageSpeedZoneDataState.IDLE ||
+            dataState == AverageSpeedZoneDataState.LOADING
+        ) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.AVERAGE_SPEED,
+                title = "Ortalama hız koridorları kontrol ediliyor",
+                detail = "Seçili rota, kaynakta gerçek başlangıç/bitiş geometrisi bulunan section-control kayıtlarıyla eşleştiriliyor.",
+                source = "OpenStreetMap / Overpass",
+                status = LanuBriefStatus.PARTIAL,
+                severity = LanuBriefSeverity.INFO
+            )
+        }
+
+        val status = if (dataState == AverageSpeedZoneDataState.CACHED) {
+            LanuBriefStatus.PARTIAL
+        } else {
+            LanuBriefStatus.VERIFIED
+        }
+        val source = if (dataState == AverageSpeedZoneDataState.CACHED) {
+            "OpenStreetMap (24 saatlik rota önbelleği)"
+        } else {
+            "OpenStreetMap / Overpass"
+        }
+
+        if (matches.isEmpty()) {
+            return LanuBriefItem(
+                type = LanuBriefItemType.AVERAGE_SPEED,
+                title = "OSM rota koridorunda ortalama hız kaydı görünmüyor",
+                detail = "Sorgulanan kaynakta gerçek geometriyle eşleşen koridor bulunmadı. Bu, sahada kesinlikle ortalama hız denetimi olmadığı anlamına gelmez.",
+                source = source,
+                status = status,
+                severity = LanuBriefSeverity.INFO
+            )
+        }
+
+        val details = matches.take(3).map { match ->
+            buildString {
+                append(formatBriefDistance(match.startRouteMeters))
+                append("'de başlıyor")
+                append(" • ")
+                append(formatBriefDistance(match.routeLengthMeters))
+                append(" uzunluk")
+                match.speedLimitKmh?.let { append(" • limit $it km/h") }
+                match.zone.name?.takeIf { it.isNotBlank() }?.let { append(" • $it") }
+            }
+        }.toMutableList()
+        if (matches.size > 3) details += "+${matches.size - 3} koridor"
+
+        return LanuBriefItem(
+            type = LanuBriefItemType.AVERAGE_SPEED,
+            title = "${matches.size} ortalama hız koridoru rota üzerinde",
+            detail = details.joinToString(" | "),
+            source = source,
+            status = status,
+            severity = LanuBriefSeverity.NOTICE
+        )
+    }
+
+    private fun formatBriefDistance(meters: Double): String =
+        if (meters >= 1000.0) {
+            String.format(java.util.Locale.US, "%.1f km", meters / 1000.0)
+        } else {
+            "${meters.coerceAtLeast(0.0).toInt()} m"
+        }
 
     private fun roadFeatureItem(
         features: List<RoadFeature>,
