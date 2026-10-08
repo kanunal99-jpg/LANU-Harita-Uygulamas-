@@ -158,6 +158,7 @@ private fun iconFor(type: LanuBriefItemType) = when (type) {
     LanuBriefItemType.ROAD_CLOSURE -> Icons.Default.Block
     LanuBriefItemType.TRAFFIC -> Icons.Default.Traffic
     LanuBriefItemType.CAMERA -> Icons.Default.PhotoCamera
+    LanuBriefItemType.AVERAGE_SPEED -> Icons.Default.Speed
     LanuBriefItemType.ROAD_FEATURE -> Icons.Default.Warning
     LanuBriefItemType.CRITICAL_SERVICES -> Icons.Default.Place
     LanuBriefItemType.WEATHER -> Icons.Default.Cloud
