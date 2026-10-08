@@ -11,6 +11,7 @@ import com.example.haritalar.model.RoadFeatureDataState
 import com.example.haritalar.model.RoadFeatureType
 import com.example.haritalar.model.RouteType
 import com.example.haritalar.model.SafetyCamera
+import com.example.haritalar.model.SafetyCameraType
 import com.example.haritalar.model.TrafficLevel
 import com.example.haritalar.model.TrafficSegment
 import com.example.haritalar.model.TrafficStatus
@@ -229,7 +230,35 @@ class LanuBriefPolicyTest {
         val cameraItem = brief.items.first { it.type == LanuBriefItemType.CAMERA }
 
         assertEquals(LanuBriefStatus.PARTIAL, cameraItem.status)
-        assertTrue(cameraItem.title.contains("1 sabit kamera"))
+        assertTrue(cameraItem.title.contains("1 kamera/denetim noktası"))
+    }
+
+    @Test
+    fun cameraBriefSummarizesDifferentVerifiedCameraTypes() {
+        val cameras = listOf(
+            SafetyCamera(
+                id = 51L,
+                point = route.geometry[1],
+                type = SafetyCameraType.FIXED_SPEED
+            ),
+            SafetyCamera(
+                id = 52L,
+                point = route.geometry[1],
+                type = SafetyCameraType.RED_LIGHT
+            )
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = cameras,
+            cameraRouteScanComplete = true
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+
+        assertTrue(item.detail.contains("sabit hız kamerası"))
+        assertTrue(item.detail.contains("kırmızı ışık kamerası"))
     }
 
     @Test
