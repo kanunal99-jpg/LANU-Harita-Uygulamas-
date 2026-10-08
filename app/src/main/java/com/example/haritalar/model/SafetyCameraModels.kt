@@ -35,7 +35,7 @@ data class SafetyCamera(
         get() = buildString {
             append(type.displayName)
             append(" • OSM #$id")
-            maxSpeed?.takeIf { it.isNotBlank() }?.let { append(" • Hız: $it") }
+            maxSpeed?.takeIf { it.isNotBlank() }?.let { append(" • OSM hız etiketi: $it") }
             if (!direction.isNullOrBlank()) append(" • Yön: $direction")
         }
 }

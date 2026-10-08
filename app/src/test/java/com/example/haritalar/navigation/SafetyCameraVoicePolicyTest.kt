@@ -80,7 +80,7 @@ class SafetyCameraVoicePolicyTest {
 
         assertTrue(text.contains("5 kilometre sonra"))
         assertTrue(text.contains("D100 üzerinde"))
-        assertTrue(text.contains("Hız sınırı 90"))
+        assertTrue(text.contains("Kaynakta belirtilen hız sınırı 90"))
     }
 
     @Test
@@ -101,6 +101,36 @@ class SafetyCameraVoicePolicyTest {
 
         assertTrue(text.contains("kırmızı ışık kamerası"))
         assertTrue(text.contains("1 kilometre sonra"))
+    }
+
+    @Test
+    fun sourceLimitIsNotAnnouncedAsVerifiedRegulatoryFact() {
+        val camera = SafetyCamera(
+            id = 521L,
+            point = GeoPoint(41.0, 29.0),
+            maxSpeed = "90",
+            rawTags = mapOf("lanu:nearby_road" to "D100")
+        )
+        val warning = SafetyCameraWarningPolicy.evaluate(camera, 900.0, 100f)!!
+        val spoken = SafetyCameraVoicePolicy.drivingMilestoneAnnouncement(warning)
+        assertTrue(spoken.contains("Kaynakta belirtilen hız sınırı 90"))
+        assertTrue(!spoken.contains("Doğrulanmış hız sınırı"))
+    }
+
+    @Test
+    fun conditionalSpeedLimitsAreNeverSpokenAsFixedLimits() {
+        val camera = SafetyCamera(
+            id = 522L,
+            point = GeoPoint(41.0, 29.0),
+            maxSpeed = "50 @ (Mo-Fr 07:00-19:00)"
+        )
+        val warning = SafetyCameraWarningPolicy.evaluate(camera, 900.0, 100f)!!
+        val spoken = SafetyCameraVoicePolicy.drivingMilestoneAnnouncement(warning)
+        assertTrue(!spoken.contains("kilometre saat"))
+        val brief = SafetyCameraVoicePolicy.preDriveAnnouncements(
+            listOf(SafetyCameraRouteFilterPolicy.RouteCamera(camera, 20_000.0))
+        )
+        assertTrue(brief.none { it.contains("kilometre saat") })
     }
 
     @Test

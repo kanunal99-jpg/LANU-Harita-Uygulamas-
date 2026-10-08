@@ -63,7 +63,7 @@ object SafetyCameraVoicePolicy {
         )
         val context = locationContext(warning.camera, resolvedAddress)
         val limitText = warning.speedLimitKmh
-            ?.let { " Hız sınırı $it kilometre saat." }
+            ?.let { " Kaynakta belirtilen hız sınırı $it kilometre saat." }
             .orEmpty()
 
         return buildString {
@@ -114,7 +114,7 @@ object SafetyCameraVoicePolicy {
                 append("Rotanın $routeKm kilometresinde, ")
                 append("$context ${item.camera.type.spokenName} var.")
                 if (speedLimit != null) {
-                    append(" Hız sınırı $speedLimit kilometre saat.")
+                    append(" Kaynakta belirtilen hız sınırı $speedLimit kilometre saat.")
                 }
             }
         }
