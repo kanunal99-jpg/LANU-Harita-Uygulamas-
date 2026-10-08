@@ -342,6 +342,7 @@ fun HaritalarNavigationApp(
                 currentZoomLevel = uiState.currentZoomLevel,
                 safetyCameras = safetyCameras,
                 isSafetyCamerasLayerVisible = uiState.isSafetyCamerasLayerVisible,
+                averageSpeedZones = uiState.averageSpeedZones,
                 destinationPoint = uiState.selectedDestination?.point,
                 cameraMode = uiState.cameraMode,
                 mapTrackingMode = uiState.mapTrackingMode,
