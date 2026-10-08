@@ -39,7 +39,7 @@ object SafetyCameraWarningPolicy {
         speedKmh: Float
     ): ProximityWarning? {
         val warningRadius = warningRadiusMeters(speedKmh)
-        if (distanceMeters < 0.0 || distanceMeters > warningRadius) return null
+        if (!distanceMeters.isFinite() || distanceMeters < 0.0 || distanceMeters > warningRadius) return null
 
         val limit = parseSpeedLimitKmh(camera.maxSpeed)
         return ProximityWarning(
@@ -50,7 +50,7 @@ object SafetyCameraWarningPolicy {
             warningRadiusMeters = warningRadius,
             estimatedSecondsToCamera = estimateSecondsToCamera(distanceMeters, speedKmh),
             speedLimitKmh = limit,
-            overspeed = limit != null && speedKmh > limit
+            overspeed = limit != null && speedKmh.isFinite() && speedKmh >= 0f && speedKmh > limit
         )
     }
 
@@ -74,17 +74,25 @@ object SafetyCameraWarningPolicy {
     }
 
     fun estimateSecondsToCamera(distanceMeters: Double, speedKmh: Float): Int? {
-        if (distanceMeters < 0.0 || speedKmh < 5f) return null
+        if (!distanceMeters.isFinite() || distanceMeters < 0.0 || !speedKmh.isFinite() || speedKmh < 5f) return null
         val metersPerSecond = speedKmh / 3.6
         return (distanceMeters / metersPerSecond).toInt().coerceAtLeast(0)
     }
 
+    /**
+     * OSM maxspeed is not necessarily one unconditional, legally applicable number:
+     * it can be conditional (50 @ (Mo-Fr 07:00-19:00)), multiple (50;80),
+     * vehicle-specific, country-code (TR:urban), or nonnumeric (signals).
+     * Only a single plain numeric value, optionally with units, may be spoken.
+     * Do not infer the current legal limit from a conditional/multiple value.
+     */
     fun parseSpeedLimitKmh(raw: String?): Int? {
         if (raw.isNullOrBlank()) return null
-        val normalized = raw.trim().lowercase()
-        val match = Regex("\\d+(?:[.,]\\d+)?").find(normalized) ?: return null
-        val numeric = match.value.replace(',', '.').toDoubleOrNull() ?: return null
-        val kmh = if ("mph" in normalized) numeric * 1.609344 else numeric
+        val normalized = raw.trim().lowercase(java.util.Locale.ROOT)
+        val match = Regex("""^(\\d{1,3})(?:[.,]0+)?\\s*(?:(km\\s*/\\s*h|kmh|kph|mph))?$""").matchEntire(normalized)
+            ?: return null
+        val numeric = match.groupValues[1].toIntOrNull() ?: return null
+        val kmh = if (match.groupValues[2] == "mph") numeric * 1.609344 else numeric.toDouble()
         return kmh.takeIf { it in 5.0..250.0 }?.toInt()
     }
 }
