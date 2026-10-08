@@ -203,6 +203,22 @@ class LanuBriefPolicyTest {
     }
 
     @Test
+    fun partialRouteScanShowsFoundCameraWithoutClaimingFullCoverage() {
+        val camera = SafetyCamera(id = 97L, point = GeoPoint(40.91, 29.25))
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = listOf(camera),
+            cameraRouteScanComplete = false
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+        assertEquals(LanuBriefStatus.PARTIAL, item.status)
+        assertTrue(item.title.contains("1 kamera/denetim noktası"))
+        assertTrue(item.detail.contains("henüz bitmedi"))
+    }
+
+    @Test
     fun completedEmptyScanDoesNotClaimRealWorldHasNoCameras() {
         val brief = LanuBriefPolicy.build(
             route = route,
