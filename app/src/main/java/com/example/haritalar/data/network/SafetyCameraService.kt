@@ -127,15 +127,13 @@ class SafetyCameraService(
      */
     internal fun invalidOverpassResponseReason(json: String): String? = try {
         val root = JSON_ADAPTER.fromJson(json) as? Map<*, *>
-            ?: "Yanıt JSON nesnesi değil"
-        if (root is String) {
-            root
+        if (root == null) {
+            "Yanıt JSON nesnesi değil"
         } else {
-            val data = root as Map<*, *>
-            val remark = data["remark"]?.toString()?.trim().orEmpty()
+            val remark = root["remark"]?.toString()?.trim().orEmpty()
             when {
                 remark.isNotBlank() -> "Overpass remark: ${remark.take(160)}"
-                data["elements"] !is List<*> -> "Overpass elements dizisi eksik veya geçersiz"
+                root["elements"] !is List<*> -> "Overpass elements dizisi eksik veya geçersiz"
                 else -> null
             }
         }
