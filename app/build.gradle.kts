@@ -55,7 +55,17 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all {
+        // Avoid Robolectric's legacy repo1 runtime-jar endpoint returning 404 in CI.
+        // Official Maven Central alternative; no new paid dependency.
+        it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+        it.systemProperty("robolectric.dependency.repo.id", "mavenCentral")
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true
