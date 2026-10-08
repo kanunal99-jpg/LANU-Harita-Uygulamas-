@@ -14,8 +14,8 @@ android {
     applicationId = "com.aistudio.haritalar.navtr"
     minSdk = 24
     targetSdk = 36
-    versionCode = 22
-    versionName = "1.1.20"
+    versionCode = 23
+    versionName = "1.1.21"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     buildConfigField("String", "TOMTOM_API_KEY", "\"${project.findProperty("TOMTOM_API_KEY") ?: System.getenv("TOMTOM_API_KEY") ?: ""}\"")
@@ -55,7 +55,17 @@ android {
     compose = true
     buildConfig = true
   }
-  testOptions { unitTests { isIncludeAndroidResources = true } }
+  testOptions {
+    unitTests {
+      isIncludeAndroidResources = true
+      all {
+        // Avoid Robolectric's legacy repo1 runtime-jar endpoint returning 404 in CI.
+        // Official Maven Central alternative; no new paid dependency.
+        it.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+        it.systemProperty("robolectric.dependency.repo.id", "mavenCentral")
+      }
+    }
+  }
   dependenciesInfo {
     includeInApk = false
     includeInBundle = true

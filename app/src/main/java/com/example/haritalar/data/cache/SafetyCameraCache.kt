@@ -33,10 +33,21 @@ class SafetyCameraCache(context: Context) {
         if (!bbox.isValid()) return
         runCatching {
             val now = System.currentTimeMillis()
+            val data = JSONObject()
+                .put("savedAt", now)
+                .put("bbox", writeBox(bbox))
+                .put("cameras", writeCameras(cameras.take(MAX_CAMERAS_PER_AREA)))
+            val payload = data.toString()
+            val payloadBytes = payload.toByteArray(Charsets.UTF_8).size
+            if (payloadBytes > SafetyCameraCacheIndexPolicy.MAX_AREA_BYTES) {
+                Log.w(TAG, "Camera bbox payload exceeds bounded cache area limit; not persisting")
+                return@runCatching
+            }
             val newArea = SafetyCameraCacheIndexPolicy.Area(
                 key = SafetyCameraCacheIndexPolicy.keyFor(bbox),
                 bbox = bbox,
-                savedAtMillis = now
+                savedAtMillis = now,
+                payloadBytes = payloadBytes
             )
             val previous = readIndex()
             val validPrevious = previous.filter { entry ->
@@ -46,24 +57,20 @@ class SafetyCameraCache(context: Context) {
             val retained = SafetyCameraCacheIndexPolicy.retain(validPrevious, newArea)
             val currentKeys = retained.map { it.key }.toSet()
 
-            val data = JSONObject()
-                .put("savedAt", now)
-                .put("bbox", writeBox(bbox))
-                .put("cameras", writeCameras(cameras.take(MAX_CAMERAS_PER_AREA)))
-
             val index = JSONArray()
             retained.forEach { entry ->
                 index.put(
                     JSONObject()
                         .put("key", entry.key)
                         .put("savedAt", entry.savedAtMillis)
+                        .put("bytes", entry.payloadBytes)
                         .put("bbox", writeBox(entry.bbox))
                 )
             }
 
             val editor = prefs.edit()
             (previous.map { it.key }.toSet() - currentKeys).forEach { editor.remove(it) }
-            editor.putString(newArea.key, data.toString())
+            editor.putString(newArea.key, payload)
             editor.putString(KEY_AREA_INDEX, index.toString())
             editor.apply()
         }.onFailure { error ->
@@ -107,7 +114,14 @@ class SafetyCameraCache(context: Context) {
                     runCatching { readBox(value) }.getOrNull()
                 } ?: continue
                 if (!box.isValid() || key.isBlank() || savedAt <= 0L) continue
-                add(SafetyCameraCacheIndexPolicy.Area(key, box, savedAt))
+                val storedBytes = item.optInt("bytes", -1)
+                val payloadBytes = if (storedBytes >= 0) {
+                    storedBytes
+                } else {
+                    // Backward-compatible v2 index read without bytes metadata.
+                    prefs.getString(key, null)?.toByteArray(Charsets.UTF_8)?.size ?: continue
+                }
+                add(SafetyCameraCacheIndexPolicy.Area(key, box, savedAt, payloadBytes))
             }
         }
     }.getOrElse { error ->

@@ -7,6 +7,7 @@ import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraFetchResult
 import com.example.haritalar.model.SafetyCameraType
 import com.squareup.moshi.Moshi
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -30,7 +31,8 @@ class SafetyCameraService(
         "https://overpass-api.de/api/interpreter",
         "https://lz4.overpass-api.de/api/interpreter",
         "https://z.overpass-api.de/api/interpreter"
-    )
+    ),
+    private val enableAndroidLog: Boolean = true
 ) {
     companion object {
         private const val TAG = "SafetyCameraService"
@@ -68,7 +70,7 @@ class SafetyCameraService(
 
         for (endpoint in endpoints) {
             try {
-                Log.d(TAG, "Fetching speed cameras from: $endpoint")
+                if (enableAndroidLog) Log.d(TAG, "Fetching speed cameras from: $endpoint")
                 val request = Request.Builder()
                     .url(endpoint)
                     .post(overpassQuery.toRequestBody("text/plain".toMediaType()))
@@ -79,7 +81,7 @@ class SafetyCameraService(
                     if (!response.isSuccessful) {
                         lastError = "HTTP ${response.code}"
                         networkError = true
-                        Log.w(TAG, "Endpoint $endpoint returned ${response.code}; trying next mirror")
+                        if (enableAndroidLog) Log.w(TAG, "Endpoint $endpoint returned ${response.code}; trying next mirror")
                         return@use
                     }
 
@@ -93,21 +95,24 @@ class SafetyCameraService(
                     if (malformedReason != null) {
                         lastError = malformedReason
                         networkError = true
-                        Log.w(TAG, "Overpass returned untrusted payload from $endpoint: $malformedReason")
+                        if (enableAndroidLog) Log.w(TAG, "Overpass returned untrusted payload from $endpoint: $malformedReason")
                         return@use
                     }
 
                     val cameras = parseOsmResponse(body)
-                    Log.i(TAG, "Parsed ${cameras.size} speed cameras from $endpoint")
+                    if (enableAndroidLog) Log.i(TAG, "Parsed ${cameras.size} speed cameras from $endpoint")
                     return@withContext SafetyCameraFetchResult.Success(
                         cameras = cameras,
                         endpointUsed = endpoint
                     )
                 }
+            } catch (cancelled: CancellationException) {
+                // A cancelled navigation/route must not launch new mirror requests.
+                throw cancelled
             } catch (e: Exception) {
                 networkError = true
                 lastError = e.message ?: "Bağlantı hatası"
-                Log.w(TAG, "Exception querying $endpoint: $lastError")
+                if (enableAndroidLog) Log.w(TAG, "Exception querying $endpoint: $lastError")
             }
         }
 
@@ -255,7 +260,7 @@ class SafetyCameraService(
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Invalid speed-camera OSM response: ${e.message}")
+            if (enableAndroidLog) Log.w(TAG, "Invalid speed-camera OSM response: ${e.message}")
         }
 
         return cameras

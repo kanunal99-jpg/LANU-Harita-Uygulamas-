@@ -74,17 +74,31 @@ jobs:
 
           echo "ERROR: Android emulator SDK packages could not be prepared after 3 attempts."
           exit 1
-      - name: Create Android debug keystore
+      - name: Prepare Android debug signing (stable secret or ephemeral fallback)
+        env:
+          LANU_DEBUG_KEYSTORE_BASE64: ${{ secrets.LANU_DEBUG_KEYSTORE_BASE64 }}
         run: |
-          keytool -genkeypair -v \
-            -keystore debug.keystore \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname 'CN=Android Debug,O=Android,C=US'
+          set -euo pipefail
+          umask 077
+          if [ -n "${LANU_DEBUG_KEYSTORE_BASE64}" ]; then
+            printf '%s' "${LANU_DEBUG_KEYSTORE_BASE64}" | base64 --decode > debug.keystore
+            test -s debug.keystore
+            keytool -list -keystore debug.keystore -storepass android -alias androiddebugkey >/dev/null
+            echo "APK_SIGNING_SOURCE=github-actions-stable-secret" >> "$GITHUB_ENV"
+            echo "Stable Android debug signing loaded from encrypted GitHub Actions secret."
+          else
+            keytool -genkeypair -v \
+              -keystore debug.keystore \
+              -storepass android \
+              -alias androiddebugkey \
+              -keypass android \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -dname 'CN=Android Debug,O=Android,C=US'
+            echo "APK_SIGNING_SOURCE=ephemeral-debug-unsafe-upgrade" >> "$GITHUB_ENV"
+            echo "::warning::Signing secret not configured: generated debug key varies across runs; previous APK cannot safely be overwritten as an upgrade."
+          fi
       - name: Run lint
         run: gradle :app:lintDebug --stacktrace
         env:
@@ -149,10 +163,24 @@ jobs:
         run: gradle :app:assembleDebug --stacktrace
         env:
           CI: true
-      - name: Verify APK SHA-256
+      - name: Verify APK SHA-256 and published signing identity
         run: |
           set -euo pipefail
-          sha256sum app/build/outputs/apk/debug/*.apk | tee apk-sha256.txt
+          apk="app/build/outputs/apk/debug/app-debug.apk"
+          sha256sum "$apk" | tee apk-sha256.txt
+          apksigner_bin="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner_bin"
+          "$apksigner_bin" verify --print-certs "$apk" > apk-certificate-output.txt
+          fingerprint="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-certificate-output.txt | head -n 1)"
+          test -n "$fingerprint" || { echo "ERROR: APK signer certificate fingerprint missing"; exit 1; }
+          {
+            echo "source=${APK_SIGNING_SOURCE}"
+            echo "signer_certificate_sha256=${fingerprint}"
+            echo "apk_sha256=$(sha256sum "$apk" | cut -d ' ' -f 1)"
+            echo "Note: debug APK updates require SAME signer certificate as existing installation."
+          } > apk-signing-info.txt
+          echo "APK signature fingerprint verified and published: ${fingerprint}"
+          rm apk-certificate-output.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -160,6 +188,7 @@ jobs:
           path: |
             app/build/outputs/apk/debug/*.apk
             apk-sha256.txt
+            apk-signing-info.txt
           if-no-files-found: error
           retention-days: 14
       - name: Publish immutable versioned APK Release
@@ -177,7 +206,7 @@ jobs:
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Immutable versioned release $tag already exists: retaining published assets."
           else
-            gh release create "$tag" "$apk" apk-sha256.txt \
+            gh release create "$tag" "$apk" apk-sha256.txt apk-signing-info.txt \
               --target "$GITHUB_SHA" \
               --title "LANU Harita ${version} APK" \
               --notes "Sürüme özel Android APK ve SHA-256. Debug imzası her CI derlemesinde yeniden üretiliyorsa önceki APK üzerine doğrudan güncelleme desteklenmeyebilir."
@@ -189,15 +218,30 @@ jobs:
           mkdir -p "$verify_dir"
           gh release download "$tag" --pattern 'app-debug.apk' --dir "$verify_dir"
           gh release download "$tag" --pattern 'apk-sha256.txt' --dir "$verify_dir"
+          gh release download "$tag" --pattern 'apk-signing-info.txt' --dir "$verify_dir"
           expected="$(cut -d ' ' -f 1 "$verify_dir/apk-sha256.txt")"
           actual="$(sha256sum "$verify_dir/app-debug.apk" | awk '{print $1}')"
+          local_expected="$(cut -d ' ' -f 1 apk-sha256.txt)"
+          test "$local_expected" = "$expected" || {
+            echo "ERROR: Immutable versioned release already contains a different APK; refusing to publish inconsistent latest asset"
+            exit 1
+          }
           test "$actual" = "$expected" || {
             echo "ERROR: Versioned APK does not match its published SHA-256 after download"
             exit 1
           }
-          echo "Versioned APK release download and SHA-256 verified: $tag"
+          apksigner_bin="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
+          test -n "$apksigner_bin"
+          downloaded_cert="$("$apksigner_bin" verify --print-certs "$verify_dir/app-debug.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+          published_cert="$(sed -n 's/^signer_certificate_sha256=//p' "$verify_dir/apk-signing-info.txt" | head -n 1)"
+          test -n "$downloaded_cert" && test "$downloaded_cert" = "$published_cert" || {
+            echo "ERROR: Downloaded APK certificate does not match published signing identity"
+            exit 1
+          }
+          echo "Versioned APK checksum and signing fingerprint verified: $tag"
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "app-debug.apk" and .size > 0)' | grep -q 'app-debug.apk'
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "apk-sha256.txt" and .size > 0)' | grep -q 'apk-sha256.txt'
+          gh release view "$tag" --json assets --jq '.assets[] | select(.name == "apk-signing-info.txt" and .size > 0)' | grep -q 'apk-signing-info.txt'
       - name: Remove previous latest Release APK
         env:
           GH_TOKEN: ${{ github.token }}
@@ -220,9 +264,11 @@ jobs:
 
             **Güncel APK:** `app-debug.apk`
             **Checksum:** `apk-sha256.txt`
+            **Signing certificate:** `apk-signing-info.txt` (does not include a private key)
           files: |
             app/build/outputs/apk/debug/*.apk
             apk-sha256.txt
+            apk-signing-info.txt
           make_latest: true
           prerelease: false
           draft: false

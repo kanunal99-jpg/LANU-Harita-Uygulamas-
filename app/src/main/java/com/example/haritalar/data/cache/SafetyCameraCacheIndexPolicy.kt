@@ -10,12 +10,15 @@ import kotlin.math.roundToInt
  */
 internal object SafetyCameraCacheIndexPolicy {
     const val MAX_AREAS = 48
+    const val MAX_CACHE_BYTES = 3_000_000
+    const val MAX_AREA_BYTES = 200_000
     private const val KEY_PREFIX = "lanu_safety_camera_area_v2_"
 
     data class Area(
         val key: String,
         val bbox: SafetyCameraBoundingBox,
-        val savedAtMillis: Long
+        val savedAtMillis: Long,
+        val payloadBytes: Int = 0
     )
 
     fun keyFor(bbox: SafetyCameraBoundingBox): String {
@@ -25,12 +28,23 @@ internal object SafetyCameraCacheIndexPolicy {
         return KEY_PREFIX + coordinates
     }
 
-    fun retain(entries: List<Area>, newArea: Area): List<Area> =
-        (listOf(newArea) + entries)
+    fun retain(entries: List<Area>, newArea: Area): List<Area> {
+        var usedBytes = 0L
+        return (listOf(newArea) + entries)
             .filter { it.key.startsWith(KEY_PREFIX) && it.bbox.isValid() && it.savedAtMillis > 0L }
             .sortedByDescending { it.savedAtMillis }
             .distinctBy { it.key }
+            .filter { area ->
+                val bytes = area.payloadBytes.coerceAtLeast(0).toLong()
+                if (bytes > MAX_AREA_BYTES || usedBytes + bytes > MAX_CACHE_BYTES) {
+                    false
+                } else {
+                    usedBytes += bytes
+                    true
+                }
+            }
             .take(MAX_AREAS)
+    }
 
     /**
      * Only source-backed historical areas that overlap the requested CENTER qualify
