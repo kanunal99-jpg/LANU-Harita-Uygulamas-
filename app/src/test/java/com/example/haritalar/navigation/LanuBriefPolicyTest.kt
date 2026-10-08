@@ -219,6 +219,38 @@ class LanuBriefPolicyTest {
     }
 
     @Test
+    fun failedCameraSourceCannotClaimEmptyVerifiedRoute() {
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            cameraRouteScanComplete = false,
+            cameraRouteScanDegraded = true
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+        assertEquals(LanuBriefStatus.PARTIAL, item.status)
+        assertTrue(item.title.contains("kısmen doğrulanamadı"))
+        assertTrue(item.detail.contains("Kamera bulunamadığı sonucuna varılamaz"))
+    }
+
+    @Test
+    fun failedCameraSourceWithSomeHitsReportsUnknownTotal() {
+        val camera = SafetyCamera(id = 118L, point = route.geometry[1])
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = listOf(camera),
+            cameraRouteScanComplete = false,
+            cameraRouteScanDegraded = true
+        )
+        val item = brief.items.first { it.type == LanuBriefItemType.CAMERA }
+        assertTrue(item.detail.contains("Toplam sayı bilinmiyor"))
+        assertTrue(item.detail.contains("1 kamera/denetim"))
+    }
+
+    @Test
     fun completedEmptyScanDoesNotClaimRealWorldHasNoCameras() {
         val brief = LanuBriefPolicy.build(
             route = route,
