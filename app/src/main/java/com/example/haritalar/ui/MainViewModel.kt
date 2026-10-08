@@ -601,10 +601,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fetchWeatherForRoute(route)
                 fetchRoadFeaturesForRoute(route)
                 fetchCriticalPoisForRoute(route)
-                lastPreDriveCameraBriefRouteId = null
-                _uiState.value = _uiState.value.copy(
-                    statusMessage = "Rota hazır. Radar güzergâh özeti hazırlanıyor."
-                )
+                // Hedef kartındaki "Navigasyonu Başlat" tek dokunuşta sürüşü başlatır.
+                // Radar/hava/POI taramaları arka planda devam eder; navigasyonu bloke etmez.
+                startNavigationInternal(route, latestLocation)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -773,6 +772,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopNavigation() {
+        // İptal edilmiş ama geç dönen sonuçlar kapanan oturumu geri açamaz.
+        val invalidateGeneration = ++generationCounter
         routeCalculationJob?.cancel()
         routeCalculationJob = null
         weatherJob?.cancel()
@@ -798,6 +799,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         lastOverspeedCameraWarningKey = null
         lastPreDriveCameraBriefRouteId = null
         _uiState.value = _uiState.value.copy(
+            activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE, navigationProgress = null, selectedRoute = null,
             routeOptions = emptyList(), selectedDestination = null, searchQuery = "",
             cameraMode = CameraMode.TWO_D, mapTrackingMode = MapTrackingMode.FOLLOW_USER,
