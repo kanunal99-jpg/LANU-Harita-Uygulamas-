@@ -12,14 +12,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
 
 /**
  * Real SafetyCameraService request pipeline with an in-memory HTTP interceptor.
  * No Overpass network, rate limits, API keys or paid mocking dependencies.
  */
-@RunWith(RobolectricTestRunner::class)
 class SafetyCameraMirrorFallbackTest {
     private val bbox = SafetyCameraBoundingBox(40.9, 28.9, 41.1, 29.1)
     private val hosts = listOf(
@@ -47,7 +44,7 @@ class SafetyCameraMirrorFallbackTest {
                 .body(reply.body.toResponseBody("application/json".toMediaType()))
                 .build()
         }.build()
-        return SafetyCameraService(client = client, endpoints = hosts)
+        return SafetyCameraService(client = client, endpoints = hosts, enableAndroidLog = false)
     }
 
     @Test
