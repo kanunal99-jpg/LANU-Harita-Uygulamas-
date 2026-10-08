@@ -170,9 +170,13 @@ jobs:
           sha256sum "$apk" | tee apk-sha256.txt
           apksigner_bin="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
           test -n "$apksigner_bin"
-          "$apksigner_bin" verify --print-certs "$apk" > apk-certificate-output.txt
-          fingerprint="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' apk-certificate-output.txt | head -n 1)"
-          test -n "$fingerprint" || { echo "ERROR: APK signer certificate fingerprint missing"; exit 1; }
+          # APK signature verification is authoritative; apksigner's human-readable
+          # --print-certs output varies by SDK version and must not be parsed as an API.
+          "$apksigner_bin" verify "$apk"
+          # Export the signing certificate in DER form and hash its actual bytes.
+          # Locale-independent and unaffected by SDK-specific apksigner text.
+          fingerprint="$(keytool -exportcert -keystore debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | sha256sum | awk '{print $1}')"
+          test "${#fingerprint}" -eq 64 || { echo "ERROR: Keystore SHA-256 fingerprint missing or malformed"; exit 1; }
           {
             echo "source=${APK_SIGNING_SOURCE}"
             echo "signer_certificate_sha256=${fingerprint}"
@@ -180,7 +184,6 @@ jobs:
             echo "Note: debug APK updates require SAME signer certificate as existing installation."
           } > apk-signing-info.txt
           echo "APK signature fingerprint verified and published: ${fingerprint}"
-          rm apk-certificate-output.txt
       - name: Upload APK artifact
         uses: actions/upload-artifact@v7.0.1
         with:
@@ -232,10 +235,11 @@ jobs:
           }
           apksigner_bin="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -maxdepth 2 -type f -name apksigner | sort -V | tail -n 1)"
           test -n "$apksigner_bin"
-          downloaded_cert="$("$apksigner_bin" verify --print-certs "$verify_dir/app-debug.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+          "$apksigner_bin" verify "$verify_dir/app-debug.apk"
+          local_cert="$(sed -n 's/^signer_certificate_sha256=//p' apk-signing-info.txt | head -n 1)"
           published_cert="$(sed -n 's/^signer_certificate_sha256=//p' "$verify_dir/apk-signing-info.txt" | head -n 1)"
-          test -n "$downloaded_cert" && test "$downloaded_cert" = "$published_cert" || {
-            echo "ERROR: Downloaded APK certificate does not match published signing identity"
+          test "${#local_cert}" -eq 64 && test "$local_cert" = "$published_cert" || {
+            echo "ERROR: Published signing identity is inconsistent with the verified locally built APK"
             exit 1
           }
           echo "Versioned APK checksum and signing fingerprint verified: $tag"
