@@ -293,17 +293,24 @@ object LanuBriefPolicy {
             route = route.geometry
         )
 
+        val cameraTypeSummary = onRoute
+            .groupingBy { it.camera.type }
+            .eachCount()
+            .entries
+            .sortedBy { it.key.ordinal }
+            .joinToString(" • ") { (type, count) -> "$count ${type.displayName.lowercase()}" }
+
         return LanuBriefItem(
             type = LanuBriefItemType.CAMERA,
             title = if (onRoute.isEmpty()) {
-                "OSM tam rota taramasında sabit kamera bulunamadı"
+                "OSM tam rota taramasında kamera kaydı bulunamadı"
             } else {
-                "${onRoute.size} sabit kamera rota üzerinde"
+                "${onRoute.size} kamera/denetim noktası rota üzerinde"
             },
             detail = if (onRoute.isEmpty()) {
-                "Tam güzergâh taraması tamamlandı; OpenStreetMap verisinde eşleşen sabit kamera yok. Bu, sahada kesinlikle kamera olmadığı anlamına gelmez."
+                "Tam güzergâh taraması tamamlandı; OpenStreetMap verisinde eşleşen kamera kaydı yok. Bu, sahada kesinlikle kamera olmadığı anlamına gelmez."
             } else {
-                "Tam güzergâh taraması tamamlandı; bilinen sabit kameralar rota kilometresiyle eşleştirildi."
+                "Tam güzergâh taraması tamamlandı: $cameraTypeSummary. Bilinen noktalar rota kilometresiyle eşleştirildi."
             },
             source = "OpenStreetMap",
             status = LanuBriefStatus.PARTIAL,
