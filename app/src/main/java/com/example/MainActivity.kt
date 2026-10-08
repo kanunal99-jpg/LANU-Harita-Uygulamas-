@@ -62,6 +62,7 @@ fun HaritalarNavigationApp(
     val isRouteSafetyCameraPrefetching by safetyCameraViewModel.isRoutePrefetching.collectAsState()
     val completedRouteSafetyCameraPrefetchRouteId by
         safetyCameraViewModel.completedRoutePrefetchRouteId.collectAsState()
+    val routeCameraCoverage by safetyCameraViewModel.routeCoverage.collectAsState()
     
     val offlineDownloadProgress by viewModel.offlineMapManager.downloadProgress.collectAsState()
     val offlineDownloadMessage by viewModel.offlineMapManager.downloadMessage.collectAsState()
@@ -181,6 +182,7 @@ fun HaritalarNavigationApp(
         routeSafetyCameras,
         isRouteSafetyCameraPrefetching,
         completedRouteSafetyCameraPrefetchRouteId,
+        routeCameraCoverage,
         uiState.navigationState
     ) {
         val routeReady = RadarBriefReadinessPolicy.isSelectedRouteScanReady(
@@ -189,7 +191,11 @@ fun HaritalarNavigationApp(
             isPrefetching = isRouteSafetyCameraPrefetching
         ) && RadarBriefReadinessPolicy.canDeliverInState(uiState.navigationState)
         if (routeReady) {
-            viewModel.updatePreDriveSafetyCameraData(routeSafetyCameras)
+            viewModel.updatePreDriveSafetyCameraData(
+                routeSafetyCameras,
+                isCoverageDegraded = routeCameraCoverage.routeId == uiState.selectedRoute?.routeId &&
+                    !routeCameraCoverage.fullyVerified
+            )
         }
     }
 
@@ -251,12 +257,19 @@ fun HaritalarNavigationApp(
         uiState.routeCriticalPoiDataState,
         routeSafetyCameras,
         completedRouteSafetyCameraPrefetchRouteId,
-        isRouteSafetyCameraPrefetching
+        isRouteSafetyCameraPrefetching,
+        routeCameraCoverage
     ) {
         uiState.selectedRoute?.let { route ->
-            val cameraScanComplete =
+            val cameraScanFinished =
                 !isRouteSafetyCameraPrefetching &&
                     completedRouteSafetyCameraPrefetchRouteId == route.routeId
+            val cameraScanComplete =
+                cameraScanFinished && routeCameraCoverage.routeId == route.routeId &&
+                    routeCameraCoverage.fullyVerified
+            val cameraScanDegraded =
+                cameraScanFinished && routeCameraCoverage.routeId == route.routeId &&
+                    routeCameraCoverage.coverageDegraded
             LanuBriefPolicy.build(
                 route = route,
                 traffic = currentTrafficStatus,
@@ -266,6 +279,7 @@ fun HaritalarNavigationApp(
                 roadFeatures = uiState.routeRoadFeatures,
                 roadFeatureDataState = uiState.roadFeatureDataState,
                 cameraRouteScanComplete = cameraScanComplete,
+                cameraRouteScanDegraded = cameraScanDegraded,
                 routeCriticalPois = uiState.routeCriticalPois,
                 routeCriticalPoiDataState = uiState.routeCriticalPoiDataState
             )

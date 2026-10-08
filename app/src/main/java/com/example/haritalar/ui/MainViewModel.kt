@@ -979,7 +979,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun set2DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.TWO_D) }
     fun set3DMode() { _uiState.value = _uiState.value.copy(cameraMode = CameraMode.THREE_D) }
     fun toggleTrafficLayer() { _uiState.value = _uiState.value.copy(isTrafficLayerVisible = !_uiState.value.isTrafficLayerVisible) }
-    fun updatePreDriveSafetyCameraData(cameras: List<SafetyCamera>) {
+    fun updatePreDriveSafetyCameraData(
+        cameras: List<SafetyCamera>,
+        isCoverageDegraded: Boolean = false
+    ) {
         latestSafetyCameras = cameras
         val state = _uiState.value
         val route = state.selectedRoute ?: return
@@ -999,16 +1002,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             lastPreDriveCameraBriefRouteId = route.routeId
             _uiState.value = _uiState.value.copy(
-                statusMessage = if (routeCameras.isEmpty()) {
-                    "Rota radar taraması tamamlandı: OSM verisinde sabit kamera bulunamadı."
-                } else {
-                    "Rota radar taraması tamamlandı: ${routeCameras.size} kamera."
+                statusMessage = when {
+                    isCoverageDegraded ->
+                        "Kısmi radar taraması: ${routeCameras.size} kayıt görüldü, bazı yol kesimlerinde veri doğrulanamadı."
+                    routeCameras.isEmpty() ->
+                        "Rota tarandı; doğrulanmış OSM kaynaklarında kamera kaydı bulunamadı."
+                    else ->
+                        "Rota radar taraması tamamlandı: ${routeCameras.size} kamera."
                 }
             )
 
             SafetyCameraVoicePolicy.preDriveAnnouncements(
                 cameras = routeCameras,
-                resolvedAddresses = resolvedCameraAddresses
+                resolvedAddresses = resolvedCameraAddresses,
+                coverageDegraded = isCoverageDegraded
             ).forEach { announcement ->
                 ttsManager.speak(announcement)
             }
