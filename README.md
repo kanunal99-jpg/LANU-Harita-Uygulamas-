@@ -2,7 +2,7 @@
 
 LANU Harita, Android için geliştirilen Türkçe navigasyon uygulamasıdır. Proje gerçek GPS, alternatif rota, MapLibre harita, trafik doğrulama, POI/adres arama, trafik ışıkları, sabit hız kamerası uyarıları, hava durumu, çevrimdışı harita/cache, Android foreground navigasyon ve canlı konum paylaşımı bileşenlerini içerir.
 
-**Güncel uygulama sürümü:** 1.1.18 (versionCode 20)
+**Güncel uygulama sürümü:** 1.1.19 (versionCode 21)
 
 ## Ürün doğruluğu
 
