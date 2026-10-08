@@ -53,6 +53,38 @@ class SafetyCameraCacheIndexPolicyTest {
     }
 
     @Test
+    fun largeAreaPayloadIsRejectedByBudgetWithoutRemovingHealthyCache() {
+        val bbox = box(41.0, 29.0)
+        val healthy = SafetyCameraCacheIndexPolicy.Area(
+            SafetyCameraCacheIndexPolicy.keyFor(bbox), bbox, 100L, 10_000
+        )
+        val hugeBox = box(39.9, 32.8)
+        val huge = SafetyCameraCacheIndexPolicy.Area(
+            SafetyCameraCacheIndexPolicy.keyFor(hugeBox), hugeBox, 200L,
+            SafetyCameraCacheIndexPolicy.MAX_AREA_BYTES + 1
+        )
+        val retained = SafetyCameraCacheIndexPolicy.retain(listOf(healthy), huge)
+        assertEquals(listOf(healthy.key), retained.map { it.key })
+    }
+
+    @Test
+    fun totalCacheByteBudgetEvictsOldestPayloads() {
+        fun bigArea(lat: Double, timestamp: Long): SafetyCameraCacheIndexPolicy.Area {
+            val bbox = box(lat, 29.0)
+            return SafetyCameraCacheIndexPolicy.Area(
+                SafetyCameraCacheIndexPolicy.keyFor(bbox), bbox, timestamp, 180_000
+            )
+        }
+        var retained = emptyList<SafetyCameraCacheIndexPolicy.Area>()
+        (1..25).forEach { n ->
+            retained = SafetyCameraCacheIndexPolicy.retain(retained, bigArea(36.0 + n * 0.1, n.toLong()))
+        }
+        assertTrue(retained.sumOf { it.payloadBytes.toLong() } <= SafetyCameraCacheIndexPolicy.MAX_CACHE_BYTES)
+        assertEquals(16, retained.size)
+        assertEquals(25L, retained.first().savedAtMillis)
+    }
+
+    @Test
     fun expiredOrFutureCacheCannotMasqueradeAsFresh() {
         val expired = area(41.0, 29.0, 100L)
         val future = area(41.0, 29.0, 900L)
