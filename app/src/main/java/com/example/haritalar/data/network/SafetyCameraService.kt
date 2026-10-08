@@ -16,7 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 /**
- * Reads fixed speed cameras from OpenStreetMap.
+ * Reads source-backed traffic-enforcement camera points from OpenStreetMap.
  *
  * Resilience: primary Overpass endpoint -> alternative mirrors -> explicit error.
  * Cache fallback is deliberately kept in the repository layer.
