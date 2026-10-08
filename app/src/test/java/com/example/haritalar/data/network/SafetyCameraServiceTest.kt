@@ -1,6 +1,7 @@
 package com.example.haritalar.data.network
 
 import com.example.haritalar.model.SafetyCameraBoundingBox
+import com.example.haritalar.model.SafetyCameraType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -106,6 +107,43 @@ class SafetyCameraServiceTest {
 
         assertEquals(1, result.size)
         assertEquals(11L, result.single().id)
+    }
+
+    @Test
+    fun `classifier distinguishes red light combined and average speed enforcement`() {
+        assertEquals(
+            SafetyCameraType.RED_LIGHT,
+            service.classifyCameraType(mapOf("enforcement" to "traffic_signals"))
+        )
+        assertEquals(
+            SafetyCameraType.SPEED_AND_RED_LIGHT,
+            service.classifyCameraType(
+                mapOf("highway" to "speed_camera", "enforcement" to "traffic_signals;maxspeed")
+            )
+        )
+        assertEquals(
+            SafetyCameraType.AVERAGE_SPEED_CONTROL_POINT,
+            service.classifyCameraType(mapOf("enforcement" to "average_speed"))
+        )
+        assertEquals(
+            SafetyCameraType.FIXED_SPEED,
+            service.classifyCameraType(mapOf("highway" to "speed_camera"))
+        )
+    }
+
+    @Test
+    fun `parser accepts enforcement node without highway speed camera tag`() {
+        val json = """
+            {"elements":[
+              {"type":"node","id":88,"lat":41.0,"lon":29.0,
+               "tags":{"enforcement":"traffic_signals"}}
+            ]}
+        """.trimIndent()
+
+        val result = service.parseOsmResponse(json)
+
+        assertEquals(1, result.size)
+        assertEquals(SafetyCameraType.RED_LIGHT, result.single().type)
     }
 
     @Test
