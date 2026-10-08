@@ -12,8 +12,8 @@ test -s README.md || fail "README.md eksik veya boş"
 test -s docs/PRODUCTION_READINESS.md || fail "production readiness belgesi eksik"
 
 grep -q 'ANA SERVİS.*ALTERNATİF.*GERÇEK FALLBACK' ANAYASA.md || fail "kritik zincir standardı Anayasa'da bulunamadı"
-grep -q 'versionName = "1.1.15"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.15 değil"
-grep -q 'versionCode = 17' app/build.gradle.kts || fail "beklenen Android versionCode 17 değil"
+grep -q 'versionName = "1.1.16"' app/build.gradle.kts || fail "beklenen Android sürümü 1.1.16 değil"
+grep -q 'versionCode = 18' app/build.gradle.kts || fail "beklenen Android versionCode 18 değil"
 grep -q 'android:allowBackup="false"' app/src/main/AndroidManifest.xml || fail "uygulama backup güvenlik kuralı kapalı değil"
 grep -q 'android:foregroundServiceType="location"' app/src/main/AndroidManifest.xml || fail "aktif navigasyon location foreground service bildirimi eksik"
 grep -q 'android.permission.FOREGROUND_SERVICE_LOCATION' app/src/main/AndroidManifest.xml || fail "foreground location permission eksik"
@@ -124,5 +124,10 @@ grep -q 'verifiedCriticalServicesShowCountsRouteKmAndCorridorDistance' app/src/t
 grep -q 'unavailableCriticalServiceProviderNeverPretendsZeroServicesIsVerified' app/src/test/java/com/example/haritalar/navigation/LanuBriefPolicyTest.kt || fail "kritik hizmet safe-unknown testi eksik"
 grep -q 'routeSamplingKeepsStartAndDestinationAcrossLongRoutes' app/src/test/java/com/example/haritalar/navigation/RouteCriticalPoiPolicyTest.kt || fail "kritik hizmet hedef örnekleme testi eksik"
 
+test -s docs/LANU_PREMIUM_MASTER_SPEC_2026_10_08.md || fail "premium master spec eksik"
+grep -q 'SafetyCameraType' app/src/main/java/com/example/haritalar/model/SafetyCameraModels.kt || fail "kamera denetim sınıflandırması eksik"
+grep -q 'classifyCameraType' app/src/main/java/com/example/haritalar/data/network/SafetyCameraService.kt || fail "OSM kamera sınıflandırma parserı eksik"
+grep -q 'RED_LIGHT' app/src/main/java/com/example/haritalar/model/SafetyCameraModels.kt || fail "kırmızı ışık kamera sınıfı eksik"
+grep -q 'AVERAGE_SPEED_CONTROL_POINT' app/src/main/java/com/example/haritalar/model/SafetyCameraModels.kt || fail "ortalama hız denetim noktası sınıfı eksik"
 echo "LANU constitution quality gate: PASS"
 
