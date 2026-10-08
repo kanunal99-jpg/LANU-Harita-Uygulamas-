@@ -10,12 +10,15 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.db.FavoritePlace
 import com.example.haritalar.data.db.SearchHistoryItem
+import com.example.haritalar.data.repository.AverageSpeedZoneRepository
 import com.example.haritalar.data.repository.NavigationRepository
 import com.example.haritalar.data.repository.RoadFeatureRepository
 import com.example.haritalar.data.network.NominatimGeocodingService
 import com.example.BuildConfig
 import com.example.haritalar.data.repository.TrafficSignalRepository
 import com.example.haritalar.data.network.LiveSharingClient
+import com.example.haritalar.model.AverageSpeedZoneDataState
+import com.example.haritalar.model.AverageSpeedZoneRouteMatch
 import com.example.haritalar.model.CameraMode
 import com.example.haritalar.model.DepartureGuidance
 import com.example.haritalar.model.GeoPoint
@@ -124,7 +127,9 @@ data class MainUiState(
     val roadFeatureDataState: RoadFeatureDataState = RoadFeatureDataState.IDLE,
     val approachingRoadFeatureWarning: RoadFeatureWarning? = null,
     val routeCriticalPois: List<RouteCriticalPoiMatch> = emptyList(),
-    val routeCriticalPoiDataState: RouteCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
+    val routeCriticalPoiDataState: RouteCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
+    val averageSpeedZones: List<AverageSpeedZoneRouteMatch> = emptyList(),
+    val averageSpeedZoneDataState: AverageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE
 )
 
 class MainViewModel(application: Application) : AndroidViewModel(application) {
@@ -133,6 +138,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val offlineMapManager = com.example.haritalar.data.offline.OfflineMapManager(application)
     val weatherRepository = com.example.haritalar.data.weather.WeatherRepository()
     val roadFeatureRepository = RoadFeatureRepository(application)
+    val averageSpeedZoneRepository = AverageSpeedZoneRepository(application)
     private val geocodingService = NominatimGeocodingService()
     val ttsManager = TurkishTtsManager(application)
     val compassSensor = CompassHeadingSensor(application)
@@ -158,6 +164,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var weatherJob: Job? = null
     private var roadFeatureJob: Job? = null
     private var routeCriticalPoiJob: Job? = null
+    private var averageSpeedZoneJob: Job? = null
     private var trafficRefreshJob: Job? = null
     private var trafficSignalJob: Job? = null
     private var poiLoadJob: Job? = null
@@ -170,6 +177,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var weatherGeneration = 0L
     private var roadFeatureGeneration = 0L
     private var routeCriticalPoiGeneration = 0L
+    private var averageSpeedZoneGeneration = 0L
     private var trafficSignalGeneration = 0L
     private var poiGeneration = 0L
     private var lastPoiSearchCenter: GeoPoint? = null
@@ -304,6 +312,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCriticalPoiJob?.cancel()
         routeCriticalPoiJob = null
         routeCriticalPoiGeneration++
+        averageSpeedZoneJob?.cancel()
+        averageSpeedZoneJob = null
+        averageSpeedZoneGeneration++
         cameraBriefJob?.cancel()
         cameraBriefJob = null
         lastPreDriveCameraBriefRouteId = null
@@ -321,6 +332,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             approachingRoadFeatureWarning = null,
             routeCriticalPois = emptyList(),
             routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
+            averageSpeedZones = emptyList(),
+            averageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE,
             isLoadingRoutes = false,
             activeGenerationId = invalidateGeneration,
             navigationState = NavigationState.IDLE,
@@ -510,6 +523,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 approachingRoadFeatureWarning = null,
                 routeCriticalPois = emptyList(),
                 routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
+                averageSpeedZones = emptyList(),
+                averageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE,
                 statusMessage = "Rotalar hesaplanıyor..."
             )
 
@@ -534,6 +549,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fetchWeatherForRoute(it)
                     fetchRoadFeaturesForRoute(it)
                     fetchCriticalPoisForRoute(it)
+                    fetchAverageSpeedZonesForRoute(it)
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -601,6 +617,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fetchWeatherForRoute(route)
                 fetchRoadFeaturesForRoute(route)
                 fetchCriticalPoisForRoute(route)
+            fetchAverageSpeedZonesForRoute(route)
                 lastPreDriveCameraBriefRouteId = null
                 _uiState.value = _uiState.value.copy(
                     statusMessage = "Rota hazır. Radar güzergâh özeti hazırlanıyor."
@@ -720,6 +737,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    private fun fetchAverageSpeedZonesForRoute(route: RouteOption) {
+        val requestGeneration = ++averageSpeedZoneGeneration
+        averageSpeedZoneJob?.cancel()
+        _uiState.value = _uiState.value.copy(
+            averageSpeedZones = emptyList(),
+            averageSpeedZoneDataState = AverageSpeedZoneDataState.LOADING
+        )
+
+        averageSpeedZoneJob = viewModelScope.launch {
+            val summary = averageSpeedZoneRepository.getForRoute(route.geometry)
+            if (requestGeneration != averageSpeedZoneGeneration ||
+                _uiState.value.selectedRoute?.routeId != route.routeId
+            ) {
+                return@launch
+            }
+
+            _uiState.value = _uiState.value.copy(
+                averageSpeedZones = summary.matches,
+                averageSpeedZoneDataState = summary.dataState
+            )
+        }
+    }
+
     fun toggleWeatherLayer() {
         _uiState.value = _uiState.value.copy(isWeatherLayerVisible = !_uiState.value.isWeatherLayerVisible)
         checkWeatherProximity()
@@ -806,7 +846,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isWrongWay = false, isLoadingRoutes = false, routeWeather = emptyList(), approachingWeather = null,
             routeRoadFeatures = emptyList(), roadFeatureDataState = RoadFeatureDataState.IDLE,
             approachingRoadFeatureWarning = null,
-            routeCriticalPois = emptyList(), routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
+            routeCriticalPois = emptyList(), routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
+            averageSpeedZones = emptyList(), averageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE
         )
     }
 
@@ -829,7 +870,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             roadFeatureDataState = RoadFeatureDataState.IDLE,
             approachingRoadFeatureWarning = null,
             routeCriticalPois = emptyList(),
-            routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE
+            routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
+            averageSpeedZones = emptyList(),
+            averageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE
         )
         vehicleHeadingManager.onReroute()
         val dest = _uiState.value.selectedDestination?.point ?: return
@@ -852,6 +895,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     fetchWeatherForRoute(newRoute)
                     fetchRoadFeaturesForRoute(newRoute)
                     fetchCriticalPoisForRoute(newRoute)
+                    fetchAverageSpeedZonesForRoute(newRoute)
                 } else if (genId == _uiState.value.activeGenerationId) {
                     _uiState.value = _uiState.value.copy(
                         navigationState = NavigationState.NAVIGATING, isLoadingRoutes = false,
