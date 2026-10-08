@@ -1170,7 +1170,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             if (lastOverspeedCameraWarningKey != overspeedKey) {
                 lastOverspeedCameraWarningKey = overspeedKey
                 ttsManager.speak(
-                    "Dikkat. Doğrulanmış hız sınırı $speedLimit kilometre saat. Güvenli şekilde hızınızı limite düşürün."
+                    "Dikkat. Kamera kaynağında belirtilen hız sınırı $speedLimit kilometre saat. Yol işaretlerine uyarak güvenli hızda ilerleyin."
                 )
                 vibrateSafetyWarning(320L)
             }
