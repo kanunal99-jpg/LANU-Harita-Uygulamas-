@@ -583,6 +583,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 routeRoadFeatures = emptyList(), roadFeatureDataState = RoadFeatureDataState.IDLE,
                 approachingRoadFeatureWarning = null,
                 routeCriticalPois = emptyList(), routeCriticalPoiDataState = RouteCriticalPoiDataState.IDLE,
+                averageSpeedZones = emptyList(), averageSpeedZoneDataState = AverageSpeedZoneDataState.IDLE,
                 statusMessage = "Rota hesaplanıyor..."
             )
             try {
@@ -617,7 +618,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 fetchWeatherForRoute(route)
                 fetchRoadFeaturesForRoute(route)
                 fetchCriticalPoisForRoute(route)
-            fetchAverageSpeedZonesForRoute(route)
+                fetchAverageSpeedZonesForRoute(route)
                 lastPreDriveCameraBriefRouteId = null
                 _uiState.value = _uiState.value.copy(
                     statusMessage = "Rota hazır. Radar güzergâh özeti hazırlanıyor."
@@ -649,6 +650,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         fetchWeatherForRoute(route)
         fetchRoadFeaturesForRoute(route)
         fetchCriticalPoisForRoute(route)
+        fetchAverageSpeedZonesForRoute(route)
     }
 
     private fun fetchWeatherForRoute(route: RouteOption) {
@@ -824,6 +826,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCriticalPoiJob?.cancel()
         routeCriticalPoiJob = null
         routeCriticalPoiGeneration++
+        averageSpeedZoneJob?.cancel()
+        averageSpeedZoneJob = null
+        averageSpeedZoneGeneration++
         vehicleHeadingManager.stop()
         vehicleHeadingManager.resetSession()
         navigationEngine.stop()
@@ -862,6 +867,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         routeCriticalPoiJob?.cancel()
         routeCriticalPoiJob = null
         routeCriticalPoiGeneration++
+        averageSpeedZoneJob?.cancel()
+        averageSpeedZoneJob = null
+        averageSpeedZoneGeneration++
         announcedRoadFeatureMilestones.clear()
         _uiState.value = _uiState.value.copy(
             routeWeather = emptyList(),
