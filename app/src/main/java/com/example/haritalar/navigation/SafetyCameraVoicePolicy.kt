@@ -67,8 +67,8 @@ object SafetyCameraVoicePolicy {
             .orEmpty()
 
         return buildString {
-            append("Radar uyarısı. ")
-            append("$distance sonra, $context sabit hız kamerası var.")
+            append("Kamera uyarısı. ")
+            append("$distance sonra, $context ${warning.camera.type.spokenName} var.")
             append(limitText)
         }
     }
@@ -78,11 +78,17 @@ object SafetyCameraVoicePolicy {
         resolvedAddresses: Map<Long, String> = emptyMap()
     ): List<String> {
         if (cameras.isEmpty()) {
-            return listOf("Rota radar özeti. Seçili güzergâhta doğrulanmış sabit hız kamerası görünmüyor.")
+            return listOf("Rota kamera özeti. Seçili güzergâhta doğrulanmış kamera kaydı görünmüyor.")
         }
 
         val result = mutableListOf<String>()
-        result += "Rota radar özeti. Seçili güzergâhta ${cameras.size} sabit hız kamerası görünüyor."
+        val typeSummary = cameras
+            .groupingBy { it.camera.type }
+            .eachCount()
+            .entries
+            .sortedBy { it.key.ordinal }
+            .joinToString(", ") { (type, count) -> "$count ${type.spokenName}" }
+        result += "Rota kamera özeti. Seçili güzergâhta ${cameras.size} denetim noktası görünüyor: $typeSummary."
 
         cameras.forEachIndexed { index, item ->
             val context = locationContext(
@@ -95,7 +101,7 @@ object SafetyCameraVoicePolicy {
             result += buildString {
                 append("${index + 1}. kamera. ")
                 append("Rotanın $routeKm kilometresinde, ")
-                append("$context sabit hız kamerası var.")
+                append("$context ${item.camera.type.spokenName} var.")
                 if (speedLimit != null) {
                     append(" Hız sınırı $speedLimit kilometre saat.")
                 }

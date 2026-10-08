@@ -2,6 +2,7 @@ package com.example.haritalar.navigation
 
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
+import com.example.haritalar.model.SafetyCameraType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -32,7 +33,7 @@ class SafetyCameraVoicePolicyTest {
         )
 
         assertEquals(3, announcements.size)
-        assertTrue(announcements[0].contains("2 sabit hız kamerası"))
+        assertTrue(announcements[0].contains("2 denetim noktası"))
         assertTrue(announcements[1].contains("Rotanın 20 kilometresinde"))
         assertTrue(announcements[1].contains("D100 üzerinde, Örnek Tesis yakınında"))
         assertTrue(announcements[2].contains("Rotanın 30 kilometresinde"))
@@ -57,6 +58,26 @@ class SafetyCameraVoicePolicyTest {
         assertTrue(text.contains("5 kilometre sonra"))
         assertTrue(text.contains("D100 üzerinde"))
         assertTrue(text.contains("Hız sınırı 90"))
+    }
+
+    @Test
+    fun drivingAnnouncementSpeaksRedLightCameraType() {
+        val camera = SafetyCamera(
+            id = 99L,
+            point = GeoPoint(41.0, 29.0),
+            type = SafetyCameraType.RED_LIGHT,
+            rawTags = mapOf("lanu:nearby_road" to "Bağdat Caddesi")
+        )
+        val warning = SafetyCameraWarningPolicy.evaluate(
+            camera = camera,
+            distanceMeters = 980.0,
+            speedKmh = 50f
+        )!!
+
+        val text = SafetyCameraVoicePolicy.drivingMilestoneAnnouncement(warning)
+
+        assertTrue(text.contains("kırmızı ışık kamerası"))
+        assertTrue(text.contains("1 kilometre sonra"))
     }
 
     @Test

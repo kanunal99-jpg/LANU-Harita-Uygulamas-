@@ -5,6 +5,7 @@ import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraFetchResult
+import com.example.haritalar.model.SafetyCameraType
 import com.squareup.moshi.Moshi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -15,7 +16,7 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import java.util.concurrent.TimeUnit
 
 /**
- * Reads fixed speed cameras from OpenStreetMap.
+ * Reads source-backed traffic-enforcement camera points from OpenStreetMap.
  *
  * Resilience: primary Overpass endpoint -> alternative mirrors -> explicit error.
  * Cache fallback is deliberately kept in the repository layer.
@@ -50,7 +51,10 @@ class SafetyCameraService(
         val safeLimit = maxCameras.coerceIn(1, 500)
         val overpassQuery = """
             [out:json][timeout:18];
-            node["highway"="speed_camera"](${bbox.south},${bbox.west},${bbox.north},${bbox.east})->.cams;
+            (
+              node["highway"="speed_camera"](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+              node["enforcement"~"maxspeed|traffic_signals|average_speed|section_control",i](${bbox.south},${bbox.west},${bbox.north},${bbox.east});
+            )->.cams;
             (
               .cams;
               way(around.cams:100)["highway"]["name"];
@@ -151,7 +155,13 @@ class SafetyCameraService(
                     else -> null
                 } ?: continue
 
-                if (type == "node" && tagsObject["highway"] == "speed_camera") {
+                val isCameraNode = type == "node" && (
+                    tagsObject["highway"] == "speed_camera" ||
+                        tagsObject["enforcement"]?.toString()?.contains(
+                            Regex("maxspeed|traffic_signals|average_speed|section_control", RegexOption.IGNORE_CASE)
+                        ) == true
+                )
+                if (isCameraNode) {
                     val id = numberAsLong(element["id"]) ?: continue
                     if (id <= 0L || !seenIds.add(id)) continue
 
@@ -166,6 +176,7 @@ class SafetyCameraService(
                     cameras += SafetyCamera(
                         id = id,
                         point = point,
+                        type = classifyCameraType(tags),
                         maxSpeed = tags["maxspeed"]?.takeIf { it.isNotBlank() },
                         direction = tags["direction"]?.takeIf { it.isNotBlank() },
                         operator = tags["operator"]?.takeIf { it.isNotBlank() },
@@ -216,6 +227,34 @@ class SafetyCameraService(
         }
 
         return cameras
+    }
+
+    internal fun classifyCameraType(tags: Map<String, String>): SafetyCameraType {
+        val enforcement = tags["enforcement"]
+            ?.lowercase()
+            ?.replace(',', ';')
+            .orEmpty()
+        val tokens = enforcement
+            .split(';', ' ', '|')
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .toSet()
+
+        val hasAverage = tokens.any {
+            it == "average_speed" || it == "section_control" || it == "average"
+        }
+        val hasRedLight = tokens.any {
+            it == "traffic_signals" || it == "red_light" || it == "redlight"
+        }
+        val hasSpeed = tags["highway"] == "speed_camera" ||
+            tokens.any { it == "maxspeed" || it == "speed" || it == "speed_camera" }
+
+        return when {
+            hasAverage -> SafetyCameraType.AVERAGE_SPEED_CONTROL_POINT
+            hasRedLight && hasSpeed -> SafetyCameraType.SPEED_AND_RED_LIGHT
+            hasRedLight -> SafetyCameraType.RED_LIGHT
+            else -> SafetyCameraType.FIXED_SPEED
+        }
     }
 
     private fun numberAsLong(value: Any?): Long? = when (value) {

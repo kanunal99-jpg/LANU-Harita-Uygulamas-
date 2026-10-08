@@ -1,13 +1,26 @@
 package com.example.haritalar.model
 
+enum class SafetyCameraType(
+    val displayName: String,
+    val spokenName: String
+) {
+    FIXED_SPEED("Sabit hız kamerası", "sabit hız kamerası"),
+    RED_LIGHT("Kırmızı ışık kamerası", "kırmızı ışık kamerası"),
+    SPEED_AND_RED_LIGHT("Hız + kırmızı ışık kamerası", "hız ve kırmızı ışık kamerası"),
+    AVERAGE_SPEED_CONTROL_POINT("Ortalama hız denetimi noktası", "ortalama hız denetimi noktası")
+}
+
 /**
- * Fixed speed-enforcement camera mapped in OpenStreetMap.
+ * Source-backed traffic-enforcement point mapped from OpenStreetMap.
  *
  * Speed limits are optional and are never inferred when the source does not provide one.
+ * Average-speed corridors are represented separately; an individual OSM enforcement node
+ * can only be labelled as an average-speed control point here.
  */
 data class SafetyCamera(
     val id: Long,
     val point: GeoPoint,
+    val type: SafetyCameraType = SafetyCameraType.FIXED_SPEED,
     val maxSpeed: String? = null,
     val direction: String? = null,
     val operator: String? = null,
@@ -16,11 +29,12 @@ data class SafetyCamera(
     val source: String = "OpenStreetMap"
 ) {
     val displayTitle: String
-        get() = "Hız Kamerası"
+        get() = type.displayName
 
     val displaySubtitle: String
         get() = buildString {
-            append("OSM #$id")
+            append(type.displayName)
+            append(" • OSM #$id")
             maxSpeed?.takeIf { it.isNotBlank() }?.let { append(" • Hız: $it") }
             if (!direction.isNullOrBlank()) append(" • Yön: $direction")
         }
