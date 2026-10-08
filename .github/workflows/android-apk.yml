@@ -173,7 +173,7 @@ jobs:
           # APK signature verification is authoritative; apksigner's human-readable
           # --print-certs output varies by SDK version and must not be parsed as an API.
           "$apksigner_bin" verify "$apk"
-          fingerprint="$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | sed -nE 's/^.*SHA256:[[:space:]]*([[:xdigit:]:]+).*$/\\1/p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          fingerprint="$(keytool -list -v -keystore debug.keystore -storepass android -alias androiddebugkey | sed -nE 's/^.*SHA256:[[:space:]]*([[:xdigit:]:]+).*$/\1/p' | head -n 1 | tr -d ':' | tr '[:upper:]' '[:lower:]')"
           test "${#fingerprint}" -eq 64 || { echo "ERROR: Keystore SHA-256 fingerprint missing or malformed"; exit 1; }
           {
             echo "source=${APK_SIGNING_SOURCE}"
