@@ -182,17 +182,20 @@ jobs:
               --title "LANU Harita ${version} APK" \
               --notes "Sürüme özel Android APK ve SHA-256. Debug imzası her CI derlemesinde yeniden üretiliyorsa önceki APK üzerine doğrudan güncelleme desteklenmeyebilir."
 
-            verify_dir="${RUNNER_TEMP}/lanu-version-release-check"
-            mkdir -p "$verify_dir"
-            gh release download "$tag" --pattern 'app-debug.apk' --dir "$verify_dir"
-            expected="$(cut -d ' ' -f 1 apk-sha256.txt)"
-            actual="$(sha256sum "$verify_dir/app-debug.apk" | awk '{print $1}')"
-            test "$actual" = "$expected" || {
-              echo "ERROR: Versioned APK does not match SHA-256 after download"
-              exit 1
-            }
-            echo "Versioned APK release download and SHA-256 verified: $tag"
           fi
+
+          # Verify actual published assets on every run, including existing immutable tags.
+          verify_dir="${RUNNER_TEMP}/lanu-version-release-check"
+          mkdir -p "$verify_dir"
+          gh release download "$tag" --pattern 'app-debug.apk' --dir "$verify_dir"
+          gh release download "$tag" --pattern 'apk-sha256.txt' --dir "$verify_dir"
+          expected="$(cut -d ' ' -f 1 "$verify_dir/apk-sha256.txt")"
+          actual="$(sha256sum "$verify_dir/app-debug.apk" | awk '{print $1}')"
+          test "$actual" = "$expected" || {
+            echo "ERROR: Versioned APK does not match its published SHA-256 after download"
+            exit 1
+          }
+          echo "Versioned APK release download and SHA-256 verified: $tag"
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "app-debug.apk" and .size > 0)' | grep -q 'app-debug.apk'
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "apk-sha256.txt" and .size > 0)' | grep -q 'apk-sha256.txt'
       - name: Remove previous latest Release APK
