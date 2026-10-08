@@ -1,5 +1,8 @@
 package com.example.haritalar.navigation
 
+import com.example.haritalar.model.AverageSpeedZone
+import com.example.haritalar.model.AverageSpeedZoneDataState
+import com.example.haritalar.model.AverageSpeedZoneRouteMatch
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.PoiCategory
 import com.example.haritalar.model.PoiItem
@@ -259,6 +262,55 @@ class LanuBriefPolicyTest {
 
         assertTrue(item.detail.contains("sabit hız kamerası"))
         assertTrue(item.detail.contains("kırmızı ışık kamerası"))
+    }
+
+    @Test
+    fun verifiedAverageSpeedCorridorShowsStartLengthAndLimit() {
+        val match = AverageSpeedZoneRouteMatch(
+            zone = AverageSpeedZone(
+                id = "way:900",
+                geometry = listOf(route.geometry[0], route.geometry[1]),
+                maxSpeed = "90",
+                name = "D100 Ortalama Hız"
+            ),
+            startRouteMeters = 74_000.0,
+            endRouteMeters = 92_000.0,
+            routeLengthMeters = 18_000.0,
+            speedLimitKmh = 90
+        )
+
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            cameraRouteScanComplete = true,
+            averageSpeedZones = listOf(match),
+            averageSpeedZoneDataState = AverageSpeedZoneDataState.VERIFIED
+        )
+
+        val item = brief.items.first { it.type == LanuBriefItemType.AVERAGE_SPEED }
+        assertEquals(LanuBriefStatus.VERIFIED, item.status)
+        assertTrue(item.title.contains("1 ortalama hız koridoru"))
+        assertTrue(item.detail.contains("74.0 km"))
+        assertTrue(item.detail.contains("18.0 km"))
+        assertTrue(item.detail.contains("limit 90 km/h"))
+    }
+
+    @Test
+    fun unavailableAverageSpeedSourceNeverPretendsThereIsNoCorridor() {
+        val brief = LanuBriefPolicy.build(
+            route = route,
+            traffic = null,
+            routeWeather = emptyList(),
+            loadedSafetyCameras = emptyList(),
+            averageSpeedZoneDataState = AverageSpeedZoneDataState.UNAVAILABLE
+        )
+
+        val item = brief.items.first { it.type == LanuBriefItemType.AVERAGE_SPEED }
+        assertEquals(LanuBriefStatus.UNAVAILABLE, item.status)
+        assertTrue(item.title.contains("doğrulanamadı"))
+        assertTrue(item.detail.contains("uydurulmuyor"))
     }
 
     @Test
