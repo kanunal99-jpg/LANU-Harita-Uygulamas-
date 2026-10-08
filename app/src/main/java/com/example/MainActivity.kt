@@ -249,6 +249,8 @@ fun HaritalarNavigationApp(
         uiState.roadFeatureDataState,
         uiState.routeCriticalPois,
         uiState.routeCriticalPoiDataState,
+        uiState.averageSpeedZones,
+        uiState.averageSpeedZoneDataState,
         routeSafetyCameras,
         completedRouteSafetyCameraPrefetchRouteId,
         isRouteSafetyCameraPrefetching
@@ -266,6 +268,8 @@ fun HaritalarNavigationApp(
                 roadFeatures = uiState.routeRoadFeatures,
                 roadFeatureDataState = uiState.roadFeatureDataState,
                 cameraRouteScanComplete = cameraScanComplete,
+                averageSpeedZones = uiState.averageSpeedZones,
+                averageSpeedZoneDataState = uiState.averageSpeedZoneDataState,
                 routeCriticalPois = uiState.routeCriticalPois,
                 routeCriticalPoiDataState = uiState.routeCriticalPoiDataState
             )
