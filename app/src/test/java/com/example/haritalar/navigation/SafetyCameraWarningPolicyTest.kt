@@ -72,6 +72,49 @@ class SafetyCameraWarningPolicyTest {
     }
 
     @Test
+    fun multipleOrConditionalOsmLimitsNeverBecomeVerifiedNumericLimit() {
+        val ambiguous = listOf(
+            "50;70", "50; 80", "50 @ (Mo-Fr 07:00-19:00)",
+            "30 mph;50", "TR:urban", "signals", "none",
+            "maxspeed=50", "zone:30", "50-70", "50 km/h (night)",
+            "50.5", "50,5", "90mph extra", "-50", "999"
+        )
+        ambiguous.forEach { raw ->
+            assertNull("Conditional/ambiguous OSM maxspeed must remain unknown: $raw",
+                SafetyCameraWarningPolicy.parseSpeedLimitKmh(raw))
+        }
+        assertEquals(50, SafetyCameraWarningPolicy.parseSpeedLimitKmh("50.0 km/h"))
+        assertEquals(50, SafetyCameraWarningPolicy.parseSpeedLimitKmh("50,0 km/h"))
+        assertEquals(80, SafetyCameraWarningPolicy.parseSpeedLimitKmh("50 mph"))
+        assertEquals(90, SafetyCameraWarningPolicy.parseSpeedLimitKmh("90"))
+        assertEquals(70, SafetyCameraWarningPolicy.parseSpeedLimitKmh("70 kph"))
+    }
+
+    @Test
+    fun sourceConditionalSpeedNeverTriggersOverspeedWarning() {
+        val conditional = camera.copy(maxSpeed = "50 @ (Mo-Fr 07:00-19:00)")
+        val multiple = camera.copy(maxSpeed = "50;90")
+        for (item in listOf(conditional, multiple)) {
+            val warning = SafetyCameraWarningPolicy.evaluate(item, 1_200.0, 130f)
+            assertNotNull(warning)
+            assertNull(warning?.speedLimitKmh)
+            assertFalse(warning?.overspeed == true)
+        }
+    }
+
+    @Test
+    fun malformedGpsDistanceAndSpeedAreHandledWithoutFalseWarnings() {
+        assertNull(SafetyCameraWarningPolicy.evaluate(camera, Double.NaN, 80f))
+        assertNull(SafetyCameraWarningPolicy.evaluate(camera, Double.POSITIVE_INFINITY, 80f))
+        assertNull(SafetyCameraWarningPolicy.evaluate(camera, -12.0, 80f))
+        val invalidSpeedWarning = SafetyCameraWarningPolicy.evaluate(camera, 450.0, Float.NaN)
+        assertNotNull(invalidSpeedWarning)
+        assertFalse(invalidSpeedWarning?.overspeed == true)
+        assertNull(invalidSpeedWarning?.estimatedSecondsToCamera)
+        assertFalse(SafetyCameraWarningPolicy.evaluate(camera, 450.0, Float.POSITIVE_INFINITY)?.overspeed == true)
+    }
+
+    @Test
     fun overspeedIsOnlyTrueWhenSourceProvidesSpeedLimit() {
         val warning = SafetyCameraWarningPolicy.evaluate(camera, 800.0, 61f)
         assertTrue(warning?.overspeed == true)
