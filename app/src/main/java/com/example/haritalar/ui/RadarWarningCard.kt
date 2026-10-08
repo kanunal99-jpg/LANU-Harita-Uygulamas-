@@ -45,14 +45,14 @@ fun RadarWarningCard(
                 ) {
                     Icon(
                         imageVector = Icons.Default.CameraAlt,
-                        contentDescription = "Sabit hız kamerası erken uyarısı",
+                        contentDescription = "${camera.type.displayName} erken uyarısı",
                         tint = Color.White,
                         modifier = Modifier.size(34.dp)
                     )
                     Spacer(modifier = Modifier.width(14.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "ERKEN UYARI • SABİT HIZ KAMERASI • ${formatRadarDistance(warning.distanceMeters)}",
+                            text = "ERKEN UYARI • ${camera.type.displayName.uppercase()} • ${formatRadarDistance(warning.distanceMeters)}",
                             color = Color.White,
                             fontWeight = FontWeight.Black,
                             fontSize = 15.sp
@@ -61,7 +61,7 @@ fun RadarWarningCard(
                             text = if (warning.overspeed) {
                                 "Doğrulanmış hız sınırının üzerindesin; güvenli şekilde yavaşla."
                             } else {
-                                "Aktif rota üzerindeki doğrulanmış sabit kamera noktası."
+                                "Aktif rota üzerindeki doğrulanmış ${camera.type.displayName.lowercase()}."
                             },
                             color = Color.White.copy(alpha = 0.96f),
                             fontWeight = FontWeight.SemiBold,
