@@ -103,7 +103,9 @@ class SafetyCameraCache(context: Context) {
                 val item = json.optJSONObject(i) ?: continue
                 val key = item.optString("key")
                 val savedAt = item.optLong("savedAt", 0L)
-                val box = item.optJSONObject("bbox")?.let(::readBox) ?: continue
+                val box = item.optJSONObject("bbox")?.let { value ->
+                    runCatching { readBox(value) }.getOrNull()
+                } ?: continue
                 if (!box.isValid() || key.isBlank() || savedAt <= 0L) continue
                 add(SafetyCameraCacheIndexPolicy.Area(key, box, savedAt))
             }
