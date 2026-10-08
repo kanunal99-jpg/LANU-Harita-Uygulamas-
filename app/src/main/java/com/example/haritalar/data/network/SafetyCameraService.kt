@@ -89,6 +89,14 @@ class SafetyCameraService(
                         return@use
                     }
 
+                    val malformedReason = invalidOverpassResponseReason(body)
+                    if (malformedReason != null) {
+                        lastError = malformedReason
+                        networkError = true
+                        Log.w(TAG, "Overpass returned untrusted payload from $endpoint: $malformedReason")
+                        return@use
+                    }
+
                     val cameras = parseOsmResponse(body)
                     Log.i(TAG, "Parsed ${cameras.size} speed cameras from $endpoint")
                     return@withContext SafetyCameraFetchResult.Success(
@@ -107,6 +115,30 @@ class SafetyCameraService(
             message = "Radar servisine ulaşılamadı: $lastError",
             isNetworkError = networkError
         )
+    }
+
+    /**
+     * A 200 response is NOT proof that Overpass executed successfully.
+     * Overpass can return a structured error/timeout remark with an empty or
+     * partial element array. Such responses must trigger mirror/cache fallback.
+     *
+     * Only a real JSON object with an elements array AND no remark is considered
+     * a valid source response. An empty valid array is still legitimate OSM data.
+     */
+    internal fun invalidOverpassResponseReason(json: String): String? = try {
+        val root = JSON_ADAPTER.fromJson(json) as? Map<*, *>
+        if (root == null) {
+            "Yanıt JSON nesnesi değil"
+        } else {
+            val remark = root["remark"]?.toString()?.trim().orEmpty()
+            when {
+                remark.isNotBlank() -> "Overpass remark: ${remark.take(160)}"
+                root["elements"] !is List<*> -> "Overpass elements dizisi eksik veya geçersiz"
+                else -> null
+            }
+        }
+    } catch (error: Exception) {
+        "Overpass JSON çözümlenemedi: ${error.message?.take(120) ?: "bozuk yanıt"}"
     }
 
     /**

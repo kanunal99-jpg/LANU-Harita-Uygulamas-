@@ -3,11 +3,36 @@ package com.example.haritalar.data.network
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SafetyCameraServiceTest {
     private val service = SafetyCameraService()
+
+    @Test
+    fun `overpass error remark is not a verified empty camera scan`() {
+        val reason = service.invalidOverpassResponseReason(
+            """{"remark":"runtime error: Query timed out","elements":[]}"""
+        )
+        assertNotNull(reason)
+        assertTrue(reason!!.contains("remark"))
+    }
+
+    @Test
+    fun `malformed overpass json and elements shape never verify zero cameras`() {
+        assertNotNull(service.invalidOverpassResponseReason("<html>service unavailable</html>"))
+        assertNotNull(service.invalidOverpassResponseReason("""{"elements":"not-an-array"}"""))
+        assertNotNull(service.invalidOverpassResponseReason("""{"status":"ok"}"""))
+        assertNotNull(service.invalidOverpassResponseReason("null"))
+    }
+
+    @Test
+    fun `valid overpass empty elements is allowed without inventing cameras`() {
+        assertNull(service.invalidOverpassResponseReason("""{"elements":[]}"""))
+        assertTrue(service.parseOsmResponse("""{"elements":[]}""").isEmpty())
+    }
 
     @Test
     fun `parser reads speed camera and source tags without inventing speed`() {

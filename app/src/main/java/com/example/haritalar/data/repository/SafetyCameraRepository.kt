@@ -6,6 +6,8 @@ import com.example.haritalar.data.cache.SafetyCameraCache
 import com.example.haritalar.data.network.SafetyCameraService
 import com.example.haritalar.model.SafetyCameraBoundingBox
 import com.example.haritalar.model.SafetyCameraFetchResult
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * Resilient fixed-camera chain:
@@ -27,11 +29,15 @@ class SafetyCameraRepository(
     ): SafetyCameraFetchResult {
         return when (val result = service.fetchSpeedCamerasInBoundingBox(bbox, maxCameras)) {
             is SafetyCameraFetchResult.Success -> {
-                cache.save(bbox, result.cameras)
+                withContext(Dispatchers.IO) {
+                    cache.save(bbox, result.cameras)
+                }
                 result
             }
             is SafetyCameraFetchResult.Error -> {
-                val cached = cache.loadFor(bbox)
+                val cached = withContext(Dispatchers.IO) {
+                    cache.loadFor(bbox)
+                }
                 if (cached.isNotEmpty()) {
                     Log.w(TAG, "Network mirrors failed; using ${cached.size} cached safety cameras")
                     SafetyCameraFetchResult.Success(
