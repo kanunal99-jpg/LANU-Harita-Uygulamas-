@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.haritalar.data.network.SafetyCameraAreaPolicy
 import com.example.haritalar.data.repository.SafetyCameraRepository
 import com.example.haritalar.navigation.SafetyCameraRouteProgressPolicy
+import com.example.haritalar.navigation.RouteCameraCoverage
 import com.example.haritalar.model.GeoPoint
 import com.example.haritalar.model.SafetyCamera
 import com.example.haritalar.model.SafetyCameraBoundingBox
@@ -38,6 +39,9 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
 
     private val _completedRoutePrefetchRouteId = MutableStateFlow<String?>(null)
     val completedRoutePrefetchRouteId: StateFlow<String?> = _completedRoutePrefetchRouteId.asStateFlow()
+
+    private val _routeCoverage = MutableStateFlow(RouteCameraCoverage())
+    val routeCoverage: StateFlow<RouteCameraCoverage> = _routeCoverage.asStateFlow()
 
     private var viewportCameras: List<SafetyCamera> = emptyList()
     private var navigationCameras: List<SafetyCamera> = emptyList()
@@ -103,6 +107,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
         val generation = ++routePrefetchGeneration
         lastRouteFingerprint = fingerprint
         _completedRoutePrefetchRouteId.value = null
+        _routeCoverage.value = RouteCameraCoverage(routeId = routeId)
         _routeCameras.value = emptyList()
         _isRoutePrefetching.value = true
         publishMerged()
@@ -111,6 +116,8 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
             val merged = linkedMapOf<Long, SafetyCamera>()
             try {
                 val centers = SafetyCameraAreaPolicy.routePrefetchCenters(route)
+                if (generation != routePrefetchGeneration) return@launch
+                _routeCoverage.value = RouteCameraCoverage(routeId = routeId, totalCenters = centers.size)
                 for ((index, center) in centers.withIndex()) {
                     val bbox = SafetyCameraAreaPolicy.boundingBoxAround(
                         center = center,
@@ -119,9 +126,15 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
                     when (val result = repository.get(bbox, maxCameras = 500)) {
                         is SafetyCameraFetchResult.Success -> {
                             result.cameras.forEach { merged[it.id] = it }
+                            if (generation == routePrefetchGeneration) {
+                                _routeCoverage.value = _routeCoverage.value.withProviderSuccess(result.fromCache)
+                            }
                         }
                         is SafetyCameraFetchResult.Error -> {
                             result.fallbackCameras.forEach { merged[it.id] = it }
+                            if (generation == routePrefetchGeneration) {
+                                _routeCoverage.value = _routeCoverage.value.withProviderFailure()
+                            }
                         }
                     }
                     if (generation != routePrefetchGeneration) return@launch
@@ -134,8 +147,18 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
                 }
                 if (generation != routePrefetchGeneration) return@launch
                 _routeCameras.value = merged.values.toList()
+                _routeCoverage.value = _routeCoverage.value.copy(finished = true)
                 _completedRoutePrefetchRouteId.value = routeId
                 publishMerged()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                if (generation == routePrefetchGeneration) {
+                    _routeCoverage.value = _routeCoverage.value.finishWithRemainingFailures()
+                    _routeCameras.value = merged.values.toList()
+                    _completedRoutePrefetchRouteId.value = routeId
+                    publishMerged()
+                }
             } finally {
                 if (generation == routePrefetchGeneration) {
                     _isRoutePrefetching.value = false
@@ -150,6 +173,7 @@ class SafetyCameraLayerViewModel(application: Application) : AndroidViewModel(ap
         routePrefetchGeneration++
         lastRouteFingerprint = null
         _completedRoutePrefetchRouteId.value = null
+        _routeCoverage.value = RouteCameraCoverage()
         _routeCameras.value = emptyList()
         _isRoutePrefetching.value = false
         publishMerged()
