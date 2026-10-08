@@ -225,7 +225,13 @@ jobs:
             echo "ERROR: Versioned APK does not match its published SHA-256 after download"
             exit 1
           }
-          echo "Versioned APK release download and SHA-256 verified: $tag"
+          downloaded_cert="$("$apksigner_bin" verify --print-certs "$verify_dir/app-debug.apk" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p' | head -n 1)"
+          published_cert="$(sed -n 's/^signer_certificate_sha256=//p' "$verify_dir/apk-signing-info.txt" | head -n 1)"
+          test -n "$downloaded_cert" && test "$downloaded_cert" = "$published_cert" || {
+            echo "ERROR: Downloaded APK certificate does not match published signing identity"
+            exit 1
+          }
+          echo "Versioned APK checksum and signing fingerprint verified: $tag"
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "app-debug.apk" and .size > 0)' | grep -q 'app-debug.apk'
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "apk-sha256.txt" and .size > 0)' | grep -q 'apk-sha256.txt'
           gh release view "$tag" --json assets --jq '.assets[] | select(.name == "apk-signing-info.txt" and .size > 0)' | grep -q 'apk-signing-info.txt'
